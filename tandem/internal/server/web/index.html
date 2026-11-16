@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Tandem</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23242424'/%3E%3Cpath d='M8 12h11l-3-3M24 20H13l3 3' fill='none' stroke='%23e8e6e1' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<svg class="defs" aria-hidden="true">
+  <symbol id="i-disk" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2.5"/><path d="M3.5 14.5h17"/><circle cx="16.8" cy="16.8" r=".6" fill="currentColor"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 7.5a2 2 0 0 1 2-2h3.6l2 2.2h7.4a2 2 0 0 1 2 2v7.8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 11.2 12 4.5l8 6.7M6.2 9.8v9.7h11.6V9.8"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5.5v13M5.5 12h13"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 18.5v-13M6.5 11 12 5.5l5.5 5.5"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.6 4.6L19 7.4"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 8v5.2M12 16.6v.1"/><path d="M10.3 4.4 2.9 17.5a2 2 0 0 0 1.7 3h14.8a2 2 0 0 0 1.7-3L13.7 4.4a2 2 0 0 0-3.4 0z"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M8.5 12h7"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h15.5M14 6.5l5.5 5.5-5.5 5.5"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+</svg>
+
+<header class="top">
+  <div class="brand">
+    <span class="logo" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M8 12h11l-3-3M24 20H13l3 3"/></svg></span>
+    <h1>Tandem</h1>
+    <span class="tagline">복사 · 검증 · 증분 백업</span>
+  </div>
+  <button class="btn ghost" id="btn-history" type="button"><svg class="ico"><use href="#i-clock"/></svg>기록</button>
+</header>
+
+<main id="app" data-mode="setup">
+  <div class="lanes">
+    <section class="lane" aria-labelledby="h-src">
+      <div class="lane-head">
+        <h2 id="h-src">원본</h2>
+        <p>백업할 외장하드나 폴더</p>
+      </div>
+      <ul class="cards" id="src-list"></ul>
+      <button class="add setup-only" id="add-src" type="button"><svg class="ico"><use href="#i-plus"/></svg>원본 추가</button>
+    </section>
+
+    <div class="flow" aria-hidden="true"><svg class="ico"><use href="#i-arrow"/></svg></div>
+
+    <section class="lane" aria-labelledby="h-dst">
+      <div class="lane-head">
+        <h2 id="h-dst">대상</h2>
+        <p>NAS · DAS의 백업 위치 (여러 곳에 동시에 가능)</p>
+      </div>
+      <ul class="cards" id="dst-list"></ul>
+      <button class="add setup-only" id="add-dst" type="button"><svg class="ico"><use href="#i-plus"/></svg>대상 추가</button>
+    </section>
+  </div>
+
+  <!-- start screen -->
+  <section class="panel setup-only" id="setup-bar">
+    <div class="opts">
+      <label class="check"><input type="checkbox" id="opt-subfolder" checked><span>원본 이름으로 폴더 만들기</span></label>
+      <label class="check"><input type="checkbox" id="opt-reverify"><span>이미 있는 파일도 다시 검증</span></label>
+      <label class="pick"><span>체크섬</span>
+        <select id="opt-algo">
+          <option value="xxh64">xxHash64 (빠름)</option>
+          <option value="md5">MD5</option>
+        </select>
+      </label>
+    </div>
+    <button class="btn primary big" id="btn-start" type="button" disabled>백업 시작</button>
+    <p class="hint" id="hint"></p>
+    <p class="formerr" id="start-err" role="alert" hidden></p>
+  </section>
+
+  <!-- while running -->
+  <section class="panel run-only" id="run-bar" aria-live="off">
+    <div class="run-head">
+      <strong id="run-phase">준비 중</strong>
+      <span class="pct" id="run-pct"></span>
+    </div>
+    <div class="bar" id="run-track"><div class="fill" id="run-fill"></div></div>
+    <div class="run-foot">
+      <div class="run-text">
+        <p class="stats" id="run-stats"></p>
+        <p class="file" id="run-file"></p>
+      </div>
+      <button class="btn ghost" id="btn-cancel" type="button">취소</button>
+    </div>
+  </section>
+
+  <!-- when finished -->
+  <section class="panel done-only" id="result" aria-live="polite">
+    <div class="verdict">
+      <span class="badge" id="res-badge"><svg class="ico"><use id="res-icon" href="#i-check"/></svg></span>
+      <div class="verdict-text">
+        <h2 id="res-title"></h2>
+        <p id="res-sub"></p>
+      </div>
+      <div class="verdict-actions">
+        <button class="btn ghost" id="btn-retry" type="button">다시 실행</button>
+        <button class="btn primary" id="btn-new" type="button">새 백업</button>
+      </div>
+    </div>
+    <dl class="facts" id="res-facts"></dl>
+    <ul class="notes" id="res-notes"></ul>
+    <div class="errors" id="res-errors-wrap" hidden>
+      <h3 id="res-errors-title"></h3>
+      <ul id="res-errors"></ul>
+    </div>
+  </section>
+</main>
+
+<dialog id="picker" aria-labelledby="picker-title">
+  <div class="dlg-head">
+    <h3 id="picker-title">폴더 선택</h3>
+    <button class="iconbtn" data-close type="button" aria-label="닫기"><svg class="ico"><use href="#i-x"/></svg></button>
+  </div>
+  <div class="picker-body">
+    <aside class="side">
+      <h4>연결된 디스크</h4>
+      <ul id="vol-list"></ul>
+      <h4 id="recent-head" hidden>최근 사용</h4>
+      <ul id="recent-list"></ul>
+    </aside>
+    <div class="browser">
+      <form id="path-form" class="pathrow">
+        <input id="path-input" type="text" spellcheck="false" autocomplete="off" aria-label="폴더 경로" placeholder="/Volumes/…">
+        <button class="btn ghost" type="submit">이동</button>
+      </form>
+      <form id="mkdir-form" class="pathrow" hidden>
+        <input id="mkdir-input" type="text" spellcheck="false" autocomplete="off" aria-label="새 폴더 이름" placeholder="새 폴더 이름">
+        <button class="btn" type="submit">만들기</button>
+        <button class="btn ghost" type="button" id="mkdir-cancel">취소</button>
+      </form>
+      <p class="formerr" id="browse-err" role="alert" hidden></p>
+      <ul id="dir-list" class="dirs"></ul>
+    </div>
+  </div>
+  <div class="dlg-foot">
+    <button class="btn ghost" id="btn-mkdir" type="button">새 폴더</button>
+    <p class="chosen" id="picker-chosen"></p>
+    <button class="btn ghost" data-close type="button">취소</button>
+    <button class="btn primary" id="picker-choose" type="button">이 폴더 선택</button>
+  </div>
+</dialog>
+
+<dialog id="history" aria-labelledby="history-title">
+  <div class="dlg-head">
+    <h3 id="history-title">기록</h3>
+    <button class="iconbtn" data-close type="button" aria-label="닫기"><svg class="ico"><use href="#i-x"/></svg></button>
+  </div>
+  <ul class="hist" id="hist-list"></ul>
+</dialog>
+
+<div class="blocker" id="blocker" hidden><p id="blocker-msg"></p></div>
+
+<script src="app.js"></script>
+</body>
+</html>
