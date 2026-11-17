@@ -36,8 +36,8 @@ function emailFromIdToken(idToken) {
 }
 
 const PAGE = (title, body) => `<!doctype html><meta charset="utf-8"><title>${title}</title>
-<body style="font-family:-apple-system,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;display:grid;place-items:center;height:90vh;margin:0;background:#f4f4f2;color:#0b0b0b">
-<div style="text-align:center"><h2 style="margin:0 0 8px">${title}</h2><p style="color:#52514e;margin:0">${body}</p></div>`;
+<body style="font-family:-apple-system,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;display:grid;place-items:center;height:90vh;margin:0;background:#0d0d0d;color:#f0efec;color-scheme:dark">
+<div style="text-align:center"><h2 style="margin:0 0 8px">${title}</h2><p style="color:#c3c2b7;margin:0">${body}</p></div>`;
 
 class Auth {
   /**

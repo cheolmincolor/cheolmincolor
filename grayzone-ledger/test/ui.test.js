@@ -15,7 +15,7 @@ const PAGE = 'file://' + path.join(__dirname, '..', 'app', 'index.html');
 async function open(browser, opts = {}) {
   const env = makeService({ ready: opts.ready !== false });
   const errors = [];
-  const ctx = await browser.newContext({ viewport: { width: 980, height: 860 }, deviceScaleFactor: SHOTS ? 2 : 1, ...(opts.ctx || {}) });
+  const ctx = await browser.newContext({ viewport: { width: 980, height: 860 }, colorScheme: 'light', deviceScaleFactor: SHOTS ? 2 : 1, ...(opts.ctx || {}) });
   const page = await ctx.newPage();
   page.on('pageerror', (e) => errors.push(String(e)));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
@@ -58,6 +58,8 @@ test('화면', async (t) => {
 
   await t.test('요약: 숫자·차트·표', async () => {
     const { page, errors, shot, close } = await open(browser);
+    // 운영체제가 밝은 모드여도 어두운 바탕
+    assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), 'rgb(13, 13, 13)');
     assert.equal(await page.locator('.kpi .value').first().innerText(), '144,700,000원');
     assert.match(await page.locator('.kpi .sub').first().innerText(), /32건 · 평균 4,521,875원/);
     assert.equal(await page.locator('svg.chart path').count(), 23);

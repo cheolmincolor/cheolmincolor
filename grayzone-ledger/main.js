@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, Menu, dialog, ipcMain, safeStorage, shell } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, nativeTheme, safeStorage, shell } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { Store } = require('./src/store');
@@ -22,6 +22,7 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 function start() {
+  nativeTheme.themeSource = 'dark'; // 메뉴·파일 선택 창·스크롤바도 어둡게
   const store = new Store(app.getPath('userData'), {
     available: () => safeStorage.isEncryptionAvailable(),
     encrypt: (s) => safeStorage.encryptString(s),
@@ -54,7 +55,7 @@ function createWindow() {
     minWidth: 380,
     minHeight: 560,
     title: APP_NAME,
-    backgroundColor: '#f4f4f2',
+    backgroundColor: '#0d0d0d',
     icon: path.join(__dirname, 'build', 'icon.png'),
     show: false,
     webPreferences: {
