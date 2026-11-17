@@ -2,7 +2,7 @@
 # Builds the Tandem desktop app for each target: the Go engine plus the
 # Electron shell, zipped and ready to hand out.
 #
-#   bash package.sh                         # macOS (Apple Silicon, Intel) and Windows
+#   bash package.sh                         # macOS: Apple Silicon and Intel
 #   TARGETS="darwin-arm64" bash package.sh  # one target
 #   OUT=/some/folder bash package.sh        # where the results go (default: dist)
 #
@@ -12,7 +12,7 @@ cd "$(dirname "$0")"
 
 VERSION=$(node -p "require('./package.json').version")
 OUT=${OUT:-dist}
-TARGETS=${TARGETS:-"darwin-arm64 darwin-x64 win32-x64"}
+TARGETS=${TARGETS:-"darwin-arm64 darwin-x64"}
 mkdir -p "$OUT"
 OUT=$(cd "$OUT" && pwd)
 

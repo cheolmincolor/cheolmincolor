@@ -11,10 +11,14 @@
 
 자체 창이 있는 앱입니다. 폴더를 끌어다 놓을 수 있고, Dock·작업 표시줄에 진행률이 보이며, 끝나면 알림이 옵니다.
 
-| | 실행 | 필요한 버전 |
-|---|---|---|
-| Mac | zip을 풀고 `Tandem.app`을 응용 프로그램 폴더로 옮긴 뒤 실행 | macOS 13 이상 |
-| Windows | zip을 풀고 폴더 안의 `Tandem.exe` 실행 | Windows 10 이상 |
+zip을 풀고 `Tandem.app`을 응용 프로그램 폴더로 옮긴 뒤 실행합니다. macOS 13 이상이 필요합니다.
+
+| Mac 종류 | 받을 파일 |
+|---|---|
+| Apple Silicon (M1 이후) | `Tandem-버전-mac-arm64.zip` |
+| Intel | `Tandem-버전-mac-x64.zip` |
+
+어느 쪽인지는  메뉴 > 이 Mac에 관하여에서 확인합니다. "칩"에 Apple M…이 보이면 Apple Silicon입니다.
 
 Mac에서 처음 열 때 "확인되지 않은 개발자" 경고가 나오면 **시스템 설정 > 개인정보 보호 및 보안 > 그래도 열기**를 누릅니다. Apple 개발자 계정으로 공증하지 않은 앱이라서 나오는 경고입니다. 외장 디스크나 네트워크 볼륨에 처음 접근할 때는 접근 허용을 묻습니다.
 
@@ -23,7 +27,7 @@ Mac에서 처음 열 때 "확인되지 않은 개발자" 경고가 나오면 **�
 ```sh
 cd tandem/desktop
 npm ci
-bash package.sh        # dist/ 에 Mac(Apple Silicon·Intel)과 Windows용 zip
+bash package.sh        # dist/ 에 Mac용 zip 두 개 (Apple Silicon, Intel)
 npm start              # 패키징 없이 바로 실행
 ```
 
@@ -98,7 +102,8 @@ go build -o tandem .
 ## 지금 없는 것
 
 - 예약 실행, 대상에서 파일 삭제(미러링)
-- 설치 프로그램(dmg, setup.exe)과 Apple 공증: 지금은 zip을 풀어 실행합니다
+- 설치 프로그램(dmg)과 Apple 공증: 지금은 zip을 풀어 실행합니다
+- Windows용 앱: 만들지 않습니다
 - 검증은 "원본에서 읽은 내용"과 "대상에 기록된 내용"을 비교합니다. 원본을 두 번 읽어 비교하지는 않습니다
 
 ## 보안
@@ -111,7 +116,6 @@ go build -o tandem .
 go test ./...          # 엔진과 서버 테스트
 go vet ./...
 GOOS=darwin GOARCH=arm64 go build -o dist/tandem-mac-arm64 .
-GOOS=windows GOARCH=amd64 go build -o dist/tandem.exe .
 ```
 
 | 위치 | 내용 |
