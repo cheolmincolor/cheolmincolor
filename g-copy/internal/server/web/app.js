@@ -157,11 +157,49 @@ function options() {
 
 // ── lanes ───────────────────────────────────────────────────────────────
 
+// ring: a circular gauge. While setting up it shows how full the disk is;
+// while copying, that destination's own progress.
+const RING_R = 22, RING_LEN = 2 * Math.PI * RING_R;
+function ringEl() {
+  const svg = document.createElementNS(SVG, 'svg');
+  svg.setAttribute('viewBox', '0 0 52 52');
+  for (const cls of ['track', 'arc']) {
+    const c = document.createElementNS(SVG, 'circle');
+    c.setAttribute('class', cls);
+    c.setAttribute('cx', '26'); c.setAttribute('cy', '26'); c.setAttribute('r', String(RING_R));
+    if (cls === 'arc') { c.setAttribute('stroke-dasharray', String(RING_LEN)); c.setAttribute('stroke-dashoffset', String(RING_LEN)); }
+    svg.append(c);
+  }
+  return h('span', { class: 'ring', 'data-state': 'cap' }, svg, h('span', { class: 'ring-c' }));
+}
+
+// setRing(d, fraction 0..1, state, centre: text or icon name)
+function setRing(d, frac, state, centre) {
+  const r = d.ringEl;
+  if (!r) return;
+  r.dataset.state = state;
+  const f = Math.max(0, Math.min(1, Number(frac) || 0));
+  r.querySelector('.arc').setAttribute('stroke-dashoffset', String(RING_LEN * (1 - f)));
+  const c = r.querySelector('.ring-c');
+  const key = state + '|' + centre;
+  if (c.dataset.key === key) return;
+  c.dataset.key = key;
+  c.replaceChildren(centre && centre.startsWith('#') ? icon(centre.slice(1)) : (centre || ''));
+}
+
 function card(item, kind, index) {
   const extra = h('div', { class: 'extra' });
   if (kind === 'dst') item.extraEl = extra;
+  let lead;
+  if (kind === 'dst') {
+    lead = item.ringEl = ringEl();
+    const used = item.total > 0 ? 1 - item.free / item.total : 0;
+    setRing(item, used, 'cap', '#' + (item.isVolume ? 'disk' : 'folder'));
+  } else {
+    lead = h('span', { class: 'glyph' }, icon(item.isVolume ? 'disk' : 'folder'));
+  }
   return h('li', { class: 'card' },
-    h('span', { class: 'glyph' }, icon(item.isVolume ? 'disk' : 'folder')),
+    lead,
     h('span', { class: 'name', title: item.path }, baseName(item.path)),
     h('span', { class: 'path', title: item.path }, tailPath(item.path)),
     h('button', {
@@ -177,12 +215,75 @@ function saveDests() { store.set('dests', state.dests.map((d) => d.path)); }
 function renderLanes() {
   $('src-list').replaceChildren(...state.sources.map((s, i) => card(s, 'src', i)));
   $('dst-list').replaceChildren(...state.dests.map((d, i) => card(d, 'dst', i)));
+  drawFlow();
+}
+
+// ── flow lines from each source to each destination ────────────────────
+
+let flowState = []; // per destination: '', 'live', 'ok' or 'bad'
+
+function drawFlow() {
+  const svg = $('flow-lines');
+  const stage = $('stage').getBoundingClientRect();
+  const srcs = [...$('src-list').children], dsts = [...$('dst-list').children];
+  if (!srcs.length || !dsts.length || getComputedStyle(svg).display === 'none') { svg.replaceChildren(); return; }
+  const parts = [];
+  const x1 = srcs[0].getBoundingClientRect().right - stage.left;
+  const x2 = dsts[0].getBoundingClientRect().left - stage.left;
+  const mid = (x1 + x2) / 2;
+  // all sources meet at one point, then fan out to the destinations
+  const ys = srcs.map((el) => { const r = el.getBoundingClientRect(); return r.top + Math.min(r.height / 2, 40) - stage.top; });
+  const hubY = ys.reduce((a, b) => a + b, 0) / ys.length;
+  for (const y of ys) parts.push(['M', x1, y, 'C', mid - 10, y, mid - 30, hubY, mid, hubY].join(' '));
+  const out = dsts.map((el, i) => {
+    const r = el.getBoundingClientRect();
+    const y = r.top + Math.min(r.height / 2, 40) - stage.top;
+    const p = document.createElementNS(SVG, 'path');
+    p.setAttribute('d', ['M', mid, hubY, 'C', mid + 30, hubY, mid + 10, y, x2, y].join(' '));
+    if (flowState[i]) p.setAttribute('class', flowState[i]);
+    return p;
+  });
+  const live = flowState.some((x) => x === 'live');
+  const allOk = flowState.length === dsts.length && flowState.every((x) => x === 'ok');
+  const ins = parts.map((d) => {
+    const p = document.createElementNS(SVG, 'path');
+    p.setAttribute('d', d);
+    if (live || allOk) p.setAttribute('class', live ? 'live' : 'ok');
+    return p;
+  });
+  const hub = document.createElementNS(SVG, 'circle');
+  hub.setAttribute('cx', String(mid)); hub.setAttribute('cy', String(hubY)); hub.setAttribute('r', '3.5');
+  svg.replaceChildren(...ins, ...out, hub);
+}
+
+new ResizeObserver(() => drawFlow()).observe($('stage'));
+
+// The rings and lines follow the job.
+function renderDestProgress(job) {
+  const finished = FINISHED.includes(job.status);
+  flowState = state.dests.map((d, i) => {
+    const s = job.dests[i];
+    if (!s) return '';
+    if (finished) {
+      if (s.complete) { setRing(d, 1, 'ok', '#check'); return 'ok'; }
+      if (job.status === 'cancelled') { setRing(d, s.workTotal ? s.workDone / s.workTotal : 0, 'warn', '#stop'); return ''; }
+      setRing(d, s.workTotal ? s.workDone / s.workTotal : 0, 'bad', '#alert');
+      return 'bad';
+    }
+    if (job.status !== 'copying') { setRing(d, 0.25, 'wait', ''); return ''; }
+    if (!s.workTotal) { setRing(d, 1, 'ok', '#check'); return 'ok'; } // nothing to copy here
+    const f = s.workDone / s.workTotal;
+    setRing(d, f, s.stopped ? 'bad' : 'run', s.stopped ? '#alert' : Math.floor(f * 100) + '%');
+    return s.stopped ? 'bad' : f >= 1 ? 'ok' : 'live';
+  });
+  drawFlow();
 }
 
 function renderSetup() {
+  flowState = []; // plain lines until something runs
   renderLanes();
   for (const d of state.dests) {
-    if (d.free != null) d.extraEl.replaceChildren(h('span', {}, fmtBytes(d.free) + ' free'));
+    if (d.free != null) d.extraEl.replaceChildren(h('span', {}, fmtBytes(d.free) + ' free' + (d.total > 0 ? ' of ' + fmtBytes(d.total) : '')));
   }
 
   const many = state.sources.length > 1;
@@ -270,6 +371,12 @@ function renderRun(job) {
     if (job.current.length) file = job.current[0] + (job.current.length > 1 ? '  and ' + (job.current.length - 1) + ' more' : '');
   }
   track.classList.toggle('busy', job.status !== 'copying');
+  const order = ['scanning', 'comparing', 'copying', 'report'];
+  const at = order.indexOf(job.status);
+  for (const li of $('run-steps').children) {
+    const k = order.indexOf(li.dataset.step);
+    li.className = k < at ? 'done' : k === at ? 'now' : '';
+  }
   $('run-phase').textContent = phase;
   $('run-pct').textContent = pct;
   $('run-stats').textContent = stats;
@@ -404,6 +511,7 @@ function applyJob(job) {
   setMode(finished ? 'finished' : job.status === 'confirming' ? 'confirm' : 'running');
   if (!finished) announce = job.id;
   state.dests.forEach((d, i) => d.extraEl && d.extraEl.replaceChildren(...destExtra(job, i)));
+  renderDestProgress(job);
   if (finished) renderResult(job);
   else if (job.status === 'confirming') renderConfirm(job);
   else renderRun(job);
@@ -667,6 +775,7 @@ async function browse(path) {
   err.hidden = true;
   picker.path = data.path;
   picker.free = data.free ?? null;
+  picker.total = data.total ?? null;
   // Never change the field while the person is in it (or has typed in it),
   // unless this is the path they just asked for.
   const busyTyping = picker.typed || document.activeElement === input;
@@ -741,9 +850,9 @@ $('mkdir-form').addEventListener('submit', async (e) => {
   }
 });
 
-function addFolder(kind, path, free) {
+function addFolder(kind, path, free, total) {
   const list = kind === 'src' ? state.sources : state.dests;
-  if (!list.some((x) => x.path === path)) list.push({ ...item(path), free });
+  if (!list.some((x) => x.path === path)) list.push({ ...item(path), free, total });
   const key = 'recent.' + kind;
   store.set(key, [path, ...store.get(key, []).filter((p) => p !== path)].slice(0, 6));
   saveDests();
@@ -752,7 +861,7 @@ function addFolder(kind, path, free) {
 
 $('picker-choose').addEventListener('click', () => {
   if (!picker.path) return;
-  addFolder(picker.kind, picker.path, picker.free);
+  addFolder(picker.kind, picker.path, picker.free, picker.total);
   $('picker').close();
 });
 
@@ -766,7 +875,7 @@ async function addPaths(kind, paths) {
   for (const p of paths) {
     try {
       const info = await api('/api/browse?path=' + encodeURIComponent(p));
-      addFolder(kind, info.path, info.free ?? null);
+      addFolder(kind, info.path, info.free ?? null, info.total ?? null);
     } catch (e) {
       problems.push(/not found/i.test(e.message) ? 'Only folders can be added: ' + p : e.message);
     }
@@ -1054,13 +1163,14 @@ async function refreshDests() {
   const free = new Map(), gone = new Set();
   for (const d of [...state.dests]) {
     try {
-      free.set(d.path, (await api('/api/browse?path=' + encodeURIComponent(d.path))).free ?? null);
+      const info = await api('/api/browse?path=' + encodeURIComponent(d.path));
+      free.set(d.path, [info.free ?? null, info.total ?? null]);
     } catch { gone.add(d.path); /* not mounted today */ }
   }
   if (state.mode !== 'setup') return;
   // Apply to the list as it is now: the user may have changed it meanwhile.
   state.dests = state.dests.filter((d) => !gone.has(d.path));
-  for (const d of state.dests) if (free.has(d.path)) d.free = free.get(d.path);
+  for (const d of state.dests) if (free.has(d.path)) [d.free, d.total] = free.get(d.path);
   renderSetup();
 }
 

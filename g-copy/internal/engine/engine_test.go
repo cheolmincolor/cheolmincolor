@@ -127,7 +127,16 @@ func runJob(t *testing.T, o Options, hook func(string)) State {
 		t.Fatalf("start: %v", err)
 	}
 	j.Wait()
-	return j.Snapshot()
+	st := j.Snapshot()
+	// Every destination's own progress must add up, however the run went.
+	if st.Status != StatusCancelled {
+		for _, d := range st.Dests {
+			if d.WorkDone != d.WorkTotal {
+				t.Errorf("%s: progress %d of %d at the end", d.Path, d.WorkDone, d.WorkTotal)
+			}
+		}
+	}
+	return st
 }
 
 func noPartials(t *testing.T, roots ...string) {
@@ -216,6 +225,11 @@ func TestCopyVerifyTwoDestinations(t *testing.T) {
 	}
 	if !st.Dests[0].Complete || !st.Dests[1].Complete {
 		t.Errorf("destinations not marked complete: %+v", st.Dests)
+	}
+	for _, d := range st.Dests {
+		if d.WorkTotal != 2*st.ScanBytes {
+			t.Errorf("%s: planned %d, want %d (write + read back)", d.Path, d.WorkTotal, 2*st.ScanBytes)
+		}
 	}
 	if st.WorkDone != st.WorkTotal || st.WorkTotal != 3*st.ScanBytes {
 		t.Errorf("progress: done %d total %d, scan bytes %d (want total = 3x: 1 read + 2 read-backs)", st.WorkDone, st.WorkTotal, st.ScanBytes)

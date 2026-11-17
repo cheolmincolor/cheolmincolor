@@ -6,7 +6,7 @@ import "time"
 
 const (
 	// Version is written into reports.
-	Version = "0.5.0"
+	Version = "0.6.0"
 
 	chunkSize       = 4 << 20  // read/write unit
 	bigFileSize     = 16 << 20 // files this size or larger are copied one at a time
@@ -96,6 +96,8 @@ type DestState struct {
 	RemoveList    []string `json:"removeList"` // their names (at most maxRemoveList)
 	Removed       int64    `json:"removed"`    // moved to _G-Copy_Removed
 	Complete      bool     `json:"complete"`   // finished, and holds every file it should
+	WorkTotal     int64    `json:"workTotal"`  // this destination's progress: bytes to write + read back
+	WorkDone      int64    `json:"workDone"`
 	Reports       []string `json:"reports"`
 	Folders       []string `json:"folders"`
 }

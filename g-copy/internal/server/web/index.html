@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
 <title>G-Copy</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23242424'/%3E%3Cpath d='M8 12h11l-3-3M24 20H13l3 3' fill='none' stroke='%23e8e6e1' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231c1c1f'/%3E%3Crect x='7' y='5' width='15' height='18' rx='3.5' fill='none' stroke='%2377777d' stroke-width='1.8'/%3E%3Crect x='11' y='9' width='15' height='18' rx='3.5' fill='%23ececee'/%3E%3Cpath d='m14.6 18.3 2.4 2.4 4.6-4.9' fill='none' stroke='%231c1c1f' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -27,7 +27,9 @@
 
 <header class="top">
   <div class="brand">
-    <span class="logo" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M8 12h11l-3-3M24 20H13l3 3"/></svg></span>
+    <span class="logo" aria-hidden="true">
+      <svg viewBox="0 0 32 32"><rect x="7" y="5" width="15" height="18" rx="3.5" class="back"/><rect x="11" y="9" width="15" height="18" rx="3.5" class="front"/><path d="m14.6 18.3 2.4 2.4 4.6-4.9" class="tick"/></svg>
+    </span>
     <h1>G-Copy</h1>
     <span class="tagline">Copy · Verify · Incremental backup</span>
   </div>
@@ -44,31 +46,38 @@
     <button class="link" id="sb-view" type="button">View</button>
     <button class="iconbtn" id="sb-close" type="button" aria-label="Dismiss" hidden><svg class="ico"><use href="#i-x"/></svg></button>
   </div>
-  <div class="lanes">
+
+  <div class="stage" id="stage">
+    <svg class="flow-lines" id="flow-lines" aria-hidden="true"></svg>
+
     <section class="lane" id="lane-src" aria-labelledby="h-src">
-      <div class="lane-head">
+      <header class="lane-head">
         <h2 id="h-src">Source</h2>
         <p>The drive or folder to back up</p>
-      </div>
+      </header>
       <ul class="cards" id="src-list"></ul>
-      <button class="add setup-only" id="add-src" type="button"><svg class="ico"><use href="#i-plus"/></svg>Add Source</button>
-      <p class="drophint setup-only native-only">or drop a folder here</p>
+      <button class="add setup-only" id="add-src" type="button">
+        <span class="add-ico"><svg class="ico"><use href="#i-plus"/></svg></span>
+        <span class="add-text">Add Source<span class="drophint native-only">or drop a folder here</span></span>
+      </button>
     </section>
 
-    <div class="flow" aria-hidden="true"><svg class="ico"><use href="#i-arrow"/></svg></div>
+    <div class="lane-gap" aria-hidden="true"><svg class="ico"><use href="#i-arrow"/></svg></div>
 
     <section class="lane" id="lane-dst" aria-labelledby="h-dst">
-      <div class="lane-head">
+      <header class="lane-head">
         <h2 id="h-dst">Destination</h2>
-        <p>Where to back up on your NAS or DAS (several at once is fine)</p>
-      </div>
+        <p>NAS or DAS — several at once is fine</p>
+      </header>
       <ul class="cards" id="dst-list"></ul>
-      <button class="add setup-only" id="add-dst" type="button"><svg class="ico"><use href="#i-plus"/></svg>Add Destination</button>
-      <p class="drophint setup-only native-only">or drop a folder here</p>
+      <button class="add setup-only" id="add-dst" type="button">
+        <span class="add-ico"><svg class="ico"><use href="#i-plus"/></svg></span>
+        <span class="add-text">Add Destination<span class="drophint native-only">or drop a folder here</span></span>
+      </button>
     </section>
   </div>
 
-  <!-- start screen -->
+<!-- start screen -->
   <section class="panel setup-only" id="setup-bar">
     <div class="opts">
       <label class="check"><input type="checkbox" id="opt-subfolder" checked><span>Put files in a folder named after the source</span></label>
@@ -93,7 +102,15 @@
   <!-- while running -->
   <section class="panel run-only" id="run-bar" aria-live="off">
     <div class="run-head">
-      <strong id="run-phase">Preparing</strong>
+      <div class="run-title">
+        <ol class="steps" id="run-steps" aria-label="Progress">
+          <li data-step="scanning">Scan</li>
+          <li data-step="comparing">Compare</li>
+          <li data-step="copying">Copy &amp; verify</li>
+          <li data-step="report">Report</li>
+        </ol>
+        <strong id="run-phase">Preparing</strong>
+      </div>
       <span class="pct" id="run-pct"></span>
     </div>
     <div class="bar" id="run-track"><div class="fill" id="run-fill"></div></div>

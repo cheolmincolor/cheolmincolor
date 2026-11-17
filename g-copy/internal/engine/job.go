@@ -39,7 +39,10 @@ type destRun struct {
 	pruneDirs   []dirRef
 	removeBytes int64
 	destFiles   int64 // files seen on this destination while looking for extras
-	removed     atomic.Int64
+
+	// this destination's own progress (bytes written + bytes read back)
+	workTotal, workDone atomic.Int64
+	removed             atomic.Int64
 
 	mu      sync.Mutex
 	entries [][]mhlEntry // per source
@@ -346,6 +349,13 @@ type destWork struct {
 	tmp   string
 	f     *os.File
 	err   error
+	done  atomic.Int64 // progress counted for this destination
+}
+
+// progress counts n bytes of work for this destination.
+func (w *destWork) progress(dr *destRun, n int64) {
+	w.done.Add(n)
+	dr.workDone.Add(n)
 }
 
 func (w *destWork) alive() bool { return w.err == nil }
@@ -373,6 +383,23 @@ func (j *Job) processFile(i int) {
 	}
 	defer func() { j.workDone.Add(planned - added.Load()) }()
 
+	// The same for each destination's own progress.
+	type destPlan struct {
+		d    int
+		plan int64
+		w    *destWork // nil if the destination was already given up
+	}
+	var plans []destPlan
+	defer func() {
+		for _, p := range plans {
+			var done int64
+			if p.w != nil {
+				done = p.w.done.Load()
+			}
+			j.dests[p.d].workDone.Add(p.plan - done)
+		}
+	}()
+
 	failed := false
 	var works []*destWork
 	for d, a := range acts {
@@ -383,13 +410,20 @@ func (j *Job) processFile(i int) {
 			continue
 		}
 		planned += f.size
+		plan := f.size
+		if a != actReverify {
+			plan = 2 * f.size
+		}
 		dr := j.dests[d]
 		if dr.dead.Load() {
 			dr.failed.Add(1)
 			failed = true
+			plans = append(plans, destPlan{d: d, plan: plan})
 			continue
 		}
-		works = append(works, &destWork{d: d, act: a, final: filepath.Join(dr.bases[f.src], f.rel)})
+		w := &destWork{d: d, act: a, final: filepath.Join(dr.bases[f.src], f.rel)}
+		works = append(works, w)
+		plans = append(plans, destPlan{d: d, plan: plan, w: w})
 	}
 	if len(works) == 0 {
 		j.filesFailed.Add(1)
@@ -489,6 +523,7 @@ func (j *Job) processFile(i int) {
 				for _, w := range works {
 					if w.f != nil && w.alive() {
 						j.dests[w.d].bytes.Add(int64(n))
+						w.progress(j.dests[w.d], int64(n))
 					}
 				}
 			}
@@ -553,7 +588,10 @@ func (j *Job) processFile(i int) {
 			if w.act == actReverify {
 				path = w.final
 			}
-			sum, n, err := hashFile(j.ctx, path, j.opts.Algo, add)
+			sum, n, err := hashFile(j.ctx, path, j.opts.Algo, func(n int64) {
+				add(n)
+				w.progress(j.dests[w.d], n)
+			})
 			switch {
 			case err != nil:
 				w.err = fmt.Errorf("Verification read error: %w", err)
@@ -803,6 +841,7 @@ func (j *Job) Snapshot() State {
 			}
 		}
 		ds.Removed = dr.removed.Load()
+		ds.WorkTotal, ds.WorkDone = dr.workTotal.Load(), dr.workDone.Load()
 		if finished {
 			ds.Reports = append(ds.Reports, dr.reports...)
 			ds.Complete = clean && ds.Failed == 0 && !ds.Stopped

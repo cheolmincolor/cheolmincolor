@@ -331,8 +331,10 @@ func (j *Job) compare() error {
 			switch a := j.acts[i*nd+d]; a {
 			case actCopy, actReplace:
 				dr.need += f.size
+				dr.workTotal.Add(2 * f.size) // written, then read back
 				active++
 			case actReverify:
+				dr.workTotal.Add(f.size) // read back only
 				active++
 			case actNone:
 				dr.skipped.Add(1)
