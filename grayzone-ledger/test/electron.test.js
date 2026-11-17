@@ -18,7 +18,7 @@ test('Electron 앱: 창·메뉴·격리', { skip: needsDisplay && 'DISPLAY 없�
   const app = await electron.launch({
     executablePath: exe || require('electron'),
     args: [...(process.getuid && process.getuid() === 0 ? ['--no-sandbox'] : []), ...(exe ? [] : [path.join(__dirname, '..')])],
-    env: { ...process.env, GZ_USER_DATA: userData },
+    env: { ...process.env, GZ_USER_DATA: userData, GZ_NO_UPDATE: '1' },
   });
   try {
     const win = await app.firstWindow();
@@ -29,7 +29,9 @@ test('Electron 앱: 창·메뉴·격리', { skip: needsDisplay && 'DISPLAY 없�
     assert.equal(await win.locator('.step.now h2').innerText(), 'OAuth 클라이언트 파일 고르기');
 
     // 화면은 Node.js 에 접근할 수 없고, gz 두 가지만 씁니다.
-    assert.deepEqual(await win.evaluate(() => [typeof window.require, typeof window.process, Object.keys(window.gz).sort().join()]), ['undefined', 'undefined', 'call,onMenu']);
+    assert.deepEqual(await win.evaluate(() => [typeof window.require, typeof window.process, Object.keys(window.gz).sort().join()]), ['undefined', 'undefined', 'call,onMenu,onUpdate']);
+    const up = (await win.evaluate(() => window.gz.call('update:status'))).ok;
+    assert.deepEqual([up.status, up.current], ['idle', require('../package.json').version]);
     assert.deepEqual(await win.evaluate(() => window.gz.call('status')), { ok: { hasClient: false, signedIn: false, email: '', spreadsheetId: '', spreadsheetTitle: '' } });
     assert.match((await win.evaluate(() => window.gz.call('setSheet', ['nope']))).err, /시트 주소가 아닙니다/);
     assert.match((await win.evaluate(() => window.gz.call('rm -rf'))).err, /알 수 없는 요청/);

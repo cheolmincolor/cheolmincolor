@@ -20,6 +20,8 @@ class Service {
    * @param {typeof fetch} [o.fetch]
    * @param {() => string} [o.today]
    * @param {(e: Error) => void} [o.log]
+   * @param {import('./updater').Updater} [o.updater]
+   * @param {() => void} [o.quit]  업데이트를 설치할 때 앱을 끝냅니다.
    */
   constructor(o) {
     this.o = o;
@@ -99,6 +101,16 @@ class Service {
       case 'resetChecks':
         this.store.set({ dismissed: [] });
         return this.getLedger().getData();
+      case 'update:status':
+        return this.o.updater ? this.o.updater.state : { status: 'unsupported', current: '', error: '' };
+      case 'update:check':
+        if (!this.o.updater) throw new UserError('업데이트를 확인할 수 없습니다.');
+        return this.o.updater.check({ download: true });
+      case 'update:install':
+        if (!this.o.updater) throw new UserError('업데이트를 설치할 수 없습니다.');
+        try { this.o.updater.install({ relaunch: true }); } catch (e) { throw new UserError(e.message); }
+        if (this.o.quit) this.o.quit();
+        return this.o.updater.state;
       case 'reset':
         await this.auth.signOut();
         this.store.set({ client: null, spreadsheetId: '', spreadsheetTitle: '' });

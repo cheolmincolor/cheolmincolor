@@ -46,11 +46,13 @@ for target in $TARGETS; do
     zip="$OUT/$SLUG-$VERSION-mac-$arch.zip"
     rm -f "$zip"; (cd "$dir" && zip -qry "$zip" "$NAME.app")   # -y: 앱 안의 심볼릭 링크 유지
   else
+    # zip 안의 폴더 이름에는 버전을 넣지 않습니다(자동 업데이트 뒤에도 폴더 이름이 그대로 맞도록).
     label=windows; [ "$os" = linux ] && label=linux   # linux 는 시험용
-    folder="$SLUG-$VERSION-$label-$arch"
-    rm -rf "${OUT:?}/$folder"; mv "$dir" "$OUT/$folder"
-    zip="$OUT/$folder.zip"
-    rm -f "$zip"; (cd "$OUT" && zip -qry "$zip" "$folder")
+    stage="$OUT/stage-$os-$arch"
+    rm -rf "$stage"; mkdir -p "$stage"; mv "$dir" "$stage/$NAME"
+    zip="$OUT/$SLUG-$VERSION-$label-$arch.zip"
+    rm -f "$zip"; (cd "$stage" && zip -qry "$zip" "$NAME")
+    rm -rf "$stage"
   fi
   echo "   $(du -h "$zip" | cut -f1)  $zip"
 done

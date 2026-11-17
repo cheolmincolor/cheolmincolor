@@ -53,8 +53,41 @@ jobs:
         run: TARGETS="darwin-arm64 darwin-x64" bash package.sh
       - name: 서명된 Apple Silicon 앱이 실제로 뜨는지 확인
         run: GZ_EXE="dist/GRAYZONE Ledger-darwin-arm64/GRAYZONE Ledger.app/Contents/MacOS/GRAYZONE Ledger" node --test test/electron.test.js
+      - name: 자동 업데이트로 바꿔 넣은 앱도 서명이 유지되고 뜨는지 확인
+        run: |
+          V=$(node -p "require('./package.json').version")
+          GZ_MAC_UPDATE_ZIP="dist/GRAYZONE-Ledger-$V-mac-arm64.zip" GZ_UPDATE_TARGET="$RUNNER_TEMP/apps" node --test test/mac-update.test.js
+          GZ_EXE="$RUNNER_TEMP/apps/GRAYZONE Ledger.app/Contents/MacOS/GRAYZONE Ledger" node --test test/electron.test.js
       - uses: actions/upload-artifact@v4
         with:
           name: GRAYZONE-Ledger-mac
           path: grayzone-ledger/dist/*.zip
           retention-days: 30
+
+  # package.json 의 버전이 올라가 있으면 GitHub 릴리스(ledger-v버전)를 만들고 zip 과 latest.json 을 올립니다.
+  # 앱은 이 릴리스를 보고 자동 업데이트합니다. 같은 버전의 릴리스가 이미 있으면 아무것도 하지 않습니다.
+  release:
+    needs: [test-and-windows, mac]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          path: grayzone-ledger/dist
+          merge-multiple: true
+      - name: 릴리스 올리기
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V=$(node -p "require('./package.json').version")
+          TAG="ledger-v$V"
+          if gh release view "$TAG" >/dev/null 2>&1; then echo "$TAG 은 이미 있습니다."; exit 0; fi
+          node scripts/release-manifest.js dist > latest.json
+          node -e "process.stdout.write(require('./latest.json').notes)" > notes.md
+          gh release create "$TAG" dist/GRAYZONE-Ledger-$V-*.zip latest.json --target "$GITHUB_SHA" --title "GRAYZONE 장부 $V" --notes-file notes.md

@@ -2,8 +2,13 @@
 const { app, BrowserWindow, Menu, dialog, ipcMain, nativeTheme, safeStorage, shell } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const { execFile, spawn } = require('child_process');
 const { Store } = require('./src/store');
 const { Service } = require('./src/service');
+const { Updater } = require('./src/updater');
+
+const UPDATE_FIRST_CHECK_MS = 8 * 1000;
+const UPDATE_EVERY_MS = 6 * 60 * 60 * 1000;
 
 const APP_NAME = 'GRAYZONE 장부';
 app.setName(APP_NAME);
@@ -12,6 +17,7 @@ if (process.platform === 'win32') app.setAppUserModelId('com.grayzone.ledger');
 
 let win = null;
 let service = null;
+let updater = null;
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -19,6 +25,12 @@ if (!app.requestSingleInstanceLock()) {
   app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
   app.whenReady().then(start);
   app.on('window-all-closed', () => app.quit());
+  // 받아 둔 업데이트가 있으면 앱을 끌 때 설치합니다(다시 열지는 않음).
+  app.on('before-quit', () => {
+    if (updater && updater.state.status === 'ready') {
+      try { updater.install({ relaunch: false }); } catch (e) { console.error(e); }
+    }
+  });
 }
 
 function start() {
@@ -28,8 +40,22 @@ function start() {
     encrypt: (s) => safeStorage.encryptString(s),
     decrypt: (b) => safeStorage.decryptString(b),
   });
+  updater = new Updater({
+    version: app.getVersion(),
+    platform: process.platform,
+    arch: process.arch,
+    packaged: app.isPackaged,
+    execPath: process.execPath,
+    workDir: path.join(app.getPath('userData'), 'updates'),
+    pid: process.pid,
+    extract,
+    spawn,
+    onChange: (state) => { if (win && !win.isDestroyed()) win.webContents.send('gz:update', state); },
+  });
   service = new Service({
     store,
+    updater,
+    quit: () => setTimeout(() => app.quit(), 200),
     openExternal: (url) => shell.openExternal(url),
     pickFile: async () => {
       const r = await dialog.showOpenDialog(win, {
@@ -46,6 +72,18 @@ function start() {
   ipcMain.handle('gz:call', (_e, name, args) => service.run(String(name), args));
   buildMenu();
   createWindow();
+  if (!process.env.GZ_NO_UPDATE) {
+    setTimeout(() => updater.check(), UPDATE_FIRST_CHECK_MS);
+    setInterval(() => updater.check(), UPDATE_EVERY_MS);
+  }
+}
+
+/** 업데이트 zip 풀기: Mac 은 ditto(서명·링크 보존), Windows 는 기본 tar(10 이상), 그 밖은 unzip */
+function extract(zip, dest) {
+  const [cmd, args] = process.platform === 'darwin' ? ['/usr/bin/ditto', ['-x', '-k', zip, dest]]
+    : process.platform === 'win32' ? [path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe'), ['-xf', zip, '-C', dest]]
+    : ['unzip', ['-q', zip, '-d', dest]];
+  return new Promise((resolve, reject) => execFile(cmd, args, (e) => (e ? reject(new Error('업데이트 파일을 풀지 못했습니다: ' + e.message)) : resolve())));
 }
 
 function createWindow() {
@@ -88,6 +126,7 @@ function buildMenu() {
       label: APP_NAME,
       submenu: [
         { role: 'about', label: `${APP_NAME} 정보` },
+        { label: '업데이트 확인…', click: () => send('update') },
         { type: 'separator' },
         { label: '설정…', accelerator: 'Cmd+,', click: () => send('settings') },
         { type: 'separator' },
@@ -107,6 +146,7 @@ function buildMenu() {
         ...(mac ? [] : [
           { type: 'separator' },
           { label: '설정…', accelerator: 'Ctrl+,', click: () => send('settings') },
+          { label: '업데이트 확인…', click: () => send('update') },
           { type: 'separator' },
           { role: 'quit', label: '끝내기' },
         ]),

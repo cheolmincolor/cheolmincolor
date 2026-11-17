@@ -1,7 +1,7 @@
 (function () {
 'use strict';
 
-var S = { jobs: [], today: '', sheetUrl: '', title: '', setup: false, status: null, vat: { basis: '부가세 별도', hasSheet: false }, checks: [], hiddenChecks: 0, years: null, year: null, tab: 'home', q: '', lf: 'all', uf: 'all', us: 'old', loaded: false };
+var S = { jobs: [], today: '', sheetUrl: '', title: '', setup: false, status: null, vat: { basis: '부가세 별도', hasSheet: false }, checks: [], hiddenChecks: 0, years: null, update: { status: 'idle', current: '' }, year: null, tab: 'home', q: '', lf: 'all', uf: 'all', us: 'old', loaded: false };
 var $ = function (s, el) { return (el || document).querySelector(s); };
 var app = $('#app'), modal = $('#modal'), toastEl = $('#toast');
 
@@ -71,6 +71,50 @@ function failed(e) {
   return e;
 }
 
+// ---------- 업데이트 ----------
+var UPDATE_TEXT = {
+  idle: '', checking: '새 버전을 확인하는 중…', none: '최신 버전입니다.', available: '새 버전이 있습니다.',
+  downloading: '새 버전을 받는 중…', ready: '새 버전이 준비됐습니다. 다시 시작하면 적용됩니다.',
+  installing: '업데이트를 설치하는 중…', unsupported: '', error: ''
+};
+function updateText(u) {
+  var t = UPDATE_TEXT[u.status] || '';
+  if (u.status === 'downloading') t += ' ' + (u.progress || 0) + '%';
+  if (u.status === 'error' || u.status === 'unsupported') t = u.error || '업데이트를 확인하지 못했습니다.';
+  return t;
+}
+function setUpdate(u) {
+  S.update = u || S.update;
+  var bar = $('#updateBar'), u2 = S.update;
+  if (u2.status === 'ready') {
+    bar.hidden = false;
+    bar.innerHTML = '<span><b>새 버전 ' + esc(u2.latest) + '</b> 준비됨 · 다시 시작하면 적용됩니다(앱을 끌 때도 적용).</span>' +
+      '<button data-update="install">지금 다시 시작</button><button class="x" data-update="hide" aria-label="닫기">×</button>';
+  } else bar.hidden = true;
+  var box = $('#updateBox');
+  if (box) box.innerHTML = updateBox();
+}
+function updateBox() {
+  var u = S.update;
+  return '<dl class="facts"><dt>지금 버전</dt><dd class="num">' + esc(u.current || '-') + '</dd>' +
+    (u.latest && u.latest !== u.current ? '<dt>새 버전</dt><dd class="num">' + esc(u.latest) + '</dd>' : '') + '</dl>' +
+    (updateText(u) ? '<p class="note">' + esc(updateText(u)) + '</p>' : '') +
+    (u.notes && u.latest !== u.current ? '<div class="notes">' + esc(u.notes) + '</div>' : '') +
+    '<div class="btns">' + (u.status === 'ready' ? '<button class="btn pri" data-update="install">지금 다시 시작</button>'
+      : '<button class="btn" data-update="check"' + (/checking|downloading|installing/.test(u.status) ? ' disabled' : '') + '>업데이트 확인</button>') + '</div>';
+}
+function updateAction(a, btn) {
+  if (a === 'hide') { $('#updateBar').hidden = true; return; }
+  if (btn) btn.disabled = true;
+  if (a === 'check') call('update:check').then(setUpdate).catch(function (e) { toast(errText(e)); setUpdate(); });
+  if (a === 'install') call('update:install').then(setUpdate).catch(function (e) { toast(errText(e)); if (btn) btn.disabled = false; });
+}
+document.addEventListener('click', function (e) {
+  var b = e.target.closest('[data-update]');
+  if (b) updateAction(b.dataset.update, b);
+});
+if (window.gz && window.gz.onUpdate) window.gz.onUpdate(setUpdate);
+
 // ---------- 처음 설정 ----------
 function showSetup(st, message) {
   S.setup = true; S.status = st;
@@ -128,6 +172,7 @@ function showSettings() {
       '<h4>연도 묶음</h4><p class="note">마지막 연도: ' + (S.years ? S.years.last + '년' : '-') + '. 11월이 되면 다음 해 묶음을 자동으로 만들고, 다음 해 날짜로 등록할 때도 만듭니다.</p>' +
       (S.years ? '<div class="btns"><button class="btn" data-a="nextYear">' + S.years.next + '년 묶음 지금 만들기</button></div>' : '') +
       (S.hiddenChecks ? '<h4>장부 점검</h4><div class="btns"><button class="btn" data-a="resetChecks">숨긴 점검 ' + S.hiddenChecks + '건 다시 보기</button></div>' : '') +
+      '<h4>업데이트</h4><div id="updateBox">' + updateBox() + '</div>' +
       '<h4>처음 상태로</h4>' +
       '<div class="btns"><button class="btn danger" data-a="reset">처음부터 다시 설정</button><button class="btn" data-a="close">닫기</button></div><div class="err"></div>');
     var basis = $('#vatBasis', el);
@@ -645,6 +690,7 @@ if (window.gz && window.gz.onMenu) window.gz.onMenu(function (action) {
   if (action === 'add' && S.loaded && !modal.innerHTML) showForm(null);
   if (action === 'refresh') load();
   if (action === 'settings') showSettings();
+  if (action === 'update') { showSettings(); updateAction('check'); }
   if (action === 'sheet' && S.sheetUrl) window.open(S.sheetUrl, '_blank');
   if (action.indexOf('tab:') === 0 && S.loaded) { closeSheet(); S.tab = action.slice(4); render(); window.scrollTo(0, 0); }
 });
@@ -659,4 +705,5 @@ window.addEventListener('resize', function () {
 document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeSheet(); });
 
 load();
+call('update:status').then(setUpdate).catch(function () {});
 })();

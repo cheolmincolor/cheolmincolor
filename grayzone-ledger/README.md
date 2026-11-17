@@ -63,22 +63,22 @@
 
 ### 2단계: 앱 받아서 설치
 
-GitHub 저장소의 [Actions](https://github.com/cheolmincolor/cheolmincolor/actions) 탭에서 「GRAYZONE 장부 앱」의
-가장 최근 초록색(✓) 실행을 열고, 아래쪽 **Artifacts**에서 내려받습니다. GitHub에 로그인해야 보입니다.
+GitHub의 [릴리스 페이지](https://github.com/cheolmincolor/cheolmincolor/releases)에서 가장 위의 「GRAYZONE 장부 1.x.x」를 열고,
+아래쪽 **Assets**에서 내 컴퓨터용 파일을 받습니다. GitHub 로그인은 필요 없습니다.
 
-| 컴퓨터 | 받을 것 | 안에 든 파일 |
-|---|---|---|
-| Mac (Apple Silicon, M1 이후) | `GRAYZONE-Ledger-mac` | `GRAYZONE-Ledger-1.0.0-mac-arm64.zip` |
-| Mac (Intel) | `GRAYZONE-Ledger-mac` | `GRAYZONE-Ledger-1.0.0-mac-x64.zip` |
-| Windows (64비트) | `GRAYZONE-Ledger-windows` | `GRAYZONE-Ledger-1.0.0-windows-x64.zip` |
+| 컴퓨터 | 받을 파일 |
+|---|---|
+| Mac (Apple Silicon, M1 이후) | `GRAYZONE-Ledger-버전-mac-arm64.zip` |
+| Mac (Intel) | `GRAYZONE-Ledger-버전-mac-x64.zip` |
+| Windows (64비트) | `GRAYZONE-Ledger-버전-windows-x64.zip` |
 
 어떤 Mac인지는  메뉴 > 이 Mac에 관하여에서 확인합니다. 「칩」에 Apple M…이 보이면 Apple Silicon입니다.
-Artifacts는 30일 동안 보관됩니다.
+처음 한 번만 받으면 됩니다. 그다음부터는 앱이 스스로 업데이트합니다(아래 「자동 업데이트」).
 
 **Mac**
 
-1. 받은 파일의 압축을 풀고, 안의 `GRAYZONE-Ledger-1.0.0-mac-arm64.zip`(또는 x64)도 한 번 더 풉니다.
-2. `GRAYZONE Ledger.app`을 **응용 프로그램** 폴더로 옮깁니다.
+1. 받은 zip을 엽니다(Safari는 자동으로 풀어 줍니다).
+2. `GRAYZONE Ledger.app`을 **응용 프로그램** 폴더로 옮깁니다. 자동 업데이트가 되려면 꼭 이 폴더에 두세요.
 3. 처음 열 때 「확인되지 않은 개발자」 경고가 나오면:
    - 앱을 **오른쪽 클릭 > 열기 > 열기**를 누르거나,
    - **시스템 설정 > 개인정보 보호 및 보안**의 아래쪽에서 **그래도 열기**를 누릅니다.
@@ -87,8 +87,8 @@ Artifacts는 30일 동안 보관됩니다.
 
 **Windows**
 
-1. 받은 파일의 압축을 풀고, 안의 `GRAYZONE-Ledger-1.0.0-windows-x64.zip`도 한 번 더 풉니다.
-2. 나온 폴더를 원하는 곳(예: `문서` 또는 `C:\GRAYZONE`)에 둡니다.
+1. 받은 zip의 압축을 풉니다. `GRAYZONE Ledger` 폴더가 나옵니다.
+2. 그 폴더를 **문서** 폴더 등 내 계정 안에 둡니다. `C:\Program Files`처럼 관리자 권한이 필요한 곳에 두면 자동 업데이트가 안 됩니다.
 3. 폴더 안의 `GRAYZONE Ledger.exe`를 실행합니다.
 4. 「Windows의 PC 보호」 창이 나오면 **추가 정보 > 실행**을 누릅니다. 서명하지 않은 앱이라 나오는 경고입니다.
 5. 작업 표시줄의 앱 아이콘을 오른쪽 클릭해 **작업 표시줄에 고정**하면 다음부터 편합니다.
@@ -160,6 +160,17 @@ Artifacts는 30일 동안 보관됩니다.
 
 맞는 내용이면 그 건을 열어 **문제없음**을 누르면 목록에서 빠집니다. 설정에서 다시 볼 수 있습니다.
 
+### 자동 업데이트
+
+- 앱을 켜고 조금 뒤, 그리고 6시간마다 새 버전이 있는지 GitHub 릴리스를 확인합니다.
+- 새 버전이 있으면 뒤에서 받아 두고, 받은 파일이 올린 파일과 같은지(SHA-256) 확인합니다.
+- 준비되면 화면 위에 「새 버전 준비됨」이 뜹니다. **지금 다시 시작**을 누르면 바로 바뀌고, 그냥 앱을 꺼도 끌 때 바뀝니다.
+- 설정의 **업데이트** 칸에서 지금 버전과 바뀐 점을 보고, 직접 **업데이트 확인**을 누를 수도 있습니다. Mac은 앱 메뉴, Windows는 파일 메뉴에도 있습니다.
+- 로그인·시트 연결·설정은 그대로 유지됩니다.
+- 「쓸 권한이 없어 바꿔 넣을 수 없습니다」가 뜨면, 앱을 Mac은 응용 프로그램 폴더, Windows는 문서 폴더 등으로 옮겨 주세요.
+
+1.0.0(자동 업데이트가 없던 버전)을 쓰고 있다면 1.1.0만 위 2단계대로 한 번 직접 받아 바꿔 주세요.
+
 ### 다음 해 묶음
 
 11월 이후 앱을 열 때 다음 해 묶음이 없으면, 마지막 연도 묶음 아래에 그대로 본떠 만듭니다.
@@ -220,6 +231,10 @@ npm run icons              # build/icon.svg 로 아이콘 다시 만들기
 
 GitHub에 올리면 Actions가 테스트하고 Mac·Windows용 zip을 만듭니다(`.github/workflows/grayzone-ledger.yml`).
 
+**새 버전 내기**: `package.json`의 `version`을 올리고 `CHANGELOG.md` 맨 위에 그 버전의 바뀐 점을 적어 올리면,
+Actions가 테스트·빌드 뒤 릴리스 `ledger-v버전`을 만들고 zip 3개와 `latest.json`(크기·SHA-256·바뀐 점)을 올립니다.
+설치된 앱은 이 릴리스를 보고 스스로 업데이트합니다. 버전을 올리지 않으면 릴리스는 만들지 않습니다.
+
 | 위치 | 내용 |
 |---|---|
 | `main.js`, `preload.js` | Electron 창·메뉴. 화면에는 `window.gz.call()` 하나만 열어 줍니다. |
@@ -229,5 +244,7 @@ GitHub에 올리면 Actions가 테스트하고 Mac·Windows용 zip을 만듭니�
 | `src/sheets.js` | Google Sheets API 호출 |
 | `src/auth.js` | 구글 로그인 (브라우저 + 127.0.0.1 임시 주소 + PKCE) |
 | `src/store.js` | 설정·토큰 저장 |
+| `src/updater.js` | 자동 업데이트: 릴리스 확인, 내려받기·SHA-256 확인, 앱이 끝난 뒤 바꿔 넣기 |
+| `scripts/release-manifest.js` | 릴리스에 올릴 `latest.json` 만들기 |
 | `scripts/sheet-vat-setup.js` | 시트에 부가세 열·탭을 붙인 한 번짜리 변경(2026-11-17 적용함) |
 | `test/` | 가짜 구글(지어낸 장부 데이터)로 하는 테스트 |

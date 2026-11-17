@@ -22,7 +22,7 @@ async function open(browser, opts = {}) {
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   await page.exposeFunction('__gz', (name, args) => env.service.run(name, args));
   await page.addInitScript(() => {
-    window.gz = { call: (n, a) => window.__gz(n, a), onMenu: (fn) => { window.__menu = fn; } };
+    window.gz = { call: (n, a) => window.__gz(n, a), onMenu: (fn) => { window.__menu = fn; }, onUpdate: (fn) => { window.__update = fn; } };
     window.confirm = () => true;
   });
   await page.goto(PAGE);
@@ -176,7 +176,7 @@ test('화면', async (t) => {
     const { page, close, shot } = await open(browser);
     await page.click('#settings');
     await page.waitForSelector('.sheet .facts');
-    assert.match(await page.locator('.sheet .facts').innerText(), /owner@example\.com[\s\S]*가짜 매출 장부/);
+    assert.match(await page.locator('.sheet .facts').first().innerText(), /owner@example\.com[\s\S]*가짜 매출 장부/);
     await shot('6-settings');
     await close();
   });
@@ -239,6 +239,32 @@ test('화면', async (t) => {
     assert.ok(google.grid.some((r) => r.v[0] === '2028년'));
     await page.click('#settings');
     assert.match(await page.locator('[data-a=nextYear]').innerText(), /2029년/);
+    await close();
+  });
+
+  await t.test('자동 업데이트: 준비되면 위에 알림, 「지금 다시 시작」은 설치 후 앱 종료', async () => {
+    const env = await open(browser);
+    const { page, service, shot, close, errors } = env;
+    let installed = null, quit = 0;
+    const u = { state: { status: 'idle', current: '1.1.0', latest: '', notes: '', progress: 0, error: '' } };
+    u.check = async () => { u.state = { ...u.state, status: 'none', latest: '1.1.0' }; return u.state; };
+    u.install = (o) => { installed = o; u.state = { ...u.state, status: 'installing' }; return true; };
+    service.o.updater = u;
+    service.o.quit = () => { quit++; };
+    await page.click('#settings');
+    await page.click('[data-update=check]');
+    await page.waitForFunction(() => /최신 버전입니다/.test(document.querySelector('#updateBox').textContent));
+    assert.match(await page.locator('#updateBox').innerText(), /지금 버전\s+1\.1\.0/);
+    await page.keyboard.press('Escape');
+    // 앱 본체가 「다 받았음」을 알려 옴
+    u.state = { status: 'ready', current: '1.1.0', latest: '1.2.0', notes: '- 새 기능 하나', progress: 100, error: '' };
+    await page.evaluate((s) => window.__update(s), u.state);
+    assert.match(await page.locator('#updateBar').innerText(), /새 버전 1\.2\.0[\s\S]*지금 다시 시작/);
+    await shot('10-update');
+    await page.click('#updateBar [data-update=install]');
+    await page.waitForFunction(() => document.querySelector('#updateBar').hidden);
+    assert.deepEqual([installed, quit], [{ relaunch: true }, 1]);
+    assert.deepEqual(errors, []);
     await close();
   });
 
