@@ -9,7 +9,7 @@ const { SheetsClient, AuthError, parseSpreadsheetId } = require('./sheets');
 const { Ledger } = require('./ledger');
 const { UserError, SHEET_TITLE } = require('./core');
 
-const LEDGER_CALLS = new Set(['getData', 'addJob', 'updateJob', 'deleteJob']);
+const LEDGER_CALLS = new Set(['getData', 'addJob', 'updateJob', 'deleteJob', 'setVatBasis', 'createNextYear']);
 
 class Service {
   /**
@@ -35,7 +35,9 @@ class Service {
   getLedger() {
     const id = this.store.get().spreadsheetId;
     if (!id) throw new UserError('매출 장부 시트를 먼저 연결해 주세요.');
-    if (!this.ledger || this.ledger.client.id !== id) this.ledger = new Ledger(this.client(id), { today: this.o.today });
+    if (!this.ledger || this.ledger.client.id !== id) {
+      this.ledger = new Ledger(this.client(id), { today: this.o.today, dismissed: () => this.store.get().dismissed || [] });
+    }
     return this.ledger;
   }
 
@@ -81,10 +83,22 @@ class Service {
         const id = parseSpreadsheetId(args[0]);
         if (!id) throw new UserError('시트 주소가 아닙니다. 브라우저 주소창의 https://docs.google.com/spreadsheets/d/… 주소를 그대로 붙여 넣어 주세요.');
         const meta = await this.client(id).meta(SHEET_TITLE); // 열 수 있고 「장부」 탭이 있는지 확인
-        this.store.set({ spreadsheetId: id, spreadsheetTitle: meta.title });
+        this.store.set({ spreadsheetId: id, spreadsheetTitle: meta.title, dismissed: [] });
         this.ledger = null;
         return this.status();
       }
+      case 'dismissCheck': {
+        // 점검 목록에서 「문제없음」으로 숨긴 항목. 행 내용이 바뀌면 다시 보입니다.
+        const key = String(args[0] || '');
+        if (!key) throw new UserError('숨길 항목이 없습니다.');
+        const list = new Set(this.store.get().dismissed || []);
+        list.add(key);
+        this.store.set({ dismissed: [...list].slice(-500) });
+        return this.getLedger().getData();
+      }
+      case 'resetChecks':
+        this.store.set({ dismissed: [] });
+        return this.getLedger().getData();
       case 'reset':
         await this.auth.signOut();
         this.store.set({ client: null, spreadsheetId: '', spreadsheetTitle: '' });

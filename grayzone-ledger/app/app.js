@@ -1,7 +1,7 @@
 (function () {
 'use strict';
 
-var S = { jobs: [], today: '', sheetUrl: '', title: '', setup: false, status: null, year: null, tab: 'home', q: '', lf: 'all', uf: 'all', us: 'old', loaded: false };
+var S = { jobs: [], today: '', sheetUrl: '', title: '', setup: false, status: null, vat: { basis: '부가세 별도', hasSheet: false }, checks: [], hiddenChecks: 0, years: null, year: null, tab: 'home', q: '', lf: 'all', uf: 'all', us: 'old', loaded: false };
 var $ = function (s, el) { return (el || document).querySelector(s); };
 var app = $('#app'), modal = $('#modal'), toastEl = $('#toast');
 
@@ -20,6 +20,14 @@ function daysSince(date) { return isIso(date) ? Math.round((Date.parse(S.today) 
 function expectOf(j) { return { date: j.date, client: j.client, title: j.title, amount: j.amount }; }
 function people(j) { return [j.director && '감독 ' + j.director, j.pd && 'PD ' + j.pd].filter(Boolean).join(' · '); }
 function needsInvoice(j) { return j.invoice !== '완료' && j.unpaid > 0; }
+/** 부가세. 시트 「장부」 T~V열과 같은 규칙(src/core.js vatOf). */
+function vatOf(amount) {
+  if (typeof amount !== 'number') return { supply: 0, vat: 0, total: 0 };
+  if (S.vat.basis === '부가세 포함') { var s = Math.round(amount / 1.1); return { supply: s, vat: amount - s, total: amount }; }
+  var v = Math.floor(amount / 10);
+  return { supply: amount, vat: v, total: amount + v };
+}
+function checksOf(j) { return S.checks.filter(function (c) { return c.row === j.row; }); }
 
 // ---------- 서버 호출 ----------
 var busy = 0;
@@ -40,9 +48,12 @@ function call(name, args) {
 function errText(e) { return String((e && e.message) || e).replace(/^(Error|Exception):\s*/, ''); }
 function setData(d) {
   S.jobs = d.jobs; S.today = d.today; S.sheetUrl = d.sheetUrl; S.title = d.title; S.loaded = true; S.setup = false;
+  S.vat = d.vat || { basis: '부가세 별도', hasSheet: false };
+  S.checks = d.checks || []; S.hiddenChecks = d.hiddenChecks || 0; S.years = d.years || null;
   document.body.classList.remove('setup');
   if (S.year === null) S.year = Number(S.today.slice(0, 4));
   render();
+  if (d.notice) toast(d.notice);
 }
 function load() {
   return call('status').then(function (st) {
@@ -111,12 +122,25 @@ function showSettings() {
       '<dl class="facts"><dt>구글 계정</dt><dd>' + esc(st.email || '-') + '</dd><dt>시트</dt><dd>' + esc(st.spreadsheetTitle || st.spreadsheetId) + '</dd></dl>' +
       '<label class="f">다른 시트 연결 (주소 붙여넣기)<input id="newSheet" placeholder="https://docs.google.com/spreadsheets/d/…" autocomplete="off" spellcheck="false"></label>' +
       '<div class="btns"><button class="btn" data-a="sheet">시트 바꾸기</button><button class="btn" data-a="logout">로그아웃</button></div>' +
+      '<h4>부가세</h4>' + (S.vat.hasSheet
+        ? '<label class="f">견적금액 기준 (시트 「부가세」 탭 B5와 같음)<select id="vatBasis">' + ['부가세 별도', '부가세 포함'].map(function (o) { return '<option' + (o === S.vat.basis ? ' selected' : '') + '>' + o + '</option>'; }).join('') + '</select></label>'
+        : '<p class="note">시트에 「부가세」 탭이 없어 견적금액을 부가세 별도로 보고 계산합니다.</p>') +
+      '<h4>연도 묶음</h4><p class="note">마지막 연도: ' + (S.years ? S.years.last + '년' : '-') + '. 11월이 되면 다음 해 묶음을 자동으로 만들고, 다음 해 날짜로 등록할 때도 만듭니다.</p>' +
+      (S.years ? '<div class="btns"><button class="btn" data-a="nextYear">' + S.years.next + '년 묶음 지금 만들기</button></div>' : '') +
+      (S.hiddenChecks ? '<h4>장부 점검</h4><div class="btns"><button class="btn" data-a="resetChecks">숨긴 점검 ' + S.hiddenChecks + '건 다시 보기</button></div>' : '') +
+      '<h4>처음 상태로</h4>' +
       '<div class="btns"><button class="btn danger" data-a="reset">처음부터 다시 설정</button><button class="btn" data-a="close">닫기</button></div><div class="err"></div>');
+    var basis = $('#vatBasis', el);
+    if (basis) basis.addEventListener('change', function () {
+      submit(el, call('setVatBasis', [basis.value]).then(function (d) { setData(d); toast('견적금액 기준을 「' + basis.value + '」로 바꿨습니다'); }));
+    });
     el.addEventListener('click', function (e) {
       var a = e.target.dataset.a;
       if (a === 'close') closeSheet();
       if (a === 'sheet') submit(el, call('setSheet', [$('#newSheet', el).value]).then(function () { S.loaded = false; return load(); }));
       if (a === 'logout') submit(el, call('signOut').then(function (st2) { showSetup(st2); }));
+      if (a === 'nextYear' && confirm(S.years.next + '년 연도·월 묶음(200행)을 시트의 ' + S.years.last + '년 묶음 아래에 만들까요?')) submit(el, call('createNextYear').then(setData));
+      if (a === 'resetChecks') submit(el, call('resetChecks').then(setData));
       if (a === 'reset' && confirm('클라이언트 파일·로그인·시트 연결을 모두 지우고 처음부터 할까요? 시트의 내용은 바뀌지 않습니다.')) {
         submit(el, call('reset').then(function (st2) { showSetup(st2); }));
       }
@@ -180,6 +204,9 @@ function viewHome() {
     kpi('전체 미수금', won(sum(open, function (j) { return j.unpaid; })), open.length + '건 보기 ›', 'unpaid:all') +
     kpi('계산서 미발행', todo.length, won(sum(todo, function (j) { return j.unpaid; })) + '원 보기 ›', 'unpaid:noinv', '건') +
     '</div>';
+  if (S.checks.length) {
+    html += '<button class="banner" data-go="ledger:check"><b>장부 점검</b><span>확인할 항목 ' + S.checks.length + '건</span><span class="go">보기 ›</span></button>';
+  }
 
   html += '<div class="card"><h2>월별 매출</h2>' +
     '<div class="legend"><span><i style="background:var(--s1)"></i>' + y + '년</span><span><i style="background:var(--s2)"></i>' + (y - 1) + '년</span></div>' +
@@ -193,6 +220,8 @@ function viewHome() {
       '<td>' + (r.unpaid ? won(r.unpaid) : '-') + '</td><td class="dim">' + yoy(r.sales, p, r.count) + '</td></tr>';
   });
   html += '</tbody><tfoot><tr><td>합계</td><td>' + count + '</td><td>' + won(sales) + '</td><td>' + (unpaidY ? won(unpaidY) : '-') + '</td><td>' + yoy(sales, prevSales, count) + '</td></tr></tfoot></table></div>';
+
+  html += vatCard(y);
 
   var by = {};
   S.jobs.forEach(function (j) {
@@ -208,6 +237,28 @@ function viewHome() {
     }).join('') + '</div>';
   }
   return html;
+}
+/** 분기별 부가세 (납품일 기준). 시트 「부가세」 탭과 같은 표입니다. */
+function vatCard(y) {
+  var q = [1, 2, 3, 4].map(function (n) { return { n: n, count: 0, supply: 0, vat: 0, total: 0, noInv: 0, noInvSupply: 0 }; });
+  S.jobs.forEach(function (j) {
+    if (!isIso(j.date) || Number(j.date.slice(0, 4)) !== y) return;
+    var r = q[Math.floor((Number(j.date.slice(5, 7)) - 1) / 3)], v = vatOf(j.amount);
+    r.count++; r.supply += v.supply; r.vat += v.vat; r.total += v.total;
+    if (j.invoice !== '완료') { if (num(j.amount) > 0) r.noInv++; r.noInvSupply += v.supply; }
+  });
+  var row = function (label, sub, rs, cls) {
+    var t = { supply: sum(rs, function (r) { return r.supply; }), vat: sum(rs, function (r) { return r.vat; }), total: sum(rs, function (r) { return r.total; }),
+      noInv: sum(rs, function (r) { return r.noInv; }), noInvSupply: sum(rs, function (r) { return r.noInvSupply; }) };
+    return '<tr' + (cls ? ' class="' + cls + '"' : '') + '><td>' + label + '<div class="cap">' + sub + '</div></td><td>' + won(t.supply) + '</td><td>' + won(t.vat) + '</td><td>' + won(t.total) + '</td>' +
+      '<td class="' + (t.noInv ? 'warn' : 'dim') + '">' + (t.noInv ? t.noInv + '건<div class="cap">' + won(t.noInvSupply) + '</div>' : '-') + '</td></tr>';
+  };
+  return '<div class="card"><h2>' + y + '년 부가세 <span class="h2note">납품일 기준 · 견적금액 ' + esc(S.vat.basis) + '</span></h2>' +
+    '<div class="scroll-x"><table class="num vat"><thead><tr><th>분기</th><th>공급가</th><th>부가세</th><th>합계</th><th>계산서 미발행</th></tr></thead><tbody>' +
+    row('1분기', '1기 예정 · 1~3월', [q[0]]) + row('2분기', '1기 확정 · 4~6월', [q[1]]) + row('1기 합계', '1~6월', [q[0], q[1]], 'sub') +
+    row('3분기', '2기 예정 · 7~9월', [q[2]]) + row('4분기', '2기 확정 · 10~12월', [q[3]]) + row('2기 합계', '7~12월', [q[2], q[3]], 'sub') +
+    '</tbody><tfoot>' + row('연간', '1~12월', q) + '</tfoot></table></div>' +
+    '<p class="note">실제 신고는 세금계산서 작성일 기준입니다. 납품일과 계산서 날짜가 다른 건은 신고 때 확인하세요.</p></div>';
 }
 function kpi(label, value, sub, go, unit) {
   var inner = '<div class="label">' + label + '</div><div class="value num">' + value + '<small>' + (unit || '원') + '</small></div><div class="sub num">' + (sub || '&nbsp;') + '</div>';
@@ -296,10 +347,12 @@ function chip(group, key, label, cur) { return '<button class="chip' + (cur === 
 
 function viewLedger() {
   return '<div class="tools"><input type="search" id="q" placeholder="거래처·내용·감독·PD 검색 (전체 연도)" value="' + esc(S.q) + '"></div>' +
-    '<div class="chips">' + chip('lf', 'all', '전체', S.lf) + chip('lf', 'unpaid', '미수', S.lf) + chip('lf', 'noinv', '계산서 미발행', S.lf) + '</div>' +
+    '<div class="chips">' + chip('lf', 'all', '전체', S.lf) + chip('lf', 'unpaid', '미수', S.lf) + chip('lf', 'noinv', '계산서 미발행', S.lf) +
+    chip('lf', 'check', '점검' + (S.checks.length ? ' ' + S.checks.length : ''), S.lf) + '</div>' +
     '<div id="ledgerList">' + ledgerList() + '</div>';
 }
 function ledgerList() {
+  if (S.lf === 'check') return checkList();
   var q = S.q.trim().toLowerCase();
   var list = S.jobs.filter(function (j) {
     if (q) { if ([j.client, j.title, j.director, j.pd, j.note].join(' ').toLowerCase().indexOf(q) < 0) return false; }
@@ -327,11 +380,32 @@ function ledgerList() {
   return html;
 }
 
+/** 장부 점검: 고칠 만한 행을 이유별로 모아 보여 줍니다(모든 연도). */
+function checkList() {
+  var q = S.q.trim().toLowerCase();
+  var list = S.checks.filter(function (c) {
+    var j = jobAt(c.row);
+    return j && (!q || [j.client, j.title, j.director, j.pd, j.note].join(' ').toLowerCase().indexOf(q) >= 0);
+  });
+  var foot = S.hiddenChecks ? '<p class="note center">「문제없음」으로 숨긴 항목 ' + S.hiddenChecks + '건 · 설정에서 다시 볼 수 있습니다.</p>' : '';
+  if (!list.length) return '<div class="empty">' + (q ? '검색 결과가 없습니다.' : '확인할 항목이 없습니다. 장부가 깔끔합니다.') + '</div>' + foot;
+  var groups = {}, order = [];
+  list.forEach(function (c) { if (!groups[c.type]) { groups[c.type] = []; order.push(c.type); } groups[c.type].push(c); });
+  var html = '<p class="note">시트는 바꾸지 않습니다. 항목을 눌러 고치거나, 맞는 내용이면 「문제없음」을 누르세요.</p>';
+  order.forEach(function (t) {
+    var g = groups[t];
+    html += '<div class="group"><b>' + esc(g[0].label) + '</b><span class="num">' + g.length + '건</span></div>' +
+      '<div class="list">' + g.map(function (c) { return item(jobAt(c.row), { fullDate: true }); }).join('') + '</div>';
+  });
+  return html + foot;
+}
+
 function viewUnpaid() {
   var all = S.jobs.filter(function (j) { return j.unpaid > 0; });
   var list = all.filter(function (j) { return S.uf === 'all' || (S.uf === 'noinv') === (j.invoice !== '완료'); });
   var total = sum(list, function (j) { return j.unpaid; });
-  var html = '<div class="kpis">' + kpi('미수금', won(total), list.length + '건') +
+  var withVat = sum(list, function (j) { return vatOf(j.unpaid).total; });
+  var html = '<div class="kpis">' + kpi('미수금', won(total), list.length + '건' + (S.vat.basis === '부가세 포함' ? ' · 부가세 포함' : ' · 부가세 포함 ' + won(withVat) + '원')) +
     kpi('90일 넘은 미수', won(sum(list, function (j) { return daysSince(j.date) > 90 ? j.unpaid : 0; })), list.filter(function (j) { return daysSince(j.date) > 90; }).length + '건') + '</div>' +
     '<div class="chips">' + chip('uf', 'all', '전체', S.uf) + chip('uf', 'noinv', '계산서 미발행', S.uf) + chip('uf', 'wait', '입금 대기', S.uf) +
     '<span class="gap"></span>' + chip('us', 'old', '오래된 순', S.us) + chip('us', 'big', '금액순', S.us) + chip('us', 'client', '거래처별', S.us) + '</div>';
@@ -390,9 +464,15 @@ function submit(el, promise) {
 
 function showDetail(j) {
   var fact = function (k, v) { return v === '' || v == null ? '' : '<dt>' + k + '</dt><dd>' + v + '</dd>'; };
+  var issues = checksOf(j);
   var el = openSheet('<h3>' + esc(j.title || '(내용 없음)') + '</h3><div class="sub">' + esc(j.client) + '</div><div>' + tags(j) + '</div>' +
+    (issues.length ? '<div class="issues">' + issues.map(function (c) {
+      return '<div class="issue"><span>⚠ ' + esc(c.label) + '</span><button data-a="dismiss" data-key="' + esc(c.key) + '">문제없음</button></div>';
+    }).join('') + '</div>' : '') +
     '<dl class="facts num">' + fact('납품일', esc(j.date)) + fact('감독', esc(j.director)) + fact('PD', esc(j.pd)) +
-    fact('견적금액', j.amount === '' ? '' : won(j.amount) + '원') + fact('미수금', j.unpaid ? won(j.unpaid) + '원' : '') +
+    fact('견적금액', j.amount === '' ? '' : won(j.amount) + '원') +
+    (typeof j.amount === 'number' && j.amount > 0 ? (function (v) { return fact('공급가', won(v.supply) + '원') + fact('부가세', won(v.vat) + '원') + fact('합계', won(v.total) + '원'); })(vatOf(j.amount)) : '') +
+    fact('미수금', j.unpaid ? won(j.unpaid) + '원' : '') +
     fact('견적서', esc(j.quote)) + fact('계산서', esc(j.invoice)) + fact('지급', esc(j.paid)) +
     fact('입금액', j.paidAmount === '' ? '' : won(j.paidAmount) + '원') + fact('입금일', esc(j.paidDate)) +
     fact('인센티브', j.incentive === '' ? '' : (typeof j.incentive === 'number' ? won(j.incentive) + '원' : esc(j.incentive))) +
@@ -407,6 +487,15 @@ function showDetail(j) {
     if (a === 'edit') showForm(j);
     if (a === 'pay') showPay(j);
     if (a === 'invoice') submit(el, patchJob(j, { invoice: '완료' }, '계산서 발행으로 표시했습니다'));
+    if (a === 'dismiss') {
+      var key = e.target.dataset.key;
+      call('dismissCheck', [key]).then(function (d) {
+        setData(d);
+        var row = e.target.closest('.issue');
+        if (row) row.remove();
+        toast('점검 목록에서 숨겼습니다');
+      }).catch(function (err) { if (!failed(err).auth) toast(errText(err)); });
+    }
   });
 }
 
@@ -449,9 +538,9 @@ function showForm(j) {
     if (opts.indexOf(v) < 0) opts = opts.concat([v]);
     return '<label class="f">' + label + '<select id="' + id + '">' + opts.map(function (o) { return '<option value="' + esc(o) + '"' + (o === v ? ' selected' : '') + '>' + (o === '' ? '(비움)' : esc(o)) + '</option>'; }).join('') + '</select></label>';
   };
-  var money = function (id, label, v) { return '<label class="f">' + label + '<input id="' + id + '" class="money" inputmode="numeric" value="' + (v === '' ? '' : typeof v === 'number' ? won(v) : esc(v)) + '"></label>'; };
+  var money = function (id, label, v, hint) { return '<label class="f">' + label + '<input id="' + id + '" class="money" inputmode="numeric" value="' + (v === '' ? '' : typeof v === 'number' ? won(v) : esc(v)) + '">' + (hint ? '<span class="hint num" id="' + hint + '"></span>' : '') + '</label>'; };
   var el = openSheet('<h3>' + (edit ? '작업 수정' : '작업 등록') + '</h3><div class="sub">' + (edit ? '시트 ' + j.row + '행' : '납품일이 속한 달 묶음에 자동으로 들어갑니다.') + '</div>' +
-    '<div class="row"><label class="f">납품일<input type="date" id="fDate" value="' + (isIso(j.date) ? j.date : '') + '"></label>' + money('fAmount', '견적금액 (원)', j.amount) + '</div>' +
+    '<div class="row"><label class="f">납품일<input type="date" id="fDate" value="' + (isIso(j.date) ? j.date : '') + '"></label>' + money('fAmount', '견적금액 (원, ' + esc(S.vat.basis) + ')', j.amount, 'vatHint') + '</div>' +
     '<label class="f">거래처<input id="fClient" list="dlClient" autocomplete="off" value="' + esc(j.client) + '"></label>' + dl('dlClient', 'client') +
     '<label class="f">내용<input id="fTitle" autocomplete="off" value="' + esc(j.title) + '"></label>' +
     '<div class="row"><label class="f">감독<input id="fDirector" list="dlDirector" autocomplete="off" value="' + esc(j.director) + '"></label>' +
@@ -466,7 +555,15 @@ function showForm(j) {
     '<div class="btns">' + (edit ? '<button class="btn danger" data-a="del">삭제</button>' : '') + '<button class="btn" data-a="close">취소</button><button class="btn pri" data-a="save">' + (edit ? '저장' : '등록') + '</button></div><div class="err"></div>');
 
   var v = function (id) { return $('#' + id, el).value.trim(); };
-  $('#fService', el).addEventListener('change', function (e) { if (e.target.checked) $('#fAmount', el).value = '0'; });
+  var showVat = function () {
+    var a = digits(v('fAmount')), h = $('#vatHint', el);
+    if (a === '' || a === 0) { h.textContent = ''; return; }
+    var x = vatOf(a);
+    h.textContent = '공급가 ' + won(x.supply) + ' · 부가세 ' + won(x.vat) + ' · 합계 ' + won(x.total);
+  };
+  $('#fAmount', el).addEventListener('input', showVat);
+  showVat();
+  $('#fService', el).addEventListener('change', function (e) { if (e.target.checked) $('#fAmount', el).value = '0'; showVat(); });
   $('#fClient', el).addEventListener('change', function () { // 같은 거래처의 최근 감독·PD 를 채워 줍니다.
     if (edit || v('fDirector') || v('fPd')) return;
     var last = S.jobs.filter(function (x) { return x.client === v('fClient'); }).sort(function (a, b) { return (b.date > a.date) - (b.date < a.date); })[0];
@@ -527,7 +624,7 @@ app.addEventListener('click', function (e) {
   if (d.lf) { S.lf = d.lf; render(); return; }
   if (d.uf) { S.uf = d.uf; render(); return; }
   if (d.us) { S.us = d.us; render(); return; }
-  if (d.go) { var p = d.go.split(':'); S.tab = p[0]; S.uf = p[1]; render(); window.scrollTo(0, 0); return; }
+  if (d.go) { var p = d.go.split(':'); S.tab = p[0]; if (p[0] === 'ledger') S.lf = p[1]; else S.uf = p[1]; render(); window.scrollTo(0, 0); return; }
   var j = jobAt(d.row);
   if (!j) return;
   if (d.act === 'invoice') patchJob(j, { invoice: '완료' }, '계산서 발행으로 표시했습니다').catch(function (err) { if (!failed(err).auth) toast(errText(err)); });

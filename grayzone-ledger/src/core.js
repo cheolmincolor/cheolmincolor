@@ -68,6 +68,7 @@ function rowKind(r) {
 function parseSheet(values, rowCount = values.length) {
   const jobs = [];
   const blocks = [];
+  const years = [];
   const kinds = [];
   let year = null;
   let block = null;
@@ -79,6 +80,7 @@ function parseSheet(values, rowCount = values.length) {
     kinds[row] = kind;
     if (kind === 'year') {
       year = Number(r[0].trim().slice(0, 4));
+      years.push({ year, header: row });
       block = null;
     } else if (kind === 'month') {
       const t = r[0].trim();
@@ -86,10 +88,14 @@ function parseSheet(values, rowCount = values.length) {
       blocks.push(block);
     } else {
       if (block) block.last = row;
-      if (kind === 'job') jobs.push(parseJob(r, row));
+      if (kind === 'job') {
+        const j = parseJob(r, row);
+        if (block) { j.blockYear = block.year; j.blockMonth = block.month; }
+        jobs.push(j);
+      }
     }
   }
-  return { jobs, blocks, kinds };
+  return { jobs, blocks, years, kinds };
 }
 
 function parseJob(r, row) {
@@ -244,7 +250,148 @@ function dateFormatRequest(sheetId, row, col) {
   };
 }
 
+// ---------- 부가세 ----------
+// 시트 「장부」 T~V열 수식과 같은 규칙입니다.
+//   부가세 별도: 공급가 = 견적금액, 부가세 = 견적금액×10% (원 미만 버림)
+//   부가세 포함: 공급가 = 견적금액÷1.1 (반올림), 부가세 = 견적금액 − 공급가
+const VAT_SHEET_TITLE = '부가세';
+const VAT_BASIS_CELL = 'B5';
+const VAT_INCLUDED = '부가세 포함';
+const VAT_EXCLUDED = '부가세 별도';
+
+function vatOf(amount, basis) {
+  if (typeof amount !== 'number') return { supply: 0, vat: 0, total: 0 };
+  if (basis === VAT_INCLUDED) {
+    const supply = Math.round(amount / 1.1);
+    return { supply, vat: amount - supply, total: amount };
+  }
+  const vat = Math.floor(amount / 10);
+  return { supply: amount, vat, total: amount + vat };
+}
+
+/** 분기별 공급가·부가세 (납품일 기준). 시트 「부가세」 탭과 같은 표입니다. */
+function vatQuarters(jobs, year, basis) {
+  const q = [1, 2, 3, 4].map((n) => ({ quarter: n, count: 0, supply: 0, vat: 0, total: 0, noInvoice: 0, noInvoiceSupply: 0 }));
+  for (const j of jobs) {
+    if (!isIsoDate(j.date) || Number(j.date.slice(0, 4)) !== year) continue;
+    const r = q[Math.floor((Number(j.date.slice(5, 7)) - 1) / 3)];
+    const v = vatOf(j.amount, basis);
+    r.count++; r.supply += v.supply; r.vat += v.vat; r.total += v.total;
+    if (j.invoice !== '완료') {
+      if (typeof j.amount === 'number' && j.amount > 0) r.noInvoice++;
+      r.noInvoiceSupply += v.supply;
+    }
+  }
+  return q;
+}
+
+// ---------- 장부 점검 ----------
+// 고칠 만한 행을 찾아 알려 줍니다. 시트는 바꾸지 않습니다.
+const CHECKS = {
+  noAmount: '견적금액이 비어 있음',
+  zeroNotService: '견적금액이 0인데 「서비스」가 아님',
+  overpaid: '입금액이 견적금액보다 많음',
+  paidDateOnly: '입금일은 있는데 지급 완료도 입금액도 없음',
+  notDate: '납품일이 날짜 형식이 아님',
+  wrongBlock: '납품일과 들어 있는 달 묶음이 다름',
+  noClient: '거래처가 비어 있음',
+  noTitle: '내용이 비어 있음',
+  farFuture: '납품일이 오늘보다 60일 넘게 뒤',
+  duplicate: '같은 날·거래처·내용·금액·비고가 똑같은 행이 또 있음',
+};
+
+function checkKey(type, j) { return type + '|' + fingerprint(j); }
+
+/** 점검 결과: [{ type, label, row, key }] (행 순서) */
+function checkLedger(jobs, today) {
+  const out = [];
+  const add = (type, j) => out.push({ type, label: CHECKS[type], row: j.row, key: checkKey(type, j) });
+  const seen = new Map();
+  const limit = isIsoDate(today) ? isoToSerial(today) + 60 : Infinity;
+  for (const j of jobs) {
+    const dated = isIsoDate(j.date);
+    const amount = typeof j.amount === 'number' ? j.amount : null;
+    if (blank(j.amount) && j.type !== '서비스') add('noAmount', j);
+    if (amount === 0 && j.type !== '서비스') add('zeroNotService', j);
+    if (typeof j.paidAmount === 'number' && amount !== null && j.paidAmount > amount) add('overpaid', j);
+    if (j.paidDate && j.paid !== '완료' && blank(j.paidAmount)) add('paidDateOnly', j);
+    if (!dated && !blank(j.date)) add('notDate', j);
+    if (dated && j.blockMonth && j.attrYear === '' &&
+      (Number(j.date.slice(0, 4)) !== j.blockYear || Number(j.date.slice(5, 7)) !== j.blockMonth)) add('wrongBlock', j);
+    if (blank(j.client)) add('noClient', j);
+    if (blank(j.title)) add('noTitle', j);
+    if (dated && isoToSerial(j.date) > limit) add('farFuture', j);
+    if (dated && j.client && j.title) {
+      // 계약금·잔금처럼 비고나 금액이 다르면 따로 본 건입니다.
+      const k = [j.date, j.client.trim(), j.title.trim(), j.amount, String(j.note).trim()].join('|');
+      if (seen.has(k)) { add('duplicate', j); } else seen.set(k, j);
+    }
+  }
+  return out.sort((a, b) => a.row - b.row);
+}
+
+// ---------- 다음 해 묶음 ----------
+const MONTH_ROWS = (m) => (m === 12 ? 22 : 15); // 기존 장부와 같은 빈 행 수
+
+/**
+ * 새 연도 묶음을 만드는 요청. 마지막 연도 묶음(templates)의 서식·드롭다운·머리줄 수식을 그대로 본뜹니다.
+ * @param {object} o
+ * @param {number} o.sheetId
+ * @param {number} o.year         만들 연도
+ * @param {number} o.fromYear     본뜰 연도(마지막 연도)
+ * @param {number} o.start        새 연도 머리줄이 들어갈 행(1부터). 그 아래 행들은 비어 있어야 합니다.
+ * @param {number} o.rowCount     시트의 행 수
+ * @param {number} o.columnCount  시트의 열 수
+ * @param {{ yearRow: number, monthRow: number, jobRow: number, yearCells: any[], monthCells: any[] }} o.templates
+ *        yearRow·monthRow·jobRow: 본뜰 행 번호, yearCells·monthCells: 그 머리줄의 A~P 값/수식
+ * @returns {{ requests: object[], rows: number }}
+ */
+function yearBlockRequests(o) {
+  const { sheetId, year, fromYear, start, rowCount, columnCount, templates: t } = o;
+  const layout = [];
+  let row = start + 1;
+  for (let m = 1; m <= 12; m++) { layout.push({ m, header: row, n: MONTH_ROWS(m) }); row += 1 + MONTH_ROWS(m); }
+  const last = row - 1;
+  const reqs = [];
+  if (last > rowCount) reqs.push({ appendDimension: { sheetId, dimension: 'ROWS', length: last - rowCount } });
+
+  const range = (r1, r2) => ({ sheetId, startRowIndex: r1 - 1, endRowIndex: r2, startColumnIndex: 0, endColumnIndex: columnCount });
+  const paste = (from, r1, r2) => ({ copyPaste: { source: range(from, from), destination: range(r1, r2), pasteType: 'PASTE_FORMAT' } });
+  // 작업 행 서식(날짜 서식·드롭다운)은 작업 행에만. 머리줄에 붙이면 「1월」 같은 글자에 날짜 검사 경고가 뜹니다.
+  for (const b of layout) {
+    reqs.push(paste(t.monthRow, b.header, b.header));
+    reqs.push(paste(t.jobRow, b.header + 1, b.header + b.n));
+  }
+  reqs.push(paste(t.yearRow, start, start));
+  // 머리줄의 드롭다운·날짜 검사는 지웁니다(기존 빈 행에 남아 있으면 「1월」 같은 글자에 경고 표시가 뜹니다).
+  for (const r of [start, ...layout.map((x) => x.header)]) reqs.push({ setDataValidation: { range: range(r, r) } });
+
+  const yearRe = new RegExp(`(?<![0-9])${fromYear}(?![0-9])`, 'g');
+  const fill = (cells, m) => cells.slice(0, INPUT_COLS).map((v) => {
+    if (blank(v)) return {};
+    let s = String(v).replace(yearRe, String(year));
+    if (m) s = s.split('"1월"').join(`"${m}월"`).replace(/^1월$/, `${m}월`);
+    if (s.startsWith('=')) return { userEnteredValue: { formulaValue: s } };
+    return typeof v === 'number' && s === String(v) ? { userEnteredValue: { numberValue: v } } : { userEnteredValue: { stringValue: s } };
+  });
+  const rows = [{ values: fill(t.yearCells, 0) }];
+  for (const b of layout) {
+    rows.push({ values: fill(t.monthCells, b.m) });
+    for (let i = 0; i < b.n; i++) rows.push({ values: [] });
+  }
+  reqs.push({ updateCells: { start: { sheetId, rowIndex: start - 1, columnIndex: 0 }, rows, fields: 'userEnteredValue' } });
+
+  // 묶음: 연도(첫 월 머리줄~끝) 먼저, 그 안에 달마다 작업 행
+  reqs.push({ addDimensionGroup: { range: { sheetId, dimension: 'ROWS', startIndex: start, endIndex: last } } });
+  for (const b of layout) {
+    reqs.push({ addDimensionGroup: { range: { sheetId, dimension: 'ROWS', startIndex: b.header, endIndex: b.header + b.n } } });
+  }
+  return { requests: reqs, rows: last - start + 1 };
+}
+
 module.exports = {
+  VAT_SHEET_TITLE, VAT_BASIS_CELL, VAT_INCLUDED, VAT_EXCLUDED, vatOf, vatQuarters,
+  CHECKS, checkLedger, yearBlockRequests, MONTH_ROWS,
   SHEET_TITLE, INPUT_COLS, FIELDS, UserError,
   serialToIso, isoToSerial, isIsoDate, localToday,
   rowKind, parseSheet, fingerprint, findJob, cleanJob, findBlock, planSlot,

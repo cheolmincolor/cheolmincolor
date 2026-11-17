@@ -14,6 +14,7 @@ const PAGE = 'file://' + path.join(__dirname, '..', 'app', 'index.html');
 
 async function open(browser, opts = {}) {
   const env = makeService({ ready: opts.ready !== false });
+  if (opts.before) opts.before(env.google);
   const errors = [];
   const ctx = await browser.newContext({ viewport: { width: 980, height: 860 }, colorScheme: 'light', deviceScaleFactor: SHOTS ? 2 : 1, ...(opts.ctx || {}) });
   const page = await ctx.newPage();
@@ -65,7 +66,7 @@ test('화면', async (t) => {
     assert.equal(await page.locator('svg.chart path').count(), 23);
     await page.locator('svg.chart .hit[data-m="8"]').click();
     assert.match(await page.locator('#readout').innerText(), /8월 · 2026년 58,000,000원 \(4건\) · 2025년 8,000,000원 · \+625\.0%/);
-    assert.match(await page.locator('tfoot').innerText(), /합계\s+32\s+144,700,000/);
+    assert.match(await page.locator('tfoot').first().innerText(), /합계\s+32\s+144,700,000/);
     await shot('1-summary');
     await page.selectOption('#year', '2025');
     assert.equal(await page.locator('.kpi .value').first().innerText(), '137,000,000원');
@@ -177,6 +178,67 @@ test('화면', async (t) => {
     await page.waitForSelector('.sheet .facts');
     assert.match(await page.locator('.sheet .facts').innerText(), /owner@example\.com[\s\S]*가짜 매출 장부/);
     await shot('6-settings');
+    await close();
+  });
+
+  await t.test('부가세: 요약의 분기 표와 등록 창의 안내', async () => {
+    const { page, errors, shot, close } = await open(browser);
+    const rows = await page.locator('table.vat tbody tr').allInnerTexts();
+    assert.match(rows[0], /1분기[\s\S]*23,000,000[\s\S]*2,300,000[\s\S]*25,300,000/);
+    assert.match(rows[2], /1기 합계[\s\S]*46,000,000[\s\S]*4,600,000[\s\S]*50,600,000/);
+    assert.match(rows[4], /4분기[\s\S]*19,000,000[\s\S]*1,900,000[\s\S]*20,900,000[\s\S]*6건[\s\S]*19,000,000/);
+    assert.match(await page.locator('table.vat tfoot').innerText(), /연간[\s\S]*144,700,000[\s\S]*14,470,000[\s\S]*159,170,000/);
+    await page.locator('table.vat').scrollIntoViewIfNeeded();
+    await shot('8-vat');
+    await page.click('#add');
+    await page.locator('#fAmount').pressSequentially('3000000');
+    assert.equal(await page.locator('#vatHint').innerText(), '공급가 3,000,000 · 부가세 300,000 · 합계 3,300,000');
+    await page.keyboard.press('Escape');
+    // 미수금 화면에 부가세 포함 금액
+    await page.click('nav [data-tab=unpaid]');
+    assert.match(await page.locator('.kpi .sub').first().innerText(), /11건 · 부가세 포함 87,120,000원/);
+    assert.deepEqual(errors, []);
+    await close();
+  });
+
+  await t.test('설정에서 부가세 기준을 바꾸면 시트와 화면이 함께 바뀜', async () => {
+    const { page, close, google } = await open(browser);
+    await page.click('#settings');
+    await page.selectOption('#vatBasis', '부가세 포함');
+    await page.waitForSelector('.toast');
+    assert.equal(google.vatBasis, '부가세 포함');
+    assert.match(await page.locator('table.vat tfoot').innerText(), /연간[\s\S]*131,545,456[\s\S]*13,154,544[\s\S]*144,700,000/);
+    await close();
+  });
+
+  await t.test('장부 점검: 요약 알림 → 목록 → 자세히 → 문제없음', async () => {
+    const { page, errors, shot, close, google } = await open(browser, { before: (g) => { g.grid[g.rowOf('26년 6월 작업 2') - 1].v[5] = ''; } });
+    await page.waitForSelector('.banner');
+    assert.match(await page.locator('.banner').innerText(), /장부 점검[\s\S]*1건/);
+    await page.click('.banner');
+    assert.equal(await page.locator('.chip.on').innerText(), '점검 1');
+    assert.match(await page.locator('#ledgerList .group').innerText(), /견적금액이 비어 있음/);
+    await shot('9-checks');
+    await page.locator('#ledgerList .item').click();
+    assert.match(await page.locator('.issue').innerText(), /견적금액이 비어 있음/);
+    await page.click('.issue button');
+    await page.waitForFunction(() => !document.querySelector('.issue'));
+    await page.keyboard.press('Escape');
+    assert.match(await page.locator('#ledgerList').innerText(), /확인할 항목이 없습니다[\s\S]*숨긴 항목 1건/);
+    assert.equal(await page.isVisible('.banner'), false);
+    assert.equal(google.grid[google.rowOf('26년 6월 작업 2') - 1].v[5], ''); // 시트는 그대로
+    assert.deepEqual(errors, []);
+    await close();
+  });
+
+  await t.test('설정의 「다음 해 묶음 지금 만들기」', async () => {
+    const { page, close, google } = await open(browser);
+    await page.click('#settings');
+    await page.click('[data-a=nextYear]');
+    await page.waitForFunction(() => /2028년 묶음을 만들었습니다/.test((document.querySelector('.toast span') || {}).textContent || ''));
+    assert.ok(google.grid.some((r) => r.v[0] === '2028년'));
+    await page.click('#settings');
+    assert.match(await page.locator('[data-a=nextYear]').innerText(), /2029년/);
     await close();
   });
 

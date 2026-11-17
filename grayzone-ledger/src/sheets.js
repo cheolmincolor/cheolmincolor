@@ -59,19 +59,31 @@ class SheetsClient {
     throw new UserError(`구글 시트 오류 (${res.status}): ${msg}`);
   }
 
-  /** 스프레드시트 제목과 「장부」 시트의 ID·행 수. */
-  async meta(title) {
-    const d = await this.request('GET', '?fields=' + encodeURIComponent('properties.title,sheets.properties(sheetId,title,gridProperties.rowCount)'));
-    const sheet = (d.sheets || []).map((s) => s.properties).find((p) => p.title === title);
+  /** 스프레드시트 제목, 「장부」 시트의 ID·크기·행 묶음, 「부가세」 탭 ID(없으면 null). */
+  async meta(title, vatTitle = '부가세') {
+    const fields = 'properties.title,sheets(properties(sheetId,title,gridProperties(rowCount,columnCount)),rowGroups)';
+    const d = await this.request('GET', '?fields=' + encodeURIComponent(fields));
+    const sheets = d.sheets || [];
+    const sheet = sheets.find((s) => s.properties.title === title);
     if (!sheet) throw new UserError(`「${d.properties.title}」에 「${title}」 시트가 없습니다. 매출 장부 시트 주소인지 확인해 주세요.`);
-    return { title: d.properties.title, sheetId: sheet.sheetId, rowCount: sheet.gridProperties.rowCount };
+    const vat = sheets.find((s) => s.properties.title === vatTitle);
+    const p = sheet.properties;
+    return {
+      title: d.properties.title,
+      sheetId: p.sheetId,
+      rowCount: p.gridProperties.rowCount,
+      columnCount: p.gridProperties.columnCount,
+      rowGroups: (sheet.rowGroups || []).map((g) => ({ start: g.range.startIndex || 0, end: g.range.endIndex, depth: g.depth })),
+      vatSheetId: vat ? vat.properties.sheetId : null,
+    };
   }
 
-  /** 서식 없이 값만 읽습니다. 날짜는 일수(serial)로 옵니다. */
-  async values(range) {
-    const q = '?valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER&majorDimension=ROWS';
-    const d = await this.request('GET', '/values/' + encodeURIComponent(range) + q);
-    return d.values || [];
+  /** 여러 범위를 한 번에 읽습니다. render: UNFORMATTED_VALUE(값) 또는 FORMULA(수식). 날짜는 일수(serial). */
+  async valuesBatch(ranges, render = 'UNFORMATTED_VALUE') {
+    const q = new URLSearchParams({ valueRenderOption: render, dateTimeRenderOption: 'SERIAL_NUMBER', majorDimension: 'ROWS' });
+    for (const r of ranges) q.append('ranges', r);
+    const d = await this.request('GET', '/values:batchGet?' + q.toString());
+    return (d.valueRanges || []).map((v) => v.values || []);
   }
 
   /** 여러 변경을 한 번에 적용합니다. 하나라도 실패하면 아무것도 바뀌지 않습니다. */

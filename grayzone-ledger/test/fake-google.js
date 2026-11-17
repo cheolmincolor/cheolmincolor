@@ -14,6 +14,7 @@ const SHEETS = 'https://sheets.googleapis.com/v4/spreadsheets/';
 const COLS = 19;
 const ID = 'FAKE_SPREADSHEET_ID_0123456789';
 const SHEET_ID = 11;
+const VAT_ID = 15;
 
 const clone = (x) => JSON.parse(JSON.stringify(x));
 const b64url = (buf) => buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -21,7 +22,8 @@ const b64url = (buf) => buf.toString('base64').replace(/\+/g, '-').replace(/\//g
 class FakeGoogle {
   constructor({ rows, groups, extraRows = 40 }) {
     this.grid = rows.map((r) => ({ v: pad(r.v), f: r.f || {} }));
-    for (let i = 0; i < extraRows; i++) this.grid.push({ v: pad([]), f: {} });
+    // 실제 장부처럼 마지막 묶음 아래의 빈 행에도 작업 행 서식·드롭다운이 미리 깔려 있습니다.
+    for (let i = 0; i < extraRows; i++) this.grid.push({ v: pad([]), f: { 0: 'yyyy-mm-dd', 11: 'yyyy-mm-dd', validation: 'job' } });
     this.groups = groups;
     this.calls = [];
     this.tokenSeq = 0;
@@ -29,6 +31,8 @@ class FakeGoogle {
     this.refreshTokens = new Set();
     this.codes = new Map();
     this.failNext = null;
+    this.vatBasis = '부가세 별도'; // 「부가세」 탭 B5. null 이면 탭이 없는 시트
+    this.sheetId = SHEET_ID;
     this.grantScope = 'openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/spreadsheets';
     this.fetch = this.fetch.bind(this);
   }
@@ -37,6 +41,7 @@ class FakeGoogle {
   rowOf(title) { return this.grid.findIndex((r) => r.v[4] === title) + 1; }
   cells(row) { return this.grid[row - 1].v; }
   depth(row) { return this.groups.filter((g) => g.start <= row - 1 && row - 1 < g.end).length; }
+  value(row, col) { const v = this.grid[row - 1].v[col]; return v && v.formula ? v.formula : v; }
   expireTokens() { this.valid.clear(); }
 
   // ----- fetch -----
@@ -59,10 +64,33 @@ class FakeGoogle {
       return res(200, {
         properties: { title: '가짜 매출 장부' },
         sheets: [
-          { properties: { sheetId: 10, title: '요약', gridProperties: { rowCount: 200 } } },
-          { properties: { sheetId: SHEET_ID, title: this.sheetTitle || '장부', gridProperties: { rowCount: this.grid.length } } },
+          { properties: { sheetId: 10, title: '요약', gridProperties: { rowCount: 200, columnCount: 16 } } },
+          {
+            properties: { sheetId: SHEET_ID, title: this.sheetTitle || '장부', gridProperties: { rowCount: this.grid.length, columnCount: COLS } },
+            rowGroups: this.groups.map((g) => ({ range: { sheetId: SHEET_ID, dimension: 'ROWS', startIndex: g.start, endIndex: g.end }, depth: g.depth })),
+          },
+          ...(this.vatBasis === null ? [] : [{ properties: { sheetId: VAT_ID, title: '부가세', gridProperties: { rowCount: 30, columnCount: 9 } } }]),
         ],
       });
+    }
+    if (method === 'GET' && idPart.endsWith('/values:batchGet')) {
+      const p = new URLSearchParams(query);
+      const formula = p.get('valueRenderOption') === 'FORMULA';
+      if (!formula && p.get('valueRenderOption') !== 'UNFORMATTED_VALUE') return res(400, { error: { message: 'expected unformatted values' } });
+      const valueRanges = [];
+      for (const range of p.getAll('ranges')) {
+        if (range === "'부가세'!B5") {
+          if (this.vatBasis === null) return res(400, { error: { message: 'Unable to parse range: ' + range } });
+          valueRanges.push({ range, values: [[this.vatBasis]] });
+          continue;
+        }
+        const m = range.match(/^'장부'!A(\d+):P(\d+)$/);
+        if (!m) return res(400, { error: { message: 'unexpected range ' + range } });
+        const values = this.grid.slice(Number(m[1]) - 1, Number(m[2])).map((r) => trimRow(r.v.slice(0, 16).map((v) => (v && v.formula ? (formula ? v.formula : '(수식 결과)') : v))));
+        while (values.length && !values[values.length - 1].length) values.pop();
+        valueRanges.push({ range, values });
+      }
+      return res(200, { valueRanges });
     }
     if (method === 'GET' && idPart.includes('/values/')) {
       const range = decodeURIComponent(idPart.split('/values/')[1]);
@@ -102,6 +130,46 @@ class FakeGoogle {
       }
       return;
     }
+    if (kind === 'appendDimension') {
+      if (q.sheetId !== SHEET_ID || q.dimension !== 'ROWS') throw new Error('bad append');
+      for (let i = 0; i < q.length; i++) this.grid.push({ v: pad([]), f: {} });
+      return;
+    }
+    if (kind === 'copyPaste') {
+      if (q.pasteType !== 'PASTE_FORMAT') throw new Error('unexpected paste ' + q.pasteType);
+      const { source: a, destination: b } = q;
+      if (a.endRowIndex - a.startRowIndex !== 1 || a.sheetId !== SHEET_ID || b.sheetId !== SHEET_ID) throw new Error('bad copyPaste');
+      if (b.endRowIndex > this.grid.length) throw new Error('copyPaste beyond the grid');
+      // 실제 Sheets: 서식은 덮어쓰지만, 원본에 드롭다운(데이터 확인)이 없으면 대상의 드롭다운은 그대로 남습니다.
+      const src = this.grid[a.startRowIndex].f;
+      for (let r = b.startRowIndex; r < b.endRowIndex; r++) {
+        const keep = this.grid[r].f.validation;
+        this.grid[r].f = clone(src);
+        if (!('validation' in src) && keep) this.grid[r].f.validation = keep;
+      }
+      return;
+    }
+    if (kind === 'setDataValidation') {
+      const g = q.range;
+      if (g.sheetId !== SHEET_ID || q.rule) throw new Error('unexpected validation');
+      for (let r = g.startRowIndex; r < g.endRowIndex; r++) delete this.grid[r].f.validation;
+      return;
+    }
+    if (kind === 'addDimensionGroup') {
+      const { sheetId, dimension, startIndex: s, endIndex: e } = q.range;
+      if (sheetId !== SHEET_ID || dimension !== 'ROWS' || e > this.grid.length) throw new Error('bad group');
+      // 실제 Sheets 규칙: 새 묶음은 자기를 감싸는 묶음보다 한 단계 깊고, 자기 안에 든 묶음은 한 단계 깊어집니다.
+      for (const g of this.groups) if (s <= g.start && g.end <= e && !(g.start === s && g.end === e)) g.depth++;
+      const outer = this.groups.filter((g) => g.start <= s && e <= g.end).length;
+      this.groups.push({ start: s, end: e, depth: outer + 1 });
+      return;
+    }
+    if (kind === 'updateCells' && q.start && q.start.sheetId === VAT_ID) {
+      if (this.vatBasis === null) throw new Error('no such sheet');
+      if (q.start.rowIndex !== 4 || q.start.columnIndex !== 1) throw new Error('unexpected 부가세 cell');
+      this.vatBasis = q.rows[0].values[0].userEnteredValue.stringValue;
+      return;
+    }
     if (kind === 'updateCells') {
       if (q.fields !== 'userEnteredValue') throw new Error('unexpected fields ' + q.fields);
       if (q.range) {
@@ -117,8 +185,7 @@ class FakeGoogle {
         checkCols(columnIndex, columnIndex + row.values.length);
         row.values.forEach((cell, k) => {
           const u = cell.userEnteredValue;
-          if (u && 'formulaValue' in u) throw new Error('formula written');
-          this.grid[rowIndex + i].v[columnIndex + k] = !u ? '' : 'numberValue' in u ? u.numberValue : u.stringValue;
+          this.grid[rowIndex + i].v[columnIndex + k] = !u ? '' : 'formulaValue' in u ? { formula: u.formulaValue } : 'numberValue' in u ? u.numberValue : u.stringValue;
         });
       });
       return;
@@ -205,9 +272,20 @@ function fixture() {
   const done = { invoice: '완료', paid: '완료' };
   const clients = ['오로라 필름', '모노 스튜디오', '하늘 프로덕션', '블루도트'];
   let yearStart = null;
-  const openYear = (label) => { closeYear(); push([label, '', '(합계 수식)']); yearStart = rows.length; };
+  let Y = null;
+  const openYear = (label) => {
+    closeYear();
+    Y = Number(label.slice(0, 4));
+    push([label, '', { formula: `=IFERROR(VLOOKUP(${Y},'요약'!$H$10:$L$40,2,FALSE)&"건","")` }], { kind: 'yearHeader' });
+    yearStart = rows.length;
+  };
   const closeYear = () => { if (yearStart !== null) groups.push({ start: yearStart, end: rows.length, depth: 1 }); yearStart = null; };
-  const month = (label, fill) => { push([label, '', '(합계 수식)']); const s = rows.length; fill(); if (rows.length > s) groups.push({ start: s, end: rows.length, depth: 2 }); };
+  const month = (label, fill) => {
+    push([label, '', { formula: `=LET(n,COUNTIFS($Q$2:$Q,${Y},$R$2:$R,"${label}"),IF(n=0,"",n&"건"))` }], { kind: 'monthHeader' });
+    const s = rows.length;
+    fill();
+    if (rows.length > s) groups.push({ start: s, end: rows.length, depth: 2 });
+  };
 
   push(['납품일', '거래처', '감독', 'PD', '내용', '견적금액', '구분', '견적서', '계산서', '지급', '입금액', '입금일', '인센티브', '비고', '원본 추가정보', '귀속연도(필요시)']);
 
@@ -253,4 +331,4 @@ function memoryStore(init = {}) {
   };
 }
 
-module.exports = { FakeGoogle, fixture, memoryStore, CLIENT_JSON, ID, SHEET_ID };
+module.exports = { FakeGoogle, fixture, memoryStore, CLIENT_JSON, ID, SHEET_ID, VAT_ID };
