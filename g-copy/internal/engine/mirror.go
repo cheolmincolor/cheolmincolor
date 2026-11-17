@@ -77,7 +77,7 @@ func (j *Job) walkExtras(dr *destRun, s int, base string) error {
 		rel, _ := filepath.Rel(base, p)
 		if err != nil {
 			// Not fatal: what cannot be read is simply not moved.
-			j.addError(j.showSrc(s, rel), dr.shown, "동기화하려고 대상 폴더를 읽을 수 없습니다: "+osMsg(err))
+			j.addError(j.showSrc(s, rel), dr.shown, "Sync: cannot read the destination folder: "+osMsg(err))
 			if d != nil && d.IsDir() {
 				return filepath.SkipDir
 			}
@@ -121,13 +121,13 @@ func (j *Job) walkExtras(dr *destRun, s int, base string) error {
 // destination would go: that is more often a mistake than an edit.
 func (j *Job) unattendedVerdict() (ok bool, why string) {
 	if len(j.files) == 0 {
-		return false, "원본이 비어 있어서"
+		return false, "the source is empty"
 	}
 	for _, dr := range j.dests {
 		n := int64(len(dr.extras))
 		if n > 0 && n*unattendedMaxShare > dr.destFiles {
 			pct := n * 100 / max(dr.destFiles, 1)
-			return false, fmt.Sprintf("%s에서 정리할 파일이 많아서 (%d개, 대상 파일의 %d%%)", dr.shown, n, pct)
+			return false, fmt.Sprintf("too many files would be moved from %s (%d files, %d%% of its files)", dr.shown, n, pct)
 		}
 	}
 	return true, ""
@@ -152,7 +152,7 @@ func (j *Job) removeExtras() {
 			continue
 		}
 		if dr.dead.Load() {
-			j.warnOnce("mirror-dead:"+dr.path, dr.shown+": 이 대상은 백업 중에 중단되어 동기화 정리를 하지 않았습니다.")
+			j.warnOnce("mirror-dead:"+dr.path, dr.shown+": this destination stopped during the backup, so sync clean-up was skipped.")
 			continue
 		}
 		into := filepath.Join(dr.path, RemovedDirName, j.stamp)
@@ -167,14 +167,14 @@ func (j *Job) removeExtras() {
 			}
 			to := filepath.Join(into, rel)
 			if err := os.MkdirAll(filepath.Dir(to), 0o755); err != nil {
-				j.addError(j.showSrc(e.src, e.rel), dr.shown, "동기화: 보관 폴더를 만들 수 없습니다: "+osMsg(err))
+				j.addError(j.showSrc(e.src, e.rel), dr.shown, "Sync: cannot create the folder for removed files: "+osMsg(err))
 				continue
 			}
 			if err := os.Rename(from, to); err != nil {
 				if errors.Is(err, fs.ErrNotExist) {
 					continue // already gone
 				}
-				j.addError(j.showSrc(e.src, e.rel), dr.shown, "동기화: 파일을 옮길 수 없습니다 (지우지 않고 그대로 두었습니다): "+osMsg(err))
+				j.addError(j.showSrc(e.src, e.rel), dr.shown, "Sync: cannot move the file (left where it was, nothing deleted): "+osMsg(err))
 				continue
 			}
 			dr.removed.Add(1)
@@ -219,7 +219,7 @@ func (j *Job) Confirm(remove bool) error {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	if j.status != StatusConfirming || j.mirror != MirrorPending {
-		return errors.New("지금은 확인할 내용이 없습니다")
+		return errors.New("There is nothing to confirm right now")
 	}
 	if remove {
 		j.mirror = MirrorApproved

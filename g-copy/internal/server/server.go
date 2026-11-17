@@ -109,7 +109,7 @@ func (s *Server) Handler() http.Handler {
 		if r.URL.Path == "/" {
 			if t := r.URL.Query().Get("token"); t != "" {
 				if !s.validToken(t) {
-					http.Error(w, "이 주소는 더 이상 유효하지 않습니다. G-Copy를 실행한 창에 표시된 주소로 접속하세요.", http.StatusForbidden)
+					http.Error(w, "This address is no longer valid. Open the address shown where G-Copy was started.", http.StatusForbidden)
 					return
 				}
 				http.SetCookie(w, &http.Cookie{Name: cookieName, Value: t, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode})
@@ -120,7 +120,7 @@ func (s *Server) Handler() http.Handler {
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			c, err := r.Cookie(cookieName)
 			if err != nil || !s.validToken(c.Value) {
-				writeErr(w, http.StatusUnauthorized, "세션이 만료되었습니다. G-Copy를 실행한 창에 표시된 주소로 다시 접속하세요.")
+				writeErr(w, http.StatusUnauthorized, "Session expired. Open the address shown where G-Copy was started.")
 				return
 			}
 			if r.Method != http.MethodGet {
@@ -169,7 +169,7 @@ func writeErr(w http.ResponseWriter, code int, msg string) {
 func readJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
-		writeErr(w, http.StatusBadRequest, "요청을 읽을 수 없습니다")
+		writeErr(w, http.StatusBadRequest, "Cannot read the request")
 		return false
 	}
 	return true
@@ -198,7 +198,7 @@ func (s *Server) volumes() []Volume {
 		}
 	}
 	if home, err := os.UserHomeDir(); err == nil {
-		vols = append(vols, Volume{Name: "홈 폴더", Path: home, Kind: "home"})
+		vols = append(vols, Volume{Name: "Home", Path: home, Kind: "home"})
 	}
 	seen := map[string]bool{}
 	out := vols[:0]
@@ -234,18 +234,18 @@ type dirEntry struct {
 func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Query().Get("path")
 	if p == "" || !filepath.IsAbs(p) {
-		writeErr(w, http.StatusBadRequest, "전체 경로를 입력하세요 (예: /Volumes/NAS/Project)")
+		writeErr(w, http.StatusBadRequest, "Enter a full path (for example /Volumes/NAS/Project)")
 		return
 	}
 	p = filepath.Clean(p)
 	fi, err := os.Stat(p)
 	if err != nil || !fi.IsDir() {
-		writeErr(w, http.StatusNotFound, "폴더를 찾을 수 없습니다: "+p)
+		writeErr(w, http.StatusNotFound, "Folder not found: "+p)
 		return
 	}
 	entries, err := os.ReadDir(p)
 	if err != nil {
-		writeErr(w, http.StatusForbidden, "폴더를 열 수 없습니다 (권한 없음): "+p)
+		writeErr(w, http.StatusForbidden, "Cannot open the folder (permission denied): "+p)
 		return
 	}
 	dirs := []dirEntry{}
@@ -292,15 +292,15 @@ func (s *Server) handleMkdir(w http.ResponseWriter, r *http.Request) {
 	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" || name == "." || name == ".." || strings.ContainsAny(name, `/\:`) || !filepath.IsAbs(req.Parent) {
-		writeErr(w, http.StatusBadRequest, "폴더 이름에 / \\ : 는 쓸 수 없습니다")
+		writeErr(w, http.StatusBadRequest, "A folder name cannot contain / \\ or :")
 		return
 	}
 	p := filepath.Join(filepath.Clean(req.Parent), name)
 	if err := os.Mkdir(p, 0o755); err != nil {
 		if errors.Is(err, fs.ErrExist) {
-			writeErr(w, http.StatusConflict, "같은 이름의 폴더가 이미 있습니다")
+			writeErr(w, http.StatusConflict, "A folder with this name already exists")
 		} else {
-			writeErr(w, http.StatusForbidden, "폴더를 만들 수 없습니다: "+err.Error())
+			writeErr(w, http.StatusForbidden, "Cannot create the folder: "+err.Error())
 		}
 		return
 	}
@@ -328,14 +328,15 @@ func (s *Server) handleJobStart(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.job != nil && !s.job.Snapshot().Status.Finished() {
-		writeErr(w, http.StatusConflict, "이미 백업이 진행 중입니다")
+		writeErr(w, http.StatusConflict, "A backup is already running")
 		return
 	}
 	if s.closing {
-		writeErr(w, http.StatusConflict, "G-Copy를 종료하는 중입니다")
+		writeErr(w, http.StatusConflict, "G-Copy is quitting")
 		return
 	}
 	opts.Label, opts.Unattended = "", false // a person started this one
+	opts.HintSpeed = s.speedHint(opts.Destinations)
 	j, err := engine.Start(opts, s.jobFinished)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
@@ -365,14 +366,14 @@ func (s *Server) handleJobConfirm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Remove == nil {
-		writeErr(w, http.StatusBadRequest, "remove 값이 필요합니다")
+		writeErr(w, http.StatusBadRequest, "remove is required")
 		return
 	}
 	s.mu.Lock()
 	j := s.job
 	s.mu.Unlock()
 	if j == nil {
-		writeErr(w, http.StatusConflict, "지금은 확인할 내용이 없습니다")
+		writeErr(w, http.StatusConflict, "There is nothing to confirm right now")
 		return
 	}
 	if err := j.Confirm(*req.Remove); err != nil {
@@ -399,7 +400,7 @@ func (s *Server) handleJobDismiss(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.job != nil && !s.job.Snapshot().Status.Finished() {
-		writeErr(w, http.StatusConflict, "백업이 아직 진행 중입니다")
+		writeErr(w, http.StatusConflict, "The backup is still running")
 		return
 	}
 	s.job = nil
@@ -414,7 +415,7 @@ func (s *Server) handleReveal(w http.ResponseWriter, r *http.Request) {
 	}
 	fi, err := os.Stat(req.Path)
 	if err != nil || !fi.IsDir() || !filepath.IsAbs(req.Path) {
-		writeErr(w, http.StatusNotFound, "폴더를 찾을 수 없습니다")
+		writeErr(w, http.StatusNotFound, "Folder not found")
 		return
 	}
 	var cmd *exec.Cmd
@@ -427,7 +428,7 @@ func (s *Server) handleReveal(w http.ResponseWriter, r *http.Request) {
 		cmd = exec.Command("xdg-open", req.Path)
 	}
 	if err := cmd.Start(); err != nil {
-		writeErr(w, http.StatusInternalServerError, "폴더를 열 수 없습니다: "+req.Path)
+		writeErr(w, http.StatusInternalServerError, "Cannot open the folder: "+req.Path)
 		return
 	}
 	go func() { _ = cmd.Wait() }()

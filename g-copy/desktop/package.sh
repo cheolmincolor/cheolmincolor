@@ -45,9 +45,9 @@ for target in $TARGETS; do
     if [ "$(uname)" = Darwin ]; then
       codesign --force --deep --sign - "$dir/G-Copy.app"
     elif command -v rcodesign >/dev/null; then
-      rcodesign sign "$dir/G-Copy.app" >/dev/null 2>&1 || { echo "   서명에 실패했습니다" >&2; exit 1; }
+      rcodesign sign "$dir/G-Copy.app" >/dev/null 2>&1 || { echo "   signing failed" >&2; exit 1; }
     else
-      echo "   주의: 서명 도구(rcodesign)가 없어 서명하지 않았습니다. Apple Silicon에서 실행되지 않을 수 있습니다." >&2
+      echo "   warning: rcodesign not found, app left unsigned. It may not run on Apple Silicon." >&2
     fi
     zip="$OUT/G-Copy-$VERSION-mac-$arch.zip"
     rm -f "$zip"; (cd "$dir" && zip -qry "$zip" G-Copy.app)   # -y keeps the symlinks inside the app

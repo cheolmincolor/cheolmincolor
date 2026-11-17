@@ -321,7 +321,7 @@ func TestCorruptedCopyIsDetectedAndDiscarded(t *testing.T) {
 		t.Fatalf("status %s failed %d errors %+v", st.Status, st.FilesFailed, st.Errors)
 	}
 	e := st.Errors[0]
-	if !strings.Contains(e.Message, "체크섬 불일치") || e.Dest != bad || e.Path != "A001/CLIPS/A001C001.mov" {
+	if !strings.Contains(e.Message, "Checksum mismatch") || e.Dest != bad || e.Path != "A001/CLIPS/A001C001.mov" {
 		t.Errorf("unexpected error record: %+v", e)
 	}
 	// The damaged copy must not exist under its real name, nor as a leftover.
@@ -374,7 +374,7 @@ func TestReverifyFindsSilentDamage(t *testing.T) {
 	if st.Status != StatusFailed || st.FilesFailed != 1 || st.FilesVerified != 44 {
 		t.Fatalf("reverify run: status %s failed %d verified %d", st.Status, st.FilesFailed, st.FilesVerified)
 	}
-	if !strings.Contains(st.Errors[0].Message, "기존 파일의 내용이 원본과 다릅니다") {
+	if !strings.Contains(st.Errors[0].Message, "The existing copy differs from the source") {
 		t.Errorf("message: %s", st.Errors[0].Message)
 	}
 	// It reports; it must not silently overwrite either side.
@@ -479,16 +479,16 @@ func TestUnsafeSelectionsAreRefused(t *testing.T) {
 		o    Options
 		want string
 	}{
-		{"no source", Options{Destinations: []string{dst}}, "원본을 하나 이상"},
-		{"no destination", Options{Sources: []string{src}}, "대상을 하나 이상"},
-		{"destination inside source", Options{Sources: []string{src}, Destinations: []string{inside}}, "원본 안에"},
-		{"destination is the source", Options{Sources: []string{src}, Destinations: []string{src}}, "원본과 같거나"},
-		{"subfolder lands on the source", Options{Sources: []string{src}, Destinations: []string{tmp}, Subfolder: true}, "원본과 같거나"},
-		{"same destination twice via symlink", Options{Sources: []string{src}, Destinations: []string{dst, link}}, "두 번 선택"},
-		{"two sources with one name", Options{Sources: []string{src, other}, Destinations: []string{dst}}, "이름이 같은 원본"},
-		{"missing source", Options{Sources: []string{filepath.Join(tmp, "nope")}, Destinations: []string{dst}}, "찾을 수 없습니다"},
-		{"source is a file", Options{Sources: []string{file}, Destinations: []string{dst}}, "폴더가 아닙니다"},
-		{"unknown algorithm", Options{Sources: []string{src}, Destinations: []string{dst}, Algo: "crc"}, "알고리즘"},
+		{"no source", Options{Destinations: []string{dst}}, "at least one source"},
+		{"no destination", Options{Sources: []string{src}}, "at least one destination"},
+		{"destination inside source", Options{Sources: []string{src}, Destinations: []string{inside}}, "inside it"},
+		{"destination is the source", Options{Sources: []string{src}, Destinations: []string{src}}, "the source itself"},
+		{"subfolder lands on the source", Options{Sources: []string{src}, Destinations: []string{tmp}, Subfolder: true}, "the source itself"},
+		{"same destination twice via symlink", Options{Sources: []string{src}, Destinations: []string{dst, link}}, "selected twice"},
+		{"two sources with one name", Options{Sources: []string{src, other}, Destinations: []string{dst}}, "same name"},
+		{"missing source", Options{Sources: []string{filepath.Join(tmp, "nope")}, Destinations: []string{dst}}, "not found"},
+		{"source is a file", Options{Sources: []string{file}, Destinations: []string{dst}}, "not a folder"},
+		{"unknown algorithm", Options{Sources: []string{src}, Destinations: []string{dst}, Algo: "crc"}, "checksum algorithm"},
 	}
 	for _, c := range cases {
 		j, err := start(c.o, nil, nil)
@@ -539,18 +539,18 @@ func TestUnreadableSourceFolderIsReported(t *testing.T) {
 	if st.Status != StatusFailed || st.FilesCopied != 1 || st.Dests[0].Complete {
 		t.Fatalf("status %s copied %d complete %v errors %+v", st.Status, st.FilesCopied, st.Dests[0].Complete, st.Errors)
 	}
-	if !strings.Contains(st.Errors[0].Message, "권한이 없습니다") || st.Errors[0].Path != "A001/locked" {
+	if !strings.Contains(st.Errors[0].Message, "Permission denied") || st.Errors[0].Path != "A001/locked" {
 		t.Errorf("error record: %+v", st.Errors[0])
 	}
 }
 
-func TestOSErrorsAreExplainedInKorean(t *testing.T) {
+func TestOSErrorsAreExplainedInPlainWords(t *testing.T) {
 	_, err := os.Open(filepath.Join(t.TempDir(), "missing"))
-	if got := osMsg(err); !strings.Contains(got, "찾을 수 없습니다") || strings.Contains(got, t.TempDir()) {
+	if got := osMsg(err); !strings.Contains(got, "not found") || strings.Contains(got, t.TempDir()) {
 		t.Errorf("osMsg = %q", got)
 	}
-	wrapped := fmt.Errorf("쓰기 오류: %w", &fs.PathError{Op: "write", Path: "/x/y", Err: syscall.ENOSPC})
-	if got := cleanMsg(wrapped); !strings.HasPrefix(got, "쓰기 오류: 디스크 공간이 없습니다") || strings.Contains(got, "/x/y") {
+	wrapped := fmt.Errorf("Write error: %w", &fs.PathError{Op: "write", Path: "/x/y", Err: syscall.ENOSPC})
+	if got := cleanMsg(wrapped); !strings.HasPrefix(got, "Write error: The disk is full") || strings.Contains(got, "/x/y") {
 		t.Errorf("cleanMsg = %q", got)
 	}
 	if !isNoSpace(wrapped) {
@@ -834,8 +834,8 @@ func TestUnattendedSyncRefusesLargeOrEmptyRemovals(t *testing.T) {
 		remove int // how many of 8 source files disappear
 		want   string
 	}{
-		{"half the files", 4, "정리할 파일이 많아서"},
-		{"an empty card", 8, "원본이 비어 있어서"},
+		{"half the files", 4, "too many files would be moved"},
+		{"an empty card", 8, "the source is empty"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tmp := t.TempDir()
@@ -864,7 +864,7 @@ func TestUnattendedSyncRefusesLargeOrEmptyRemovals(t *testing.T) {
 func TestMissingDiskIsRecognised(t *testing.T) {
 	tmp := t.TempDir()
 	err := Check(Options{Sources: []string{filepath.Join(tmp, "unplugged")}, Destinations: []string{tmp}})
-	if !IsMissing(err) || !strings.Contains(err.Error(), "찾을 수 없습니다") {
+	if !IsMissing(err) || !strings.Contains(err.Error(), "not found") {
 		t.Errorf("missing source: %v (IsMissing %v)", err, IsMissing(err))
 	}
 	err = Check(Options{Sources: []string{tmp}, Destinations: []string{tmp}})

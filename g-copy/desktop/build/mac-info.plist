@@ -3,15 +3,15 @@
 <plist version="1.0">
 <dict>
   <key>NSRemovableVolumesUsageDescription</key>
-  <string>외장 디스크의 파일을 백업하고 검증하려면 접근 권한이 필요합니다.</string>
+  <string>G-Copy needs access to external disks to back up and verify their files.</string>
   <key>NSNetworkVolumesUsageDescription</key>
-  <string>NAS에 백업하고 검증하려면 네트워크 볼륨 접근 권한이 필요합니다.</string>
+  <string>G-Copy needs access to network volumes to back up to and verify on your NAS.</string>
   <key>NSDesktopFolderUsageDescription</key>
-  <string>선택한 폴더를 백업하려면 접근 권한이 필요합니다.</string>
+  <string>G-Copy needs access to back up the folders you choose.</string>
   <key>NSDocumentsFolderUsageDescription</key>
-  <string>선택한 폴더를 백업하려면 접근 권한이 필요합니다.</string>
+  <string>G-Copy needs access to back up the folders you choose.</string>
   <key>NSDownloadsFolderUsageDescription</key>
-  <string>선택한 폴더를 백업하려면 접근 권한이 필요합니다.</string>
+  <string>G-Copy needs access to back up the folders you choose.</string>
   <key>NSHumanReadableCopyright</key>
   <string></string>
 </dict>

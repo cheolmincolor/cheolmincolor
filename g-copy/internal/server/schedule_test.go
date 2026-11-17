@@ -185,7 +185,7 @@ func TestUnpluggedDiskIsSkippedNotFailed(t *testing.T) {
 	f.s.tick(f.s.now())
 	f.waitIdle(t)
 	last := f.schedule(t, id)["last"].(map[string]any)
-	if last["status"] != "skipped" || !strings.Contains(last["message"].(string), "찾을 수 없습니다") {
+	if last["status"] != "skipped" || !strings.Contains(last["message"].(string), "not found") {
 		t.Errorf("last %v", last)
 	}
 	_, out := f.c.do("GET", "/api/history", nil, nil)

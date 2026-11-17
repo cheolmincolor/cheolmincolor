@@ -158,7 +158,7 @@ func TestJobThroughTheAPIAndHistory(t *testing.T) {
 	if code, out := c.do("GET", "/api/job", nil, nil); code != 200 || out["status"] != "idle" {
 		t.Fatalf("initial state: %d %v", code, out)
 	}
-	if code, out := c.do("POST", "/api/job", map[string]any{"sources": []string{src}, "destinations": []string{src}}, nil); code != http.StatusBadRequest || !strings.Contains(out["error"].(string), "원본") {
+	if code, out := c.do("POST", "/api/job", map[string]any{"sources": []string{src}, "destinations": []string{src}}, nil); code != http.StatusBadRequest || !strings.Contains(out["error"].(string), "source") {
 		t.Errorf("unsafe request: %d %v", code, out)
 	}
 	code, out := c.do("POST", "/api/job", map[string]any{"sources": []string{src}, "destinations": []string{dst}, "subfolder": true}, nil)

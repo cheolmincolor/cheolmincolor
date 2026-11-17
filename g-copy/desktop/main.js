@@ -20,7 +20,7 @@ let closingOnPurpose = false;
 let shuttingDown = false;
 let quitting = false;     // the app is quitting (not just its window closing)
 let schedulesOn = 0;      // enabled schedules: then closing the window keeps G-Copy running
-let scheduleText = '';    // "다음 예약: …", for the menu bar
+let scheduleText = '';    // "Next: …", for the menu bar
 let tray = null;
 let awake = -1;           // power save blocker id while a backup runs
 let toldAboutBackground = false;
@@ -42,7 +42,7 @@ function startEngine() {
     let out = '';
     let settled = false;
     const fail = (msg) => { if (!settled) { settled = true; reject(new Error(msg)); } };
-    const timer = setTimeout(() => fail('엔진이 10초 안에 응답하지 않았습니다.'), 10000);
+    const timer = setTimeout(() => fail('The backup engine did not respond within 10 seconds.'), 10000);
 
     child.stdout.on('data', (d) => {
       if (settled) return;
@@ -51,10 +51,10 @@ function startEngine() {
       if (m) { settled = true; clearTimeout(timer); resolve(m[0]); }
     });
     child.stderr.on('data', (d) => { out += d; });
-    child.once('error', (e) => { clearTimeout(timer); fail('엔진을 시작할 수 없습니다: ' + e.message); });
+    child.once('error', (e) => { clearTimeout(timer); fail('Cannot start the backup engine: ' + e.message); });
     child.once('exit', (code) => {
       clearTimeout(timer);
-      fail('엔진이 시작하자마자 종료되었습니다 (코드 ' + code + ').\n' + out.trim().slice(-400));
+      fail('The backup engine exited right after starting (code ' + code + ').\n' + out.trim().slice(-400));
       if (settled && !shuttingDown) engineDied(code);
     });
   });
@@ -71,7 +71,7 @@ async function stopEngine() {
 
 function engineDied(code) {
   if (shuttingDown) return;
-  dialog.showErrorBox('G-Copy', '백업 엔진이 예기치 않게 종료되었습니다 (코드 ' + code + ').\n앱을 다시 실행하세요. 검증을 마친 파일은 대상에 그대로 있습니다.');
+  dialog.showErrorBox('G-Copy', 'The backup engine stopped unexpectedly (code ' + code + ').\nPlease open G-Copy again. Files that were already verified are safe on the destination.');
   shuttingDown = true;
   app.quit();
 }
@@ -109,7 +109,7 @@ function createWindow(url) {
       win.hide();
       if (!toldAboutBackground && Notification.isSupported()) {
         toldAboutBackground = true;
-        new Notification({ title: 'G-Copy는 메뉴 막대에서 계속 실행됩니다', body: busy ? '백업도 계속 진행합니다.' : '예약된 백업을 정해진 시각에 실행합니다.' }).show();
+        new Notification({ title: 'G-Copy keeps running in the menu bar', body: busy ? 'The backup continues.' : 'Scheduled backups will run on time.' }).show();
       }
       return;
     }
@@ -126,11 +126,11 @@ function createWindow(url) {
 function askStopBackup() {
   const box = {
     type: 'warning',
-    buttons: ['계속 백업', '중단하고 종료'],
+    buttons: ['Keep Backing Up', 'Stop and Quit'],
     defaultId: 0,
     cancelId: 0,
-    message: '백업이 진행 중입니다',
-    detail: '지금 종료하면 복사를 중단합니다. 검증을 마친 파일은 대상에 남고, 다음에 같은 백업을 실행하면 이어서 복사합니다.',
+    message: 'A backup is in progress',
+    detail: 'Quitting now stops the copy. Files already verified stay on the destination, and running the same backup again continues where it left off.',
   };
   return (win ? dialog.showMessageBoxSync(win, box) : dialog.showMessageBoxSync(box)) === 1;
 }
@@ -151,14 +151,14 @@ function updateTray() {
       tray = new Tray(img);
       tray.on('click', () => tray.popUpContextMenu());
     }
-    const status = busy ? '백업 진행 중' : scheduleText || '켜진 예약 없음';
+    const status = busy ? 'Backup in progress' : scheduleText || 'No active schedules';
     tray.setToolTip('G-Copy — ' + status);
     tray.setContextMenu(Menu.buildFromTemplate([
-      { label: 'G-Copy 열기', click: showWindow },
+      { label: 'Open G-Copy', click: showWindow },
       { type: 'separator' },
       { label: status, enabled: false },
       { type: 'separator' },
-      { label: 'G-Copy 종료', click: () => app.quit() },
+      { label: 'Quit G-Copy', click: () => app.quit() },
     ]));
   } catch { /* no menu bar on this system */ }
 }
@@ -180,8 +180,8 @@ function trusted(event) {
 ipcMain.handle('pick-folder', async (event, kind, startAt) => {
   if (!trusted(event) || !win) return null;
   const res = await dialog.showOpenDialog(win, {
-    title: kind === 'src' ? '원본 선택' : '대상 선택',
-    buttonLabel: '선택',
+    title: kind === 'src' ? 'Choose Source' : 'Choose Destination',
+    buttonLabel: 'Choose',
     defaultPath: typeof startAt === 'string' && startAt ? startAt : undefined,
     properties: kind === 'dst' ? ['openDirectory', 'createDirectory'] : ['openDirectory'],
   });
@@ -237,7 +237,7 @@ if (!app.requestSingleInstanceLock()) {
     try {
       createWindow(await startEngine());
     } catch (e) {
-      dialog.showErrorBox('G-Copy를 시작할 수 없습니다', e.message);
+      dialog.showErrorBox('G-Copy could not start', e.message);
       shuttingDown = true;
       app.quit();
     }
@@ -246,7 +246,7 @@ if (!app.requestSingleInstanceLock()) {
   // Without schedules, closing the window ends the app; with them it only hides.
   app.on('window-all-closed', () => app.quit());
 
-  // Cmd+Q, the menu bar's 종료, logging out: ask before cutting a backup short.
+  // Cmd+Q, the menu bar's Quit, logging out: ask before cutting a backup short.
   app.on('before-quit', (e) => {
     if (shuttingDown || closingOnPurpose) { quitting = true; return; }
     if (busy && !askStopBackup()) { e.preventDefault(); return; }

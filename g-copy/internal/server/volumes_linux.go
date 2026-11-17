@@ -9,7 +9,7 @@ import (
 // listVolumes returns mounts in the places removable disks and shares
 // normally appear, plus the root filesystem.
 func listVolumes() []Volume {
-	out := []Volume{{Name: "시스템 (/)", Path: "/", Kind: "system"}}
+	out := []Volume{{Name: "System (/)", Path: "/", Kind: "system"}}
 	data, err := os.ReadFile("/proc/self/mounts")
 	if err != nil {
 		return out

@@ -1,8 +1,8 @@
 {
   "name": "gcopy-desktop",
   "productName": "G-Copy",
-  "version": "0.4.0",
-  "description": "외장하드를 NAS·DAS에 복사하고 체크섬으로 검증하는 DI실용 백업 앱",
+  "version": "0.5.0",
+  "description": "Backs up drives to NAS/DAS and verifies every file with checksums",
   "private": true,
   "main": "main.js",
   "scripts": {

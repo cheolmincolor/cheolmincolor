@@ -24,10 +24,10 @@ import (
 )
 
 func main() {
-	port := flag.Int("port", 47800, "포트 (사용 중이면 다음 번호를 시도)")
-	noOpen := flag.Bool("no-open", false, "브라우저를 자동으로 열지 않음")
-	volumes := flag.String("volumes", "", "디스크 목록에 추가할 상위 폴더 (쉼표로 구분, 예: /mnt/nas)")
-	desktop := flag.Bool("desktop", false, "데스크톱 앱의 엔진으로 실행 (앱 창이 닫히면 함께 종료)")
+	port := flag.Int("port", 47800, "port (tries the next one if busy)")
+	noOpen := flag.Bool("no-open", false, "do not open the browser")
+	volumes := flag.String("volumes", "", "extra folders whose sub-folders are listed as disks (comma separated, e.g. /mnt/nas)")
+	desktop := flag.Bool("desktop", false, "run as the desktop app's engine (exits when the app closes)")
 	flag.Parse()
 	if *desktop {
 		*noOpen = true
@@ -61,7 +61,7 @@ func main() {
 		}
 	}
 	if ln == nil {
-		fmt.Fprintln(os.Stderr, "포트를 열 수 없습니다:", err)
+		fmt.Fprintln(os.Stderr, "Cannot open a port:", err)
 		os.Exit(1)
 	}
 
@@ -71,7 +71,7 @@ func main() {
 	url := fmt.Sprintf("http://%s/?token=%s", ln.Addr(), srv.Token())
 	httpSrv := &http.Server{Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
 
-	fmt.Printf("G-Copy %s\n\n  열기: %s\n  종료: Ctrl+C (또는 이 창 닫기)\n\n", engine.Version, url)
+	fmt.Printf("G-Copy %s\n\n  Open: %s\n  Quit: Ctrl+C (or close this window)\n\n", engine.Version, url)
 	if !*noOpen {
 		openBrowser(url)
 	}
@@ -98,7 +98,7 @@ func main() {
 		<-stop
 		close(stopScheduler)
 		srv.CancelRunning() // first of all: removes unfinished temporary files
-		fmt.Println("\n진행 중인 복사를 정리하고 종료합니다.")
+		fmt.Println("\nCleaning up the copy in progress and quitting.")
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		_ = httpSrv.Shutdown(ctx)

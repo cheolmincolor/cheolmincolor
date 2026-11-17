@@ -81,7 +81,7 @@ func parseClock(s string) (h, m int, err error) {
 			return h, m, nil
 		}
 	}
-	return 0, 0, fmt.Errorf("시각은 00:00부터 23:59 사이로 입력하세요: %q", s)
+	return 0, 0, fmt.Errorf("Enter a time between 00:00 and 23:59: %q", s)
 }
 
 func (w *When) validate() error {
@@ -99,7 +99,7 @@ func (w *When) validate() error {
 		var days []int
 		for _, d := range w.Days {
 			if d < 0 || d > 6 {
-				return fmt.Errorf("요일 값이 올바르지 않습니다: %d", d)
+				return fmt.Errorf("Invalid day of the week: %d", d)
 			}
 			if !seen[d] {
 				seen[d] = true
@@ -107,7 +107,7 @@ func (w *When) validate() error {
 			}
 		}
 		if len(days) == 0 {
-			return errors.New("요일을 하나 이상 고르세요")
+			return errors.New("Choose at least one day")
 		}
 		sort.Ints(days)
 		w.Days = days
@@ -115,11 +115,11 @@ func (w *When) validate() error {
 	case "hours":
 		w.Time, w.Days = "", nil
 		if !hourChoices[w.Hours] {
-			return errors.New("간격은 1, 2, 3, 4, 6, 8, 12, 24시간 중에서 고르세요")
+			return errors.New("Choose an interval of 1, 2, 3, 4, 6, 8, 12 or 24 hours")
 		}
 		return nil
 	}
-	return fmt.Errorf("반복 방식이 올바르지 않습니다: %q", w.Kind)
+	return fmt.Errorf("Invalid repeat type: %q", w.Kind)
 }
 
 // next returns the first time after t at which the rule fires.
@@ -261,6 +261,7 @@ func (s *Server) startQueued() {
 		}
 		opts := sc.Options
 		opts.Label, opts.Unattended = sc.Name, true
+		opts.HintSpeed = s.speedHint(opts.Destinations)
 		j, err := engine.Start(opts, s.jobFinished)
 		if err != nil {
 			status := "failed"
@@ -297,7 +298,7 @@ func (s *Server) jobFinished(st engine.State) {
 				last.Removed += d.Removed
 			}
 			if last.Message == "" && st.ErrorCount > 0 {
-				last.Message = fmt.Sprintf("문제 %d건", st.ErrorCount)
+				last.Message = fmt.Sprintf("%d problem(s)", st.ErrorCount)
 			}
 			sc.Last = last
 			_ = s.saveSchedules()
@@ -345,10 +346,10 @@ type scheduleInput struct {
 func cleanName(n string) (string, error) {
 	n = strings.TrimSpace(n)
 	if n == "" {
-		return "", errors.New("이름을 입력하세요")
+		return "", errors.New("Enter a name")
 	}
 	if len([]rune(n)) > 60 {
-		return "", errors.New("이름은 60자 이내로 입력하세요")
+		return "", errors.New("Keep the name within 60 characters")
 	}
 	return n, nil
 }
@@ -359,7 +360,7 @@ func (s *Server) handleScheduleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if in.Name == nil || in.Options == nil || in.When == nil {
-		writeErr(w, http.StatusBadRequest, "이름, 백업 설정, 반복 방식이 필요합니다")
+		writeErr(w, http.StatusBadRequest, "A name, backup settings and a repeat rule are required")
 		return
 	}
 	name, err := cleanName(*in.Name)
@@ -388,7 +389,7 @@ func (s *Server) handleScheduleCreate(w http.ResponseWriter, r *http.Request) {
 	err = s.saveSchedules()
 	s.sched.mu.Unlock()
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "예약을 저장할 수 없습니다: "+err.Error())
+		writeErr(w, http.StatusInternalServerError, "Cannot save the schedule: "+err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, sc)
@@ -403,7 +404,7 @@ func (s *Server) handleScheduleUpdate(w http.ResponseWriter, r *http.Request) {
 	defer s.sched.mu.Unlock()
 	sc := s.findSchedule(r.PathValue("id"))
 	if sc == nil {
-		writeErr(w, http.StatusNotFound, "예약을 찾을 수 없습니다")
+		writeErr(w, http.StatusNotFound, "Schedule not found")
 		return
 	}
 	upd := *sc
@@ -434,7 +435,7 @@ func (s *Server) handleScheduleUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	*sc = upd
 	if err := s.saveSchedules(); err != nil {
-		writeErr(w, http.StatusInternalServerError, "예약을 저장할 수 없습니다: "+err.Error())
+		writeErr(w, http.StatusInternalServerError, "Cannot save the schedule: "+err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, sc)
@@ -459,7 +460,7 @@ func (s *Server) handleScheduleDelete(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	writeErr(w, http.StatusNotFound, "예약을 찾을 수 없습니다")
+	writeErr(w, http.StatusNotFound, "Schedule not found")
 }
 
 // handleScheduleRun runs a schedule now (after any backup that is running).
@@ -471,7 +472,7 @@ func (s *Server) handleScheduleRun(w http.ResponseWriter, r *http.Request) {
 	}
 	s.sched.mu.Unlock()
 	if sc == nil {
-		writeErr(w, http.StatusNotFound, "예약을 찾을 수 없습니다")
+		writeErr(w, http.StatusNotFound, "Schedule not found")
 		return
 	}
 	s.startQueued()

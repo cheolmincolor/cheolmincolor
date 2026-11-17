@@ -19,7 +19,7 @@ func NormalizeAlgo(algo string) (string, error) {
 	case "md5":
 		return "md5", nil
 	}
-	return "", fmt.Errorf("지원하지 않는 체크섬 알고리즘: %q", algo)
+	return "", fmt.Errorf("Unsupported checksum algorithm: %q", algo)
 }
 
 func newHasher(algo string) hash.Hash {

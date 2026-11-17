@@ -84,6 +84,11 @@ type Job struct {
 	filesCopied, filesSkipped, filesVerified, filesFailed, bytesCopied atomic.Int64
 	speedBits                                                          atomic.Uint64
 
+	est        estimator    // used by speedLoop only
+	finishNano atomic.Int64 // estimated finish (unix nanoseconds), 0 = not yet known
+	copyStart  atomic.Int64 // when copying began (unix nanoseconds)
+	copyEnd    atomic.Int64
+
 	// afterWrite is a test hook: called with each temporary file after it
 	// has been written and before it is read back.
 	afterWrite func(path string)
@@ -203,12 +208,14 @@ func (j *Job) run() {
 			return
 		}
 	}
+	j.copyStart.Store(time.Now().UnixNano())
 	j.setStatus(StatusCopying)
 	j.makeEmptyDirs()
 	j.copyAll()
 	if removeAfter && j.ctx.Err() == nil {
 		j.removeExtras() // after copying, so a cancelled run leaves the destination as it was
 	}
+	j.copyEnd.Store(time.Now().UnixNano())
 	j.writeReports()
 
 	switch {
@@ -230,7 +237,7 @@ func (j *Job) askMirror() (bool, error) {
 			// A folder we could not read looks empty, and its backup would
 			// be moved aside. Never sync against an incomplete listing.
 			setMirror(MirrorSkipped)
-			j.warnOnce("mirror-unreadable", j.srcNames[s]+": 원본의 일부를 읽을 수 없어서 동기화 정리는 하지 않았습니다. 대상의 파일은 그대로 두었습니다.")
+			j.warnOnce("mirror-unreadable", j.srcNames[s]+": part of the source could not be read, so sync clean-up was skipped. Files on the destination were left as they are.")
 			return false, nil
 		}
 	}
@@ -244,7 +251,7 @@ func (j *Job) askMirror() (bool, error) {
 	if j.opts.Unattended {
 		if ok, why := j.unattendedVerdict(); !ok {
 			setMirror(MirrorSkipped)
-			j.warnOnce("mirror-unattended", "예약 실행: "+why+" 동기화 정리는 하지 않았습니다. 직접 실행하면 목록을 보고 정할 수 있습니다.")
+			j.warnOnce("mirror-unattended", "Scheduled run: sync clean-up was skipped because "+why+". Run it yourself to review the list and decide.")
 			return false, nil
 		}
 		setMirror(MirrorApproved) // moved aside, never deleted: reversible
@@ -269,7 +276,7 @@ func (j *Job) makeEmptyDirs() {
 				return
 			}
 			if err := os.MkdirAll(filepath.Join(dr.bases[e.src], e.rel), 0o755); err != nil {
-				j.addError(j.showSrc(e.src, e.rel), dr.shown, "폴더를 만들 수 없습니다: "+osMsg(err))
+				j.addError(j.showSrc(e.src, e.rel), dr.shown, "Cannot create folder: "+osMsg(err))
 			}
 		}
 	}
@@ -422,7 +429,7 @@ func (j *Job) processFile(i int) {
 	var srcSum []byte
 	src, err := os.Open(srcPath)
 	if err != nil {
-		failAll("원본을 열 수 없습니다: " + osMsg(err))
+		failAll("Cannot open the source file: " + osMsg(err))
 	} else {
 		noCache(src)
 		for _, w := range works {
@@ -431,13 +438,13 @@ func (j *Job) processFile(i int) {
 			}
 			dir := filepath.Dir(w.final)
 			if err := os.MkdirAll(dir, 0o755); err != nil {
-				w.err = fmt.Errorf("폴더를 만들 수 없습니다: %w", err)
+				w.err = fmt.Errorf("Cannot create folder: %w", err)
 				continue
 			}
 			tmp := filepath.Join(dir, tempName(filepath.Base(w.final)))
 			tf, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 			if err != nil {
-				w.err = fmt.Errorf("대상에 파일을 만들 수 없습니다: %w", err)
+				w.err = fmt.Errorf("Cannot create the file on the destination: %w", err)
 				continue
 			}
 			noCache(tf)
@@ -471,7 +478,7 @@ func (j *Job) processFile(i int) {
 					go func(w *destWork) {
 						defer wg.Done()
 						if _, err := w.f.Write(chunk); err != nil {
-							w.err = fmt.Errorf("쓰기 오류: %w", err)
+							w.err = fmt.Errorf("Write error: %w", err)
 						}
 					}(w)
 				}
@@ -506,20 +513,20 @@ func (j *Job) processFile(i int) {
 			}
 			if w.alive() {
 				if err := syncLight(w.f); err != nil && !syncUnsupported(err) {
-					w.err = fmt.Errorf("디스크에 기록할 수 없습니다: %w", err)
+					w.err = fmt.Errorf("Cannot flush to disk: %w", err)
 				}
 				dropCache(w.f)
 			}
 			if err := w.f.Close(); err != nil && w.alive() {
-				w.err = fmt.Errorf("디스크에 기록할 수 없습니다: %w", err)
+				w.err = fmt.Errorf("Cannot flush to disk: %w", err)
 			}
 			w.f = nil
 		}
 
 		if srcErr != nil {
-			failAll("원본 읽기 오류: " + osMsg(srcErr))
+			failAll("Source read error: " + osMsg(srcErr))
 		} else if st, err := os.Stat(srcPath); err != nil || total != f.size || st.Size() != f.size || !st.ModTime().Equal(f.modTime) {
-			failAll("복사하는 동안 원본 파일이 바뀌었습니다 — 다시 실행하세요")
+			failAll("The source file changed while it was being copied — run again")
 		} else {
 			srcSum = h.Sum(nil)
 		}
@@ -549,12 +556,12 @@ func (j *Job) processFile(i int) {
 			sum, n, err := hashFile(j.ctx, path, j.opts.Algo, add)
 			switch {
 			case err != nil:
-				w.err = fmt.Errorf("검증 읽기 오류: %w", err)
+				w.err = fmt.Errorf("Verification read error: %w", err)
 			case n != f.size || !bytes.Equal(sum, srcSum):
 				if w.act == actReverify {
-					w.err = fmt.Errorf("기존 파일의 내용이 원본과 다릅니다 (크기와 날짜는 같음) — 원본 %x, 대상 %x", srcSum, sum)
+					w.err = fmt.Errorf("The existing copy differs from the source (same size and date) — source %x, destination %x", srcSum, sum)
 				} else {
-					w.err = fmt.Errorf("체크섬 불일치 — 복사본을 폐기했습니다 (원본 %x, 대상 %x)", srcSum, sum)
+					w.err = fmt.Errorf("Checksum mismatch — the copy was discarded (source %x, destination %x)", srcSum, sum)
 				}
 			}
 		}(w)
@@ -619,24 +626,24 @@ func (j *Job) commit(dr *destRun, w *destWork, f *srcFile) error {
 	if _, err := os.Lstat(w.final); err == nil {
 		rel, rerr := filepath.Rel(dr.path, w.final)
 		if rerr != nil {
-			return fmt.Errorf("이전 파일을 보관할 수 없습니다: %w", rerr)
+			return fmt.Errorf("Cannot set the previous version aside: %w", rerr)
 		}
 		keep := filepath.Join(dr.path, ReplacedDirName, j.stamp, rel)
 		if err := os.MkdirAll(filepath.Dir(keep), 0o755); err != nil {
-			return fmt.Errorf("이전 파일을 보관할 수 없습니다: %w", err)
+			return fmt.Errorf("Cannot set the previous version aside: %w", err)
 		}
 		if err := os.Rename(w.final, keep); err != nil {
-			return fmt.Errorf("이전 파일을 보관할 수 없습니다: %w", err)
+			return fmt.Errorf("Cannot set the previous version aside: %w", err)
 		}
 	}
 	if err := os.Rename(w.tmp, w.final); err != nil {
-		return fmt.Errorf("파일 이름을 확정할 수 없습니다: %w", err)
+		return fmt.Errorf("Cannot give the file its final name: %w", err)
 	}
 	w.tmp = ""
 	// The date is what the next run compares. The copy itself is verified
 	// either way, so a volume that refuses dates is a warning, not a failure.
 	if err := os.Chtimes(w.final, f.modTime, f.modTime); err != nil {
-		j.warnOnce("chtimes:"+dr.path, dr.shown+": 이 볼륨은 수정 날짜를 기록할 수 없습니다. 복사와 검증은 정상이지만, 다음 실행 때 같은 파일을 다시 복사합니다.")
+		j.warnOnce("chtimes:"+dr.path, dr.shown+": this volume does not keep modification dates. Copies are verified, but the next run will copy these files again.")
 	}
 	_ = os.Chmod(w.final, f.mode.Perm()) // best effort; many NAS/exFAT volumes ignore it
 	return nil
@@ -647,12 +654,12 @@ func (j *Job) destFailed(dr *destRun, shown string, err error) {
 	j.addError(shown, dr.shown, cleanMsg(err))
 	reason := ""
 	if isNoSpace(err) {
-		reason = "디스크가 가득 찼습니다"
+		reason = "the disk is full"
 	} else if dr.consecFails.Add(1) >= deadAfterFails {
-		reason = "오류가 연속으로 발생했습니다"
+		reason = "too many errors in a row"
 	}
 	if reason != "" && dr.dead.CompareAndSwap(false, true) {
-		j.addError("", dr.shown, "이 대상은 중단했습니다: "+reason+". 남은 파일은 이 대상에 복사하지 않았습니다.")
+		j.addError("", dr.shown, "Stopped using this destination: "+reason+". The remaining files were not copied here.")
 	}
 }
 
@@ -677,7 +684,7 @@ func (j *Job) writeReports() {
 			}
 			path := mhlName(dr.bases[s], j.srcNames[s], j.started)
 			if err := writeMHL(path, j.opts.Algo, j.started, finished, entries); err != nil {
-				j.addError(filepath.Base(path), dr.shown, "리포트(MHL)를 쓸 수 없습니다: "+osMsg(err))
+				j.addError(filepath.Base(path), dr.shown, "Cannot write the report (MHL): "+osMsg(err))
 				continue
 			}
 			dr.reports = append(dr.reports, path)
@@ -690,6 +697,7 @@ func (j *Job) speedLoop(stop <-chan struct{}) {
 	defer t.Stop()
 	last, lastT := j.ioDone.Load(), time.Now()
 	var ema float64
+	j.est.hint = j.opts.HintSpeed
 	for {
 		select {
 		case <-stop:
@@ -704,6 +712,20 @@ func (j *Job) speedLoop(stop <-chan struct{}) {
 			}
 			last, lastT = cur, now
 			j.speedBits.Store(math.Float64bits(ema))
+
+			// Remaining time: only once copying has started, when the
+			// total is final (every file has been listed and compared).
+			if cs := j.copyStart.Load(); cs != 0 {
+				if j.est.start.IsZero() {
+					j.est.begin(time.Unix(0, cs), 0)
+				}
+				_, fin := j.est.update(now, j.workDone.Load(), j.workTotal.Load())
+				if fin.IsZero() {
+					j.finishNano.Store(0)
+				} else {
+					j.finishNano.Store(fin.UnixNano())
+				}
+			}
 		}
 	}
 }
@@ -744,11 +766,22 @@ func (j *Job) Snapshot() State {
 	st.BytesCopied, st.ErrorCount = j.bytesCopied.Load(), j.errCount.Load()
 	if !finished {
 		st.Speed = math.Float64frombits(j.speedBits.Load())
-		if st.Speed > 0 && st.WorkTotal > st.WorkDone {
-			st.ETA = float64(st.WorkTotal-st.WorkDone) / st.Speed
+		fn := j.finishNano.Load()
+		if fn == 0 && j.opts.HintSpeed > 0 && j.copyStart.Load() != 0 && st.WorkTotal > st.WorkDone {
+			// Copying just began: until the estimator's first update, go by
+			// the speed of the last run to the same destinations.
+			fn = time.Now().Add(time.Duration(float64(st.WorkTotal-st.WorkDone) / j.opts.HintSpeed * float64(time.Second))).UnixNano()
+		}
+		if fn != 0 && st.WorkTotal > st.WorkDone {
+			fin := time.Unix(0, fn)
+			st.FinishAt = &fin
+			st.ETA = math.Max(1, time.Until(fin).Seconds())
 		}
 	} else if st.Seconds > 0 {
 		st.Speed = float64(j.ioDone.Load()) / st.Seconds
+		if cs, ce := j.copyStart.Load(), j.copyEnd.Load(); cs != 0 && ce > cs && st.WorkDone > 0 {
+			st.CopyRate = float64(st.WorkDone) / time.Duration(ce-cs).Seconds()
+		}
 	}
 	clean := st.Status == StatusDone || (st.Status == StatusFailed && st.Message == "" && j.srcErrs.Load() == 0)
 

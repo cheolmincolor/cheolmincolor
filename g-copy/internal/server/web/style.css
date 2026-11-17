@@ -30,7 +30,6 @@ body {
   color: var(--text);
   -webkit-font-smoothing: antialiased;
   min-height: 100vh;
-  word-break: keep-all; /* Korean wraps between words, not inside them */
 }
 h1, h2, h3, h4, p, ul, dl, dd { margin: 0; padding: 0; }
 ul { list-style: none; }
@@ -187,7 +186,7 @@ select, input[type="text"] {
 #sched-edit { width: min(520px, calc(100vw - 32px)); }
 .se-body { display: flex; flex-direction: column; gap: 14px; padding: 16px 18px; overflow: auto; }
 .field { display: flex; align-items: center; gap: 12px; }
-.flabel { width: 44px; flex: none; color: var(--muted); }
+.flabel { width: 58px; flex: none; color: var(--muted); }
 .field input[type="text"] { flex: 1; min-width: 0; }
 .field input[type="time"] { color-scheme: dark; font: inherit; color: var(--text); background: #171717; border: 1px solid var(--line); border-radius: 8px; padding: 5px 9px; }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
@@ -199,7 +198,7 @@ select, input[type="text"] {
 .seg input:focus-visible + span, .days input:focus-visible + span { outline: 2px solid #8fb4d9; outline-offset: -2px; }
 .days { display: flex; gap: 6px; flex-wrap: wrap; }
 .days label { position: relative; cursor: pointer; }
-.days span { display: grid; place-items: center; width: 34px; height: 30px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); }
+.days span { display: grid; place-items: center; width: 42px; height: 30px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); }
 .days input:checked + span { background: var(--text); color: #161616; border-color: var(--text); font-weight: 600; }
 .se-what { padding: 10px 12px; border-radius: 9px; background: var(--raised); color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
 .se-what b { color: var(--text); font-weight: 600; }

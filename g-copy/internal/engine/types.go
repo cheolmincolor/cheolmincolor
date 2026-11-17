@@ -6,7 +6,7 @@ import "time"
 
 const (
 	// Version is written into reports.
-	Version = "0.4.0"
+	Version = "0.5.0"
 
 	chunkSize       = 4 << 20  // read/write unit
 	bigFileSize     = 16 << 20 // files this size or larger are copied one at a time
@@ -38,6 +38,10 @@ type Options struct {
 	// Set by the scheduler, not by the screen.
 	Label      string `json:"label,omitempty"`      // name of the schedule that started the run
 	Unattended bool   `json:"unattended,omitempty"` // nobody is there to answer questions
+
+	// Speed of an earlier run to the same destinations (bytes of work per
+	// second), so the remaining time can be estimated from the start.
+	HintSpeed float64 `json:"hintSpeed,omitempty"`
 }
 
 // Status is the lifecycle stage of a job.
@@ -112,7 +116,9 @@ type State struct {
 	WorkTotal     int64       `json:"workTotal"`
 	WorkDone      int64       `json:"workDone"`
 	Speed         float64     `json:"speed"`
-	ETA           float64     `json:"eta"`
+	ETA           float64     `json:"eta"`                // seconds left; 0 while still estimating
+	FinishAt      *time.Time  `json:"finishAt,omitempty"` // estimated finish (while copying)
+	CopyRate      float64     `json:"copyRate,omitempty"` // average speed of the copy phase, for the next estimate
 	FilesCopied   int64       `json:"filesCopied"`
 	FilesSkipped  int64       `json:"filesSkipped"`
 	FilesVerified int64       `json:"filesVerified"`

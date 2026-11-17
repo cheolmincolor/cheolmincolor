@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"sync"
 
 	"gcopy/internal/engine"
@@ -74,22 +76,42 @@ func (s *Server) handleSettingsSet(w http.ResponseWriter, r *http.Request) {
 	var v map[string]any
 	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
 	if err := json.NewDecoder(r.Body).Decode(&v); err != nil || v == nil {
-		writeErr(w, http.StatusBadRequest, "설정을 읽을 수 없습니다")
+		writeErr(w, http.StatusBadRequest, "Cannot read the settings")
 		return
 	}
 	data, _ := json.MarshalIndent(v, "", " ")
 	historyMu.Lock()
 	defer historyMu.Unlock()
 	if err := os.MkdirAll(s.configDir, 0o755); err != nil {
-		writeErr(w, http.StatusInternalServerError, "설정을 저장할 수 없습니다")
+		writeErr(w, http.StatusInternalServerError, "Cannot save the settings")
 		return
 	}
 	tmp := s.settingsPath() + ".tmp"
 	if os.WriteFile(tmp, data, 0o644) != nil || os.Rename(tmp, s.settingsPath()) != nil {
-		writeErr(w, http.StatusInternalServerError, "설정을 저장할 수 없습니다")
+		writeErr(w, http.StatusInternalServerError, "Cannot save the settings")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// speedHint returns the copy speed of the most recent run that went to
+// the same destinations, or 0.
+func (s *Server) speedHint(dests []string) float64 {
+	key := func(d []string) string {
+		c := append([]string(nil), d...)
+		sort.Strings(c)
+		return strings.Join(c, "\x00")
+	}
+	want := key(dests)
+	historyMu.Lock()
+	h := s.loadHistory()
+	historyMu.Unlock()
+	for _, st := range h {
+		if st.CopyRate > 0 && key(st.Options.Destinations) == want {
+			return st.CopyRate
+		}
+	}
+	return 0
 }
 
 func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {

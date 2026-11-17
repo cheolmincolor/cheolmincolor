@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ko">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -29,11 +29,11 @@
   <div class="brand">
     <span class="logo" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M8 12h11l-3-3M24 20H13l3 3"/></svg></span>
     <h1>G-Copy</h1>
-    <span class="tagline">복사 · 검증 · 증분 백업</span>
+    <span class="tagline">Copy · Verify · Incremental backup</span>
   </div>
   <div class="top-actions">
-    <button class="btn ghost" id="btn-schedules" type="button"><svg class="ico"><use href="#i-cal"/></svg>예약<span class="next-run" id="next-run"></span></button>
-    <button class="btn ghost" id="btn-history" type="button"><svg class="ico"><use href="#i-clock"/></svg>기록</button>
+    <button class="btn ghost" id="btn-schedules" type="button"><svg class="ico"><use href="#i-cal"/></svg>Schedules<span class="next-run" id="next-run"></span></button>
+    <button class="btn ghost" id="btn-history" type="button"><svg class="ico"><use href="#i-clock"/></svg>History</button>
   </div>
 </header>
 
@@ -41,59 +41,59 @@
   <div class="banner" id="sched-banner" role="status" hidden>
     <svg class="ico"><use href="#i-cal"/></svg>
     <span class="sb-text" id="sb-text"></span>
-    <button class="link" id="sb-view" type="button">보기</button>
-    <button class="iconbtn" id="sb-close" type="button" aria-label="알림 닫기" hidden><svg class="ico"><use href="#i-x"/></svg></button>
+    <button class="link" id="sb-view" type="button">View</button>
+    <button class="iconbtn" id="sb-close" type="button" aria-label="Dismiss" hidden><svg class="ico"><use href="#i-x"/></svg></button>
   </div>
   <div class="lanes">
     <section class="lane" id="lane-src" aria-labelledby="h-src">
       <div class="lane-head">
-        <h2 id="h-src">원본</h2>
-        <p>백업할 외장하드나 폴더</p>
+        <h2 id="h-src">Source</h2>
+        <p>The drive or folder to back up</p>
       </div>
       <ul class="cards" id="src-list"></ul>
-      <button class="add setup-only" id="add-src" type="button"><svg class="ico"><use href="#i-plus"/></svg>원본 추가</button>
-      <p class="drophint setup-only native-only">또는 폴더를 여기로 끌어다 놓으세요</p>
+      <button class="add setup-only" id="add-src" type="button"><svg class="ico"><use href="#i-plus"/></svg>Add Source</button>
+      <p class="drophint setup-only native-only">or drop a folder here</p>
     </section>
 
     <div class="flow" aria-hidden="true"><svg class="ico"><use href="#i-arrow"/></svg></div>
 
     <section class="lane" id="lane-dst" aria-labelledby="h-dst">
       <div class="lane-head">
-        <h2 id="h-dst">대상</h2>
-        <p>NAS · DAS의 백업 위치 (여러 곳에 동시에 가능)</p>
+        <h2 id="h-dst">Destination</h2>
+        <p>Where to back up on your NAS or DAS (several at once is fine)</p>
       </div>
       <ul class="cards" id="dst-list"></ul>
-      <button class="add setup-only" id="add-dst" type="button"><svg class="ico"><use href="#i-plus"/></svg>대상 추가</button>
-      <p class="drophint setup-only native-only">또는 폴더를 여기로 끌어다 놓으세요</p>
+      <button class="add setup-only" id="add-dst" type="button"><svg class="ico"><use href="#i-plus"/></svg>Add Destination</button>
+      <p class="drophint setup-only native-only">or drop a folder here</p>
     </section>
   </div>
 
   <!-- start screen -->
   <section class="panel setup-only" id="setup-bar">
     <div class="opts">
-      <label class="check"><input type="checkbox" id="opt-subfolder" checked><span>원본 이름으로 폴더 만들기</span></label>
-      <label class="check"><input type="checkbox" id="opt-reverify"><span>이미 있는 파일도 다시 검증</span></label>
-      <label class="check"><input type="checkbox" id="opt-mirror"><span>동기화 (원본에 없는 파일은 대상에서 정리)</span></label>
-      <label class="pick"><span>체크섬</span>
+      <label class="check"><input type="checkbox" id="opt-subfolder" checked><span>Put files in a folder named after the source</span></label>
+      <label class="check"><input type="checkbox" id="opt-reverify"><span>Re-verify files already there</span></label>
+      <label class="check"><input type="checkbox" id="opt-mirror"><span>Sync (clean up files no longer in the source)</span></label>
+      <label class="pick"><span>Checksum</span>
         <select id="opt-algo">
-          <option value="xxh64">xxHash64 (빠름)</option>
+          <option value="xxh64">xxHash64 (fast)</option>
           <option value="md5">MD5</option>
         </select>
       </label>
     </div>
     <div class="go">
-      <button class="btn ghost" id="btn-save-sched" type="button" disabled>예약으로 저장…</button>
-      <button class="btn primary big" id="btn-start" type="button" disabled>백업 시작</button>
+      <button class="btn ghost" id="btn-save-sched" type="button" disabled>Save as Schedule…</button>
+      <button class="btn primary big" id="btn-start" type="button" disabled>Start Backup</button>
     </div>
     <p class="hint" id="hint"></p>
-    <p class="hint mirror-hint" id="mirror-hint" hidden>동기화: 원본에서 지운 파일은 대상에서 지우지 않고 <b>_G-Copy_Removed</b> 폴더로 옮깁니다. 옮기기 전에 목록을 먼저 보여 드립니다.</p>
+    <p class="hint mirror-hint" id="mirror-hint" hidden>Sync: files deleted from the source are not deleted from the destination but moved to its <b>_G-Copy_Removed</b> folder. You see the list before anything is moved.</p>
     <p class="formerr" id="start-err" role="alert" hidden></p>
   </section>
 
   <!-- while running -->
   <section class="panel run-only" id="run-bar" aria-live="off">
     <div class="run-head">
-      <strong id="run-phase">준비 중</strong>
+      <strong id="run-phase">Preparing</strong>
       <span class="pct" id="run-pct"></span>
     </div>
     <div class="bar" id="run-track"><div class="fill" id="run-fill"></div></div>
@@ -102,7 +102,7 @@
         <p class="stats" id="run-stats"></p>
         <p class="file" id="run-file"></p>
       </div>
-      <button class="btn ghost" id="btn-cancel" type="button">취소</button>
+      <button class="btn ghost" id="btn-cancel" type="button">Cancel</button>
     </div>
   </section>
 
@@ -117,10 +117,10 @@
     </div>
     <div class="cf-dests" id="cf-dests"></div>
     <div class="cf-actions">
-      <button class="btn ghost" id="cf-cancel" type="button">취소</button>
+      <button class="btn ghost" id="cf-cancel" type="button">Cancel</button>
       <span class="grow"></span>
-      <button class="btn ghost" id="cf-keep" type="button">옮기지 않고 백업만</button>
-      <button class="btn primary" id="cf-move" type="button">옮기고 계속</button>
+      <button class="btn ghost" id="cf-keep" type="button">Back Up Only</button>
+      <button class="btn primary" id="cf-move" type="button">Move and Continue</button>
     </div>
   </section>
 
@@ -133,8 +133,8 @@
         <p id="res-sub"></p>
       </div>
       <div class="verdict-actions">
-        <button class="btn ghost" id="btn-retry" type="button">다시 실행</button>
-        <button class="btn primary" id="btn-new" type="button">새 백업</button>
+        <button class="btn ghost" id="btn-retry" type="button">Run Again</button>
+        <button class="btn primary" id="btn-new" type="button">New Backup</button>
       </div>
     </div>
     <dl class="facts" id="res-facts"></dl>
@@ -148,75 +148,75 @@
 
 <dialog id="picker" aria-labelledby="picker-title">
   <div class="dlg-head">
-    <h3 id="picker-title">폴더 선택</h3>
-    <button class="iconbtn" data-close type="button" aria-label="닫기"><svg class="ico"><use href="#i-x"/></svg></button>
+    <h3 id="picker-title">Choose Folder</h3>
+    <button class="iconbtn" data-close type="button" aria-label="Close"><svg class="ico"><use href="#i-x"/></svg></button>
   </div>
   <div class="picker-body">
     <aside class="side">
-      <h4>연결된 디스크</h4>
+      <h4>Disks</h4>
       <ul id="vol-list"></ul>
-      <h4 id="recent-head" hidden>최근 사용</h4>
+      <h4 id="recent-head" hidden>Recent</h4>
       <ul id="recent-list"></ul>
     </aside>
     <div class="browser">
       <form id="path-form" class="pathrow">
-        <input id="path-input" type="text" spellcheck="false" autocomplete="off" aria-label="폴더 경로" placeholder="/Volumes/…">
-        <button class="btn ghost" type="submit">이동</button>
+        <input id="path-input" type="text" spellcheck="false" autocomplete="off" aria-label="Folder path" placeholder="/Volumes/…">
+        <button class="btn ghost" type="submit">Go</button>
       </form>
       <form id="mkdir-form" class="pathrow" hidden>
-        <input id="mkdir-input" type="text" spellcheck="false" autocomplete="off" aria-label="새 폴더 이름" placeholder="새 폴더 이름">
-        <button class="btn" type="submit">만들기</button>
-        <button class="btn ghost" type="button" id="mkdir-cancel">취소</button>
+        <input id="mkdir-input" type="text" spellcheck="false" autocomplete="off" aria-label="New folder name" placeholder="New folder name">
+        <button class="btn" type="submit">Create</button>
+        <button class="btn ghost" type="button" id="mkdir-cancel">Cancel</button>
       </form>
       <p class="formerr" id="browse-err" role="alert" hidden></p>
       <ul id="dir-list" class="dirs"></ul>
     </div>
   </div>
   <div class="dlg-foot">
-    <button class="btn ghost" id="btn-mkdir" type="button">새 폴더</button>
-    <button class="btn ghost native-only" id="btn-native" type="button">Finder에서 선택…</button>
+    <button class="btn ghost" id="btn-mkdir" type="button">New Folder</button>
+    <button class="btn ghost native-only" id="btn-native" type="button">Choose in Finder…</button>
     <p class="chosen" id="picker-chosen"></p>
-    <button class="btn ghost" data-close type="button">취소</button>
-    <button class="btn primary" id="picker-choose" type="button">이 폴더 선택</button>
+    <button class="btn ghost" data-close type="button">Cancel</button>
+    <button class="btn primary" id="picker-choose" type="button">Choose This Folder</button>
   </div>
 </dialog>
 
 <dialog id="schedules" aria-labelledby="schedules-title">
   <div class="dlg-head">
-    <h3 id="schedules-title">예약</h3>
-    <button class="iconbtn" data-close type="button" aria-label="닫기"><svg class="ico"><use href="#i-x"/></svg></button>
+    <h3 id="schedules-title">Schedules</h3>
+    <button class="iconbtn" data-close type="button" aria-label="Close"><svg class="ico"><use href="#i-x"/></svg></button>
   </div>
   <ul class="sched-list" id="sched-list"></ul>
   <div class="dlg-foot">
-    <label class="check native-only"><input type="checkbox" id="login-item"><span>로그인할 때 G-Copy 자동 실행</span></label>
+    <label class="check native-only"><input type="checkbox" id="login-item"><span>Open G-Copy at login</span></label>
     <span class="grow"></span>
-    <button class="btn" id="sched-add" type="button">현재 설정으로 예약 추가…</button>
+    <button class="btn" id="sched-add" type="button">Add Schedule from Current Setup…</button>
   </div>
 </dialog>
 
 <dialog id="sched-edit" aria-labelledby="se-title">
   <div class="dlg-head">
-    <h3 id="se-title">예약으로 저장</h3>
-    <button class="iconbtn" data-close type="button" aria-label="닫기"><svg class="ico"><use href="#i-x"/></svg></button>
+    <h3 id="se-title">Save as Schedule</h3>
+    <button class="iconbtn" data-close type="button" aria-label="Close"><svg class="ico"><use href="#i-x"/></svg></button>
   </div>
   <form id="se-form" class="se-body" novalidate>
-    <label class="field"><span class="flabel">이름</span><input id="se-name" type="text" maxlength="60" autocomplete="off" spellcheck="false"></label>
-    <div class="field"><span class="flabel">반복</span>
-      <div class="seg" role="radiogroup" aria-label="반복">
-        <label><input type="radio" name="se-kind" value="daily" checked><span>매일</span></label>
-        <label><input type="radio" name="se-kind" value="weekly"><span>매주</span></label>
-        <label><input type="radio" name="se-kind" value="hours"><span>몇 시간마다</span></label>
+    <label class="field"><span class="flabel">Name</span><input id="se-name" type="text" maxlength="60" autocomplete="off" spellcheck="false"></label>
+    <div class="field"><span class="flabel">Repeat</span>
+      <div class="seg" role="radiogroup" aria-label="Repeat">
+        <label><input type="radio" name="se-kind" value="daily" checked><span>Daily</span></label>
+        <label><input type="radio" name="se-kind" value="weekly"><span>Weekly</span></label>
+        <label><input type="radio" name="se-kind" value="hours"><span>Every few hours</span></label>
       </div>
     </div>
-    <div class="field" id="se-days-row"><span class="flabel">요일</span>
-      <div class="days" id="se-days" role="group" aria-label="요일"></div>
+    <div class="field" id="se-days-row"><span class="flabel">Days</span>
+      <div class="days" id="se-days" role="group" aria-label="Days"></div>
     </div>
-    <label class="field" id="se-time-row"><span class="flabel">시각</span><input id="se-time" type="time" value="02:00" required></label>
-    <label class="field" id="se-hours-row"><span class="flabel">간격</span>
+    <label class="field" id="se-time-row"><span class="flabel">Time</span><input id="se-time" type="time" value="02:00" required></label>
+    <label class="field" id="se-hours-row"><span class="flabel">Every</span>
       <select id="se-hours">
-        <option value="1">1시간마다</option><option value="2">2시간마다</option><option value="3">3시간마다</option>
-        <option value="4">4시간마다</option><option value="6" selected>6시간마다</option><option value="8">8시간마다</option>
-        <option value="12">12시간마다</option><option value="24">24시간마다</option>
+        <option value="1">1 hour</option><option value="2">2 hours</option><option value="3">3 hours</option>
+        <option value="4">4 hours</option><option value="6" selected>6 hours</option><option value="8">8 hours</option>
+        <option value="12">12 hours</option><option value="24">24 hours</option>
       </select>
     </label>
     <div class="se-what" id="se-what"></div>
@@ -225,15 +225,15 @@
   </form>
   <div class="dlg-foot">
     <span class="grow"></span>
-    <button class="btn ghost" data-close type="button">취소</button>
-    <button class="btn primary" id="se-save" type="submit" form="se-form">저장</button>
+    <button class="btn ghost" data-close type="button">Cancel</button>
+    <button class="btn primary" id="se-save" type="submit" form="se-form">Save</button>
   </div>
 </dialog>
 
 <dialog id="history" aria-labelledby="history-title">
   <div class="dlg-head">
-    <h3 id="history-title">기록</h3>
-    <button class="iconbtn" data-close type="button" aria-label="닫기"><svg class="ico"><use href="#i-x"/></svg></button>
+    <h3 id="history-title">History</h3>
+    <button class="iconbtn" data-close type="button" aria-label="Close"><svg class="ico"><use href="#i-x"/></svg></button>
   </div>
   <ul class="hist" id="hist-list"></ul>
 </dialog>
