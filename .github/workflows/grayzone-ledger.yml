@@ -12,6 +12,11 @@ on:
 permissions:
   contents: read
 
+# 같은 브랜치에 새로 올리면 이전 실행은 멈춥니다.
+concurrency:
+  group: grayzone-ledger-${{ github.ref }}
+  cancel-in-progress: true
+
 defaults:
   run:
     working-directory: grayzone-ledger

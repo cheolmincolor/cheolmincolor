@@ -62,8 +62,8 @@
 
 ### 2단계: 앱 받아서 설치
 
-GitHub의 [Actions → GRAYZONE 장부 앱](https://github.com/cheolmincolor/cheolmincolor/actions/workflows/grayzone-ledger.yml)에서
-가장 최근의 초록색(✓) 실행을 열고, 아래쪽 **Artifacts**에서 내려받습니다.
+GitHub 저장소의 [Actions](https://github.com/cheolmincolor/cheolmincolor/actions) 탭에서 「GRAYZONE 장부 앱」의
+가장 최근 초록색(✓) 실행을 열고, 아래쪽 **Artifacts**에서 내려받습니다. GitHub에 로그인해야 보입니다.
 
 | 컴퓨터 | 받을 것 | 안에 든 파일 |
 |---|---|---|
