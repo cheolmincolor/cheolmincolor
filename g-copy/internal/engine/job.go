@@ -38,6 +38,7 @@ type destRun struct {
 	extras      []extraFile
 	pruneDirs   []dirRef
 	removeBytes int64
+	destFiles   int64 // files seen on this destination while looking for extras
 	removed     atomic.Int64
 
 	mu      sync.Mutex
@@ -239,6 +240,15 @@ func (j *Job) askMirror() (bool, error) {
 	if !j.hasExtras() {
 		setMirror(MirrorNothing)
 		return false, nil
+	}
+	if j.opts.Unattended {
+		if ok, why := j.unattendedVerdict(); !ok {
+			setMirror(MirrorSkipped)
+			j.warnOnce("mirror-unattended", "예약 실행: "+why+" 동기화 정리는 하지 않았습니다. 직접 실행하면 목록을 보고 정할 수 있습니다.")
+			return false, nil
+		}
+		setMirror(MirrorApproved) // moved aside, never deleted: reversible
+		return true, nil
 	}
 	j.mu.Lock()
 	j.mirror = MirrorPending

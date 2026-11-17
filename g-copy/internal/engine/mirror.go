@@ -8,6 +8,7 @@ package engine
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -101,6 +102,7 @@ func (j *Job) walkExtras(dr *destRun, s int, base string) error {
 		if filepath.Dir(rel) == "." && strings.EqualFold(filepath.Ext(name), ".mhl") && !keep[pathKey(rel)] {
 			return nil // a G-Copy report from an earlier run
 		}
+		dr.destFiles++
 		if keep[pathKey(rel)] {
 			return nil
 		}
@@ -111,6 +113,24 @@ func (j *Job) walkExtras(dr *destRun, s int, base string) error {
 		dr.extras = append(dr.extras, extraFile{src: s, rel: rel, size: info.Size()})
 		return nil
 	})
+}
+
+// unattendedVerdict decides, for a run nobody is watching, whether sync
+// may move files without asking. It refuses when the source is empty (a
+// reformatted card, a disk that mounted empty) or when a large share of a
+// destination would go: that is more often a mistake than an edit.
+func (j *Job) unattendedVerdict() (ok bool, why string) {
+	if len(j.files) == 0 {
+		return false, "원본이 비어 있어서"
+	}
+	for _, dr := range j.dests {
+		n := int64(len(dr.extras))
+		if n > 0 && n*unattendedMaxShare > dr.destFiles {
+			pct := n * 100 / max(dr.destFiles, 1)
+			return false, fmt.Sprintf("%s에서 정리할 파일이 많아서 (%d개, 대상 파일의 %d%%)", dr.shown, n, pct)
+		}
+	}
+	return true, ""
 }
 
 // hasExtras reports whether any destination has something to move aside.

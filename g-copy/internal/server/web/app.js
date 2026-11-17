@@ -179,6 +179,7 @@ function renderSetup() {
 
   const ready = state.sources.length > 0 && state.dests.length > 0;
   $('btn-start').disabled = !ready;
+  $('btn-save-sched').disabled = !ready;
   $('start-err').hidden = true;
 
   let hint = '';
@@ -335,6 +336,7 @@ function renderResult(job) {
   const listed = job.dests.reduce((n, d) => n + d.toRemove, 0);
   if (job.mirror === 'approved' && removed > 0) notes.push(h('li', {}, '동기화: 원본에 없는 파일 ' + num(removed) + '개를 지우지 않고 각 대상의 _G-Copy_Removed 폴더로 옮겼습니다.'));
   if (job.mirror === 'declined') notes.push(h('li', {}, '동기화: 원본에 없는 파일 ' + num(listed) + '개는 옮기지 않고 그대로 두었습니다.'));
+  if (job.options.label) notes.unshift(h('li', {}, '예약 실행: ' + job.options.label));
   if (job.mirror === 'nothing') notes.push(h('li', {}, '동기화: 대상에 원본에 없는 파일이 없었습니다.'));
   const left = [];
   if (job.excluded > 0) left.push('.DS_Store 같은 시스템 파일 ' + num(job.excluded) + '개');
@@ -441,15 +443,99 @@ $('cf-cancel').addEventListener('click', async () => {
   schedule(100);
 });
 
+// ── keeping up with the engine ─────────────────────────────────────────
+//
+// Only one backup runs at a time. A scheduled run that starts while the
+// person is choosing folders (or reading a result) is shown in a banner
+// instead of taking over the screen; "보기" opens it.
+
+let bannerJob = null;     // the scheduled run shown in the banner
+let announceSched = null; // id of a scheduled run seen running: its end gets a notification
+let schedLoaded = 0;      // when the schedule list was last fetched
+
 async function poll() {
+  let job;
   try {
-    applyJob(await api('/api/job'));
+    job = await api('/api/job');
   } catch {
     schedule(1500); // keep trying: the run itself continues in the app
     return;
   }
-  if (state.mode === 'running' || state.mode === 'confirm') schedule(400);
+  const mine = state.job && job.id === state.job.id;
+  if (state.mode === 'running' || state.mode === 'confirm') {
+    if (mine || job.status === 'idle' || !state.job) {
+      applyJob(job);
+    } else {
+      // Our run ended and a scheduled one started right after it: show our
+      // result (from the history), and the new run in the banner.
+      let ours = null;
+      try { ours = (await api('/api/history')).history.find((x) => x.id === state.job.id); } catch { /* shown by api() */ }
+      if (ours) applyJob(ours); else { setMode('setup'); renderSetup(); }
+      renderBanner(job);
+    }
+  } else if (job.status !== 'idle' && !mine && job.options && job.options.label) {
+    renderBanner(job);
+  } else {
+    hideBanner();
+  }
+  if (Date.now() - schedLoaded > 30000) loadSchedules();
+  const busy = state.mode === 'running' || state.mode === 'confirm';
+  schedule(busy ? 400 : bannerJob && !FINISHED.includes(bannerJob.status) ? 1000 : 3000);
 }
+
+function renderBanner(job) {
+  bannerJob = job;
+  const finished = FINISHED.includes(job.status);
+  let text, tone = '';
+  if (!finished) {
+    const copying = job.status === 'copying' && job.workTotal > 0;
+    text = '예약 실행 중 · ' + job.options.label + ' · ' + (copying ? Math.floor((job.workDone / job.workTotal) * 100) + '%' : '준비 중');
+    announceSched = job.id;
+    if (native) native.setProgress(copying ? job.workDone / job.workTotal : 2, true);
+  } else {
+    const verdict = job.status === 'done' ? '완료' : job.status === 'cancelled' ? '취소됨' : '확인 필요';
+    tone = job.status === 'done' ? 'ok' : 'bad';
+    text = '예약 실행 ' + verdict + ' · ' + job.options.label + ' · 복사 ' + num(job.filesCopied) + '개' +
+      (job.filesFailed ? ', 실패 ' + num(job.filesFailed) + '개' : '');
+    if (native) native.setProgress(-1, false);
+    if (announceSched === job.id) {
+      announceSched = null;
+      if (native) native.notify('G-Copy — 예약 실행 ' + verdict, job.options.label + ': 복사 ' + num(job.filesCopied) + '개' + (job.filesFailed ? ', 실패 ' + num(job.filesFailed) + '개' : ''));
+      loadSchedules();
+    }
+  }
+  const b = $('sched-banner');
+  b.hidden = false;
+  b.dataset.tone = tone;
+  $('sb-text').textContent = text;
+  $('sb-view').textContent = finished ? '결과 보기' : '보기';
+  $('sb-close').hidden = !finished;
+}
+
+function hideBanner() {
+  if (bannerJob && !FINISHED.includes(bannerJob.status) && native) native.setProgress(-1, false);
+  bannerJob = null;
+  $('sched-banner').hidden = true;
+  $('sb-text').textContent = '';
+}
+
+$('sb-view').addEventListener('click', () => {
+  const job = bannerJob;
+  if (!job) return;
+  if (state.mode === 'setup') { // come back to these after looking
+    state.saved = { sources: state.sources.map((x) => x.path), dests: state.dests.map((x) => x.path) };
+  }
+  hideBanner();
+  state.job = null;
+  applyJob(job);
+  schedule(100);
+});
+
+$('sb-close').addEventListener('click', async () => {
+  const job = bannerJob;
+  hideBanner();
+  if (job) { try { await api('/api/job/dismiss', { id: job.id }); } catch { /* shown by api() */ } }
+});
 
 async function startJob(opts) {
   const err = $('start-err');
@@ -488,16 +574,22 @@ $('btn-cancel').addEventListener('click', async () => {
 
 $('btn-retry').addEventListener('click', async () => {
   const opts = state.job.options;
-  try { await api('/api/job/dismiss', {}); } catch { return; }
+  try { await api('/api/job/dismiss', { id: state.job.id }); } catch { return; }
   state.job = null;
   await startJob(opts);
 });
 
 $('btn-new').addEventListener('click', async () => {
-  try { await api('/api/job/dismiss', {}); } catch { return; }
+  try { await api('/api/job/dismiss', { id: state.job && state.job.id }); } catch { return; }
   state.job = null;
-  state.sources = [];                       // the next drive…
-  state.dests = state.dests.map((d) => item(d.path)); // …to the same place
+  if (state.saved) { // back to what was being set up before looking at a scheduled run
+    state.sources = state.saved.sources.map(item);
+    state.dests = state.saved.dests.map(item);
+    state.saved = null;
+  } else {
+    state.sources = [];                       // the next drive…
+    state.dests = state.dests.map((d) => item(d.path)); // …to the same place
+  }
   setMode('setup');
   document.title = 'G-Copy';
   renderSetup();
@@ -734,10 +826,205 @@ $('btn-history').addEventListener('click', async () => {
     let detail = '복사 ' + num(j.filesCopied) + '개 · ' + fmtBytes(j.bytesCopied) + ' · 건너뜀 ' + num(j.filesSkipped) + ' · ' + fmtDur(j.seconds);
     const gone = (j.dests || []).reduce((n, d) => n + (d.removed || 0), 0);
     if (gone > 0) detail += ' · 정리 ' + num(gone);
+    if (j.options.label) detail = '예약 · ' + j.options.label + ' · ' + detail;
     if (j.status === 'cancelled') detail = '취소됨 · ' + detail;
     if (j.status === 'failed') detail = (j.message || '실패 ' + num(j.filesFailed) + '개 · 문제 ' + num(j.errorCount) + '건') + (j.message ? '' : ' · ' + detail);
     return h('li', {}, ico, h('span', { class: 'what', title: what }, what), h('span', { class: 'when' }, df.format(new Date(j.startedAt))), h('span', { class: 'detail' }, detail));
   }));
+});
+
+// ── schedules ───────────────────────────────────────────────────────────
+
+const WEEK = ['일', '월', '화', '수', '목', '금', '토'];
+const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0]; // shown Monday first
+const sched = { list: [], editing: null, armed: null };
+const two = (n) => String(n).padStart(2, '0');
+
+function fmtAt(iso) {
+  const d = new Date(iso), now = new Date();
+  const days = Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()) - new Date(now.getFullYear(), now.getMonth(), now.getDate())) / 86400000);
+  const hm = two(d.getHours()) + ':' + two(d.getMinutes());
+  if (days === 0) return '오늘 ' + hm;
+  if (days === 1) return '내일 ' + hm;
+  if (days === -1) return '어제 ' + hm;
+  return (d.getMonth() + 1) + '/' + d.getDate() + '(' + WEEK[d.getDay()] + ') ' + hm;
+}
+
+function fmtWhen(w) {
+  if (w.kind === 'daily') return '매일 ' + w.time;
+  if (w.kind === 'weekly') {
+    const days = WEEK_ORDER.filter((d) => w.days.includes(d));
+    const label = days.length === 5 && !days.includes(0) && !days.includes(6) ? '평일' : days.map((d) => WEEK[d]).join('·');
+    return '매주 ' + label + ' ' + w.time;
+  }
+  return w.hours + '시간마다';
+}
+
+function fmtWhat(o) {
+  const extras = [o.mirror && '동기화', o.reverify && '재검증', o.algo === 'md5' && 'MD5'].filter(Boolean);
+  return o.sources.map(baseName).join(', ') + '  →  ' + o.destinations.map(baseName).join(', ') + (extras.length ? '  ·  ' + extras.join(' · ') : '');
+}
+
+function fmtLast(l) {
+  const when = '지난 실행 ' + fmtAt(l.at) + ' · ';
+  if (l.status === 'done') return ['ok', when + '완료, 복사 ' + num(l.copied) + '개' + (l.removed ? ', 정리 ' + num(l.removed) + '개' : '')];
+  if (l.status === 'skipped') return ['warn', when + '건너뜀 — 디스크가 연결되어 있지 않았습니다', l.message];
+  if (l.status === 'cancelled') return ['warn', when + '취소됨'];
+  return ['bad', when + '확인 필요' + (l.failed ? ' — 실패 ' + num(l.failed) + '개' : '') + (l.message ? ' — ' + l.message : '')];
+}
+
+async function loadSchedules() {
+  schedLoaded = Date.now();
+  try { sched.list = (await api('/api/schedules')).schedules; } catch { return; }
+  renderNextRun();
+  if ($('schedules').open) renderSchedules();
+}
+
+function renderNextRun() {
+  const on = sched.list.filter((s) => s.enabled && s.nextRun);
+  const next = on.slice().sort((a, b) => new Date(a.nextRun) - new Date(b.nextRun))[0];
+  $('next-run').textContent = next ? '· ' + fmtAt(next.nextRun) : '';
+  if (native && native.setScheduleInfo) {
+    native.setScheduleInfo(on.length, next ? '다음 예약: ' + fmtAt(next.nextRun) + '  ' + next.name : '켜진 예약 없음');
+  }
+}
+
+function renderSchedules() {
+  const list = $('sched-list');
+  const ready = state.mode === 'setup' && state.sources.length > 0 && state.dests.length > 0;
+  $('sched-add').disabled = !ready;
+  $('sched-add').title = ready ? '' : '먼저 메인 화면에서 원본과 대상을 고르세요';
+  if (!sched.list.length) {
+    list.replaceChildren(h('li', { class: 'empty' }, '예약이 없습니다. 메인 화면에서 원본과 대상을 고른 뒤 "예약으로 저장…"을 누르세요.'));
+    return;
+  }
+  list.replaceChildren(...sched.list.map((sc) => {
+    const toggle = h('input', { type: 'checkbox', 'aria-label': sc.name + ' 켜기' });
+    toggle.checked = sc.enabled;
+    toggle.addEventListener('change', async () => {
+      try { await api('/api/schedules/' + sc.id, { enabled: toggle.checked }); } catch { toggle.checked = !toggle.checked; }
+      loadSchedules();
+    });
+    let now = null;
+    if (sc.running) now = h('p', { class: 's-now' }, '지금 실행 중');
+    else if (sc.queued) now = h('p', { class: 's-now' }, '대기 중 — 진행 중인 백업이 끝나면 실행합니다');
+    const last = sc.last ? fmtLast(sc.last) : null;
+    const del = h('button', { class: 'btn ghost', type: 'button' }, '삭제');
+    del.addEventListener('click', async () => {
+      if (sched.armed !== sc.id) { // ask once more
+        sched.armed = sc.id;
+        del.textContent = '정말 삭제';
+        setTimeout(() => { if (sched.armed === sc.id) { sched.armed = null; del.textContent = '삭제'; } }, 3000);
+        return;
+      }
+      sched.armed = null;
+      try { await api('/api/schedules/' + sc.id + '/delete', {}); } catch { /* shown by api() */ }
+      loadSchedules();
+    });
+    return h('li', { class: 'sched' + (sc.enabled ? '' : ' off') },
+      h('label', { class: 'switch' }, toggle, h('span')),
+      h('div', { class: 's-main' },
+        h('p', { class: 's-name' }, sc.name),
+        h('p', { class: 's-when' }, fmtWhen(sc.when) + (sc.enabled && sc.nextRun ? '  ·  다음 ' + fmtAt(sc.nextRun) : sc.enabled ? '' : '  ·  꺼짐')),
+        h('p', { class: 's-what', title: sc.options.sources.concat(sc.options.destinations).join('\n') }, fmtWhat(sc.options)),
+        now,
+        last ? h('p', { class: 's-last ' + last[0], title: last[2] || null }, last[1]) : null,
+      ),
+      h('div', { class: 's-actions' },
+        h('button', { class: 'btn ghost', type: 'button', disabled: sc.running || sc.queued, onclick: async () => {
+          try { await api('/api/schedules/' + sc.id + '/run', {}); } catch { return; }
+          $('schedules').close();
+          schedule(150);
+          loadSchedules();
+        } }, '지금 실행'),
+        h('button', { class: 'btn ghost', type: 'button', onclick: () => openEditor(sc) }, '편집'),
+        del,
+      ),
+    );
+  }));
+}
+
+$('btn-schedules').addEventListener('click', async () => {
+  $('schedules').showModal();
+  renderSchedules();
+  loadSchedules();
+  if (native) $('login-item').checked = await native.getLoginItem();
+});
+$('login-item').addEventListener('change', () => native && native.setLoginItem($('login-item').checked));
+$('sched-add').addEventListener('click', () => { $('schedules').close(); openEditor(null); });
+$('btn-save-sched').addEventListener('click', () => openEditor(null));
+
+// the editor
+
+$('se-days').replaceChildren(...WEEK_ORDER.map((d) => h('label', {},
+  h('input', { type: 'checkbox', value: String(d), 'aria-label': WEEK[d] + '요일' }), h('span', {}, WEEK[d]))));
+
+function editorKind() { return document.querySelector('input[name="se-kind"]:checked').value; }
+
+function renderEditorRows() {
+  const kind = editorKind();
+  $('se-days-row').hidden = kind !== 'weekly';
+  $('se-time-row').hidden = kind === 'hours';
+  $('se-hours-row').hidden = kind !== 'hours';
+}
+for (const r of document.querySelectorAll('input[name="se-kind"]')) r.addEventListener('change', renderEditorRows);
+
+function openEditor(sc) {
+  sched.editing = sc;
+  const opts = sc ? sc.options : options();
+  const w = sc ? sc.when : { kind: 'daily', time: '02:00', days: [1, 2, 3, 4, 5], hours: 6 };
+  $('se-title').textContent = sc ? '예약 편집' : '예약으로 저장';
+  $('se-name').value = sc ? sc.name : opts.sources.map(baseName).join(', ') + ' → ' + opts.destinations.map(baseName).join(', ');
+  document.querySelector('input[name="se-kind"][value="' + w.kind + '"]').checked = true;
+  $('se-time').value = w.time || '02:00';
+  $('se-hours').value = String(w.hours || 6);
+  const days = w.days && w.days.length ? w.days : [1, 2, 3, 4, 5];
+  for (const c of $('se-days').querySelectorAll('input')) c.checked = days.includes(Number(c.value));
+  renderEditorRows();
+
+  $('se-what').replaceChildren(
+    h('b', {}, '원본 '), opts.sources.map(baseName).join(', '), '  →  ', h('b', {}, '대상 '), opts.destinations.map(baseName).join(', '),
+    [opts.subfolder && ' · 원본 이름으로 폴더', opts.mirror && ' · 동기화', opts.reverify && ' · 재검증', opts.algo === 'md5' && ' · MD5'].filter(Boolean).join(''),
+  );
+  const notes = [
+    h('li', {}, native ? 'G-Copy가 켜져 있을 때 실행됩니다. 창을 닫아도 메뉴 막대에 남아서 계속 실행됩니다.' : 'G-Copy가 실행 중일 때만 실행됩니다.'),
+    h('li', {}, 'Mac이 잠자기 중이었거나 G-Copy가 꺼져 있어서 놓친 예약은, 다시 켜지면 한 번 실행합니다.'),
+    h('li', {}, '그 시각에 디스크가 연결되어 있지 않으면 그 회차는 건너뛰고 기록에 남깁니다.'),
+  ];
+  if (opts.mirror) {
+    notes.push(h('li', { class: 'warn' }, '동기화: 예약 실행 때는 확인 없이 원본에 없는 파일을 _G-Copy_Removed로 옮깁니다. 단, 원본이 비어 있거나 한 대상에서 25%가 넘는 파일을 정리해야 하면 옮기지 않고 기록에 남깁니다.'));
+  }
+  $('se-notes').replaceChildren(...notes);
+  $('se-err').hidden = true;
+  $('se-save').disabled = false;
+  $('sched-edit').showModal();
+  $('se-name').select();
+}
+
+$('se-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const kind = editorKind();
+  const when = { kind };
+  if (kind !== 'hours') when.time = $('se-time').value;
+  if (kind === 'weekly') when.days = [...$('se-days').querySelectorAll('input:checked')].map((c) => Number(c.value));
+  if (kind === 'hours') when.hours = Number($('se-hours').value);
+  const body = { name: $('se-name').value, when };
+  const sc = sched.editing;
+  if (!sc) body.options = options();
+  $('se-save').disabled = true;
+  try {
+    await api(sc ? '/api/schedules/' + sc.id : '/api/schedules', body);
+  } catch (ex) {
+    $('se-err').textContent = ex.message;
+    $('se-err').hidden = false;
+    $('se-save').disabled = false;
+    return;
+  }
+  $('sched-edit').close();
+  if (!sc) store.set('opts', { algo: body.options.algo, subfolder: body.options.subfolder, reverify: body.options.reverify, mirror: !!body.options.mirror });
+  await loadSchedules();
+  $('schedules').showModal();
+  renderSchedules();
 });
 
 // ── start-up ────────────────────────────────────────────────────────────
@@ -773,12 +1060,15 @@ async function refreshDests() {
     state.volumes = (await api('/api/volumes')).volumes;
     job = await api('/api/job');
   } catch { schedule(1500); return; }
-  if (job.status !== 'idle') {
-    applyJob(job);
-    if (state.mode === 'running' || state.mode === 'confirm') schedule(400);
+  loadSchedules();
+  if (job.status !== 'idle' && !(job.options && job.options.label)) {
+    applyJob(job); // a backup someone started (this window was reloaded)
+    schedule(state.mode === 'running' || state.mode === 'confirm' ? 400 : 3000);
     return;
   }
+  if (job.status !== 'idle') renderBanner(job); // a scheduled run: do not take over
   // Remember where backups went last time: the NAS path rarely changes.
   state.dests = store.get('dests', []).map(item);
   refreshDests();
+  schedule(job.status !== 'idle' ? 1000 : 3000);
 })();

@@ -21,4 +21,11 @@ contextBridge.exposeInMainWorld('gcopyNative', {
 
   // A system notification, shown only when the window is in the background.
   notify: (title, body) => ipcRenderer.send('notify', title, body),
+
+  // How many schedules are on, and what runs next (for the menu bar).
+  setScheduleInfo: (count, text) => ipcRenderer.send('schedules', count, text),
+
+  // Start G-Copy at login (so schedules run after a restart).
+  getLoginItem: () => ipcRenderer.invoke('login-item'),
+  setLoginItem: (on) => ipcRenderer.invoke('login-item', !!on),
 });

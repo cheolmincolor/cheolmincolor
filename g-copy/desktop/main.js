@@ -7,7 +7,7 @@
 // and adds what only a desktop app can do: the system folder dialog,
 // dropped folders, Dock/taskbar progress and a notification at the end.
 
-const { app, BrowserWindow, Menu, Notification, dialog, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, Menu, Notification, Tray, dialog, ipcMain, nativeImage, powerSaveBlocker, shell } = require('electron');
 const { spawn } = require('node:child_process');
 const path = require('node:path');
 
@@ -18,6 +18,12 @@ let win = null;
 let busy = false;         // a backup is running
 let closingOnPurpose = false;
 let shuttingDown = false;
+let quitting = false;     // the app is quitting (not just its window closing)
+let schedulesOn = 0;      // enabled schedules: then closing the window keeps G-Copy running
+let scheduleText = '';    // "다음 예약: …", for the menu bar
+let tray = null;
+let awake = -1;           // power save blocker id while a backup runs
+let toldAboutBackground = false;
 
 function enginePath() {
   if (process.env.GCOPY_ENGINE) return process.env.GCOPY_ENGINE;
@@ -77,7 +83,10 @@ function createWindow(url) {
     title: 'G-Copy',
     backgroundColor: '#151515', // same as the page, so there is no white flash while it loads
     autoHideMenuBar: true,
+    // Opened at login: start in the menu bar, ready for the schedules.
+    show: !(process.platform === 'darwin' && app.getLoginItemSettings().wasOpenedAtLogin),
     webPreferences: {
+      backgroundThrottling: false, // keeps following scheduled runs while hidden
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
@@ -93,21 +102,65 @@ function createWindow(url) {
   });
 
   win.on('close', (e) => {
-    if (!busy || closingOnPurpose) return;
+    if (quitting || closingOnPurpose) return;
+    if (schedulesOn > 0) {
+      // Schedules only run while G-Copy runs: keep it in the menu bar.
+      e.preventDefault();
+      win.hide();
+      if (!toldAboutBackground && Notification.isSupported()) {
+        toldAboutBackground = true;
+        new Notification({ title: 'G-Copy는 메뉴 막대에서 계속 실행됩니다', body: busy ? '백업도 계속 진행합니다.' : '예약된 백업을 정해진 시각에 실행합니다.' }).show();
+      }
+      return;
+    }
+    if (!busy) return;
     e.preventDefault();
-    const choice = dialog.showMessageBoxSync(win, {
-      type: 'warning',
-      buttons: ['계속 백업', '중단하고 종료'],
-      defaultId: 0,
-      cancelId: 0,
-      message: '백업이 진행 중입니다',
-      detail: '지금 종료하면 복사를 중단합니다. 검증을 마친 파일은 대상에 남고, 다음에 같은 백업을 실행하면 이어서 복사합니다.',
-    });
-    if (choice === 1) { closingOnPurpose = true; win.close(); }
+    if (askStopBackup()) { closingOnPurpose = true; win.close(); }
   });
   win.on('closed', () => { win = null; });
 
   win.loadURL(url);
+}
+
+// askStopBackup asks before a running backup is cut short; true = stop it.
+function askStopBackup() {
+  const box = {
+    type: 'warning',
+    buttons: ['계속 백업', '중단하고 종료'],
+    defaultId: 0,
+    cancelId: 0,
+    message: '백업이 진행 중입니다',
+    detail: '지금 종료하면 복사를 중단합니다. 검증을 마친 파일은 대상에 남고, 다음에 같은 백업을 실행하면 이어서 복사합니다.',
+  };
+  return (win ? dialog.showMessageBoxSync(win, box) : dialog.showMessageBoxSync(box)) === 1;
+}
+
+function showWindow() {
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+}
+
+// The menu bar icon: open, what is scheduled next, quit.
+function updateTray() {
+  try {
+    if (!tray) {
+      const img = nativeImage.createFromPath(path.join(__dirname, 'assets', 'trayTemplate.png'));
+      img.setTemplateImage(true);
+      tray = new Tray(img);
+      tray.on('click', () => tray.popUpContextMenu());
+    }
+    const status = busy ? '백업 진행 중' : scheduleText || '켜진 예약 없음';
+    tray.setToolTip('G-Copy — ' + status);
+    tray.setContextMenu(Menu.buildFromTemplate([
+      { label: 'G-Copy 열기', click: showWindow },
+      { type: 'separator' },
+      { label: status, enabled: false },
+      { type: 'separator' },
+      { label: 'G-Copy 종료', click: () => app.quit() },
+    ]));
+  } catch { /* no menu bar on this system */ }
 }
 
 function buildMenu() {
@@ -137,16 +190,34 @@ ipcMain.handle('pick-folder', async (event, kind, startAt) => {
 
 ipcMain.on('progress', (event, fraction, running) => {
   if (!trusted(event) || !win) return;
+  const was = busy;
   busy = !!running;
   const f = Number(fraction);
   win.setProgressBar(Number.isFinite(f) ? f : -1); // -1 removes the bar, above 1 means "working"
+  // Keep the Mac from sleeping in the middle of a backup (the screen may still turn off).
+  if (busy && awake < 0) awake = powerSaveBlocker.start('prevent-app-suspension');
+  if (!busy && awake >= 0) { powerSaveBlocker.stop(awake); awake = -1; }
+  if (was !== busy) updateTray();
+});
+
+ipcMain.on('schedules', (event, count, text) => {
+  if (!trusted(event)) return;
+  schedulesOn = Math.max(0, Number(count) || 0);
+  scheduleText = String(text || '').slice(0, 120);
+  updateTray();
+});
+
+ipcMain.handle('login-item', (event, value) => {
+  if (!trusted(event)) return false;
+  if (typeof value === 'boolean') app.setLoginItemSettings({ openAtLogin: value });
+  return app.getLoginItemSettings().openAtLogin;
 });
 
 ipcMain.on('notify', (event, title, body) => {
   if (!trusted(event) || !win || win.isFocused()) return;
   if (Notification.isSupported()) {
     const n = new Notification({ title: String(title).slice(0, 120), body: String(body).slice(0, 300) });
-    n.on('click', () => { if (win) { win.show(); win.focus(); } });
+    n.on('click', showWindow);
     n.show();
   }
   if (process.platform === 'win32') win.flashFrame(true);
@@ -157,12 +228,12 @@ ipcMain.on('notify', (event, title, body) => {
 if (!app.requestSingleInstanceLock()) {
   app.quit(); // already running: its window is brought forward below
 } else {
-  app.on('second-instance', () => {
-    if (win) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); }
-  });
+  app.on('second-instance', showWindow);
+  app.on('activate', showWindow); // Dock icon clicked while the window is hidden
 
   app.whenReady().then(async () => {
     buildMenu();
+    updateTray();
     try {
       createWindow(await startEngine());
     } catch (e) {
@@ -172,8 +243,15 @@ if (!app.requestSingleInstanceLock()) {
     }
   });
 
-  // One window, one job: closing the window ends the app on every platform.
+  // Without schedules, closing the window ends the app; with them it only hides.
   app.on('window-all-closed', () => app.quit());
+
+  // Cmd+Q, the menu bar's 종료, logging out: ask before cutting a backup short.
+  app.on('before-quit', (e) => {
+    if (shuttingDown || closingOnPurpose) { quitting = true; return; }
+    if (busy && !askStopBackup()) { e.preventDefault(); return; }
+    quitting = true;
+  });
 
   app.on('will-quit', (e) => {
     if (!engine || engine.exitCode !== null) return;

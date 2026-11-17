@@ -804,3 +804,71 @@ func TestConfirmWithoutAQuestionIsRefused(t *testing.T) {
 		t.Error("Confirm accepted on a job that never asked")
 	}
 }
+
+// ── unattended (scheduled) runs ────────────────────────────────────────
+
+func TestUnattendedSyncMovesWithoutAsking(t *testing.T) {
+	tmp := t.TempDir()
+	src, dst := filepath.Join(tmp, "A001"), filepath.Join(tmp, "NAS")
+	for i := 0; i < 10; i++ {
+		writeFile(t, filepath.Join(src, fmt.Sprintf("c%d.mov", i)), randBytes(int64(i), 3000), day)
+	}
+	os.MkdirAll(dst, 0o755)
+	o := Options{Sources: []string{src}, Destinations: []string{dst}, Subfolder: true}
+	runJob(t, o, nil)
+	os.Remove(filepath.Join(src, "c3.mov")) // 1 of 10: a normal edit
+
+	o.Mirror, o.Unattended, o.Label = true, true, "매일 밤"
+	st := runJob(t, o, nil)
+	if st.Status != StatusDone || st.Mirror != MirrorApproved || st.Dests[0].Removed != 1 || st.Options.Label != "매일 밤" {
+		t.Fatalf("status %s mirror %q removed %d label %q", st.Status, st.Mirror, st.Dests[0].Removed, st.Options.Label)
+	}
+	if _, err := os.Stat(filepath.Join(dst, "A001", "c3.mov")); !os.IsNotExist(err) {
+		t.Error("c3.mov was not moved aside")
+	}
+}
+
+func TestUnattendedSyncRefusesLargeOrEmptyRemovals(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		remove int // how many of 8 source files disappear
+		want   string
+	}{
+		{"half the files", 4, "정리할 파일이 많아서"},
+		{"an empty card", 8, "원본이 비어 있어서"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tmp := t.TempDir()
+			src, dst := filepath.Join(tmp, "A001"), filepath.Join(tmp, "NAS")
+			for i := 0; i < 8; i++ {
+				writeFile(t, filepath.Join(src, fmt.Sprintf("c%d.mov", i)), randBytes(int64(i), 3000), day)
+			}
+			os.MkdirAll(dst, 0o755)
+			o := Options{Sources: []string{src}, Destinations: []string{dst}, Subfolder: true}
+			runJob(t, o, nil)
+			for i := 0; i < tc.remove; i++ {
+				os.Remove(filepath.Join(src, fmt.Sprintf("c%d.mov", i)))
+			}
+			o.Mirror, o.Unattended = true, true
+			st := runJob(t, o, nil)
+			if st.Mirror != MirrorSkipped || st.Dests[0].Removed != 0 || len(st.Warnings) != 1 || !strings.Contains(st.Warnings[0], tc.want) {
+				t.Fatalf("mirror %q removed %d warnings %v", st.Mirror, st.Dests[0].Removed, st.Warnings)
+			}
+			if n, _ := os.ReadDir(filepath.Join(dst, "A001")); len(n) != 9 { // 8 files + report
+				t.Errorf("destination has %d entries, want 9 (nothing moved)", len(n))
+			}
+		})
+	}
+}
+
+func TestMissingDiskIsRecognised(t *testing.T) {
+	tmp := t.TempDir()
+	err := Check(Options{Sources: []string{filepath.Join(tmp, "unplugged")}, Destinations: []string{tmp}})
+	if !IsMissing(err) || !strings.Contains(err.Error(), "찾을 수 없습니다") {
+		t.Errorf("missing source: %v (IsMissing %v)", err, IsMissing(err))
+	}
+	err = Check(Options{Sources: []string{tmp}, Destinations: []string{tmp}})
+	if err == nil || IsMissing(err) {
+		t.Errorf("a real mistake must not look like a missing disk: %v", err)
+	}
+}

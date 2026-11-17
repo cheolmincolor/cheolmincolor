@@ -80,6 +80,27 @@ func sourceName(resolved string) string {
 	return base
 }
 
+// missingError means a source or destination is not there, usually
+// because its disk or share is not connected.
+type missingError struct{ msg string }
+
+func (e missingError) Error() string { return e.msg }
+
+// IsMissing reports whether err means a source or destination folder is
+// not there (for instance, its disk is not connected).
+func IsMissing(err error) bool {
+	var m missingError
+	return errors.As(err, &m)
+}
+
+// Check validates opts the way Start does, without starting anything.
+func Check(opts Options) error {
+	j := &Job{opts: opts}
+	j.opts.Sources = append([]string(nil), opts.Sources...)
+	j.opts.Destinations = append([]string(nil), opts.Destinations...)
+	return j.prepare()
+}
+
 func resolveDir(p, role string) (string, os.FileInfo, error) {
 	if strings.TrimSpace(p) == "" {
 		return "", nil, fmt.Errorf("%s 경로가 비어 있습니다", role)
@@ -93,7 +114,7 @@ func resolveDir(p, role string) (string, os.FileInfo, error) {
 	}
 	fi, err := os.Stat(abs)
 	if err != nil {
-		return "", nil, fmt.Errorf("%s 폴더를 찾을 수 없습니다: %s", role, p)
+		return "", nil, missingError{fmt.Sprintf("%s 폴더를 찾을 수 없습니다: %s", role, p)}
 	}
 	if !fi.IsDir() {
 		return "", nil, fmt.Errorf("%s 경로가 폴더가 아닙니다: %s", role, p)

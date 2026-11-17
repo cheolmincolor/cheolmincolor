@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"gcopy/internal/engine"
 )
@@ -33,8 +34,12 @@ type Server struct {
 	configDir   string
 	extraVolDir []string
 
-	mu  sync.Mutex
-	job *engine.Job
+	mu      sync.Mutex
+	job     *engine.Job
+	closing bool // shutting down: start nothing new
+
+	sched scheduler
+	now   func() time.Time // the clock; replaced in tests
 }
 
 // New creates a server. configDir is where the history is kept;
@@ -44,16 +49,20 @@ func New(configDir string, extraVolumeDirs []string) *Server {
 	if _, err := rand.Read(b); err != nil {
 		panic(err)
 	}
-	return &Server{token: hex.EncodeToString(b), configDir: configDir, extraVolDir: extraVolumeDirs}
+	s := &Server{token: hex.EncodeToString(b), configDir: configDir, extraVolDir: extraVolumeDirs, now: time.Now}
+	s.loadSchedules()
+	return s
 }
 
 // Token is the secret the browser must present; it is part of the URL the
 // app opens at launch.
 func (s *Server) Token() string { return s.token }
 
-// CancelRunning stops the current job, if any, and waits for it to clean up.
+// CancelRunning stops the current job, if any, and waits for it to clean
+// up. Nothing new starts afterwards: it is called when G-Copy quits.
 func (s *Server) CancelRunning() {
 	s.mu.Lock()
+	s.closing = true
 	j := s.job
 	s.mu.Unlock()
 	if j != nil {
@@ -77,6 +86,11 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("POST /api/job/confirm", s.handleJobConfirm)
 	api.HandleFunc("POST /api/job/dismiss", s.handleJobDismiss)
 	api.HandleFunc("GET /api/history", s.handleHistory)
+	api.HandleFunc("GET /api/schedules", s.handleSchedules)
+	api.HandleFunc("POST /api/schedules", s.handleScheduleCreate)
+	api.HandleFunc("POST /api/schedules/{id}", s.handleScheduleUpdate)
+	api.HandleFunc("POST /api/schedules/{id}/delete", s.handleScheduleDelete)
+	api.HandleFunc("POST /api/schedules/{id}/run", s.handleScheduleRun)
 	api.HandleFunc("GET /api/settings", s.handleSettingsGet)
 	api.HandleFunc("POST /api/settings", s.handleSettingsSet)
 	api.HandleFunc("POST /api/reveal", s.handleReveal)
@@ -317,7 +331,12 @@ func (s *Server) handleJobStart(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, "이미 백업이 진행 중입니다")
 		return
 	}
-	j, err := engine.Start(opts, s.appendHistory)
+	if s.closing {
+		writeErr(w, http.StatusConflict, "G-Copy를 종료하는 중입니다")
+		return
+	}
+	opts.Label, opts.Unattended = "", false // a person started this one
+	j, err := engine.Start(opts, s.jobFinished)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -364,9 +383,21 @@ func (s *Server) handleJobConfirm(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleJobDismiss clears a finished job so the start screen is shown again.
+// With {"id": …} it only clears that job: the screen may be dismissing its
+// own result while a scheduled run has already taken its place.
 func (s *Server) handleJobDismiss(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ID string `json:"id"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if req.ID != "" && (s.job == nil || s.job.ID() != req.ID) {
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true}) // already gone
+		return
+	}
 	if s.job != nil && !s.job.Snapshot().Status.Finished() {
 		writeErr(w, http.StatusConflict, "백업이 아직 진행 중입니다")
 		return

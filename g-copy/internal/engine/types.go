@@ -6,7 +6,7 @@ import "time"
 
 const (
 	// Version is written into reports.
-	Version = "0.3.0"
+	Version = "0.4.0"
 
 	chunkSize       = 4 << 20  // read/write unit
 	bigFileSize     = 16 << 20 // files this size or larger are copied one at a time
@@ -20,6 +20,10 @@ const (
 	RemovedDirName  = "_G-Copy_Removed"
 
 	maxRemoveList = 300 // file names shown per destination before syncing
+
+	// In an unattended run, sync moves files aside without asking, unless
+	// that would take out more than 1/unattendedMaxShare of a destination.
+	unattendedMaxShare = 4
 )
 
 // Options describes one backup run.
@@ -30,6 +34,10 @@ type Options struct {
 	Subfolder    bool     `json:"subfolder"` // copy into <destination>/<source name>/
 	Reverify     bool     `json:"reverify"`  // re-hash files that are already up to date
 	Mirror       bool     `json:"mirror"`    // sync: move aside destination files the source no longer has
+
+	// Set by the scheduler, not by the screen.
+	Label      string `json:"label,omitempty"`      // name of the schedule that started the run
+	Unattended bool   `json:"unattended,omitempty"` // nobody is there to answer questions
 }
 
 // Status is the lifecycle stage of a job.

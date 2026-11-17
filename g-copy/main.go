@@ -66,6 +66,8 @@ func main() {
 	}
 
 	srv := server.New(configDir, extra)
+	stopScheduler := make(chan struct{})
+	go srv.RunScheduler(stopScheduler)
 	url := fmt.Sprintf("http://%s/?token=%s", ln.Addr(), srv.Token())
 	httpSrv := &http.Server{Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
 
@@ -94,6 +96,7 @@ func main() {
 	}
 	go func() {
 		<-stop
+		close(stopScheduler)
 		srv.CancelRunning() // first of all: removes unfinished temporary files
 		fmt.Println("\n진행 중인 복사를 정리하고 종료합니다.")
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)

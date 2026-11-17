@@ -1,7 +1,7 @@
 {
   "name": "gcopy-desktop",
   "productName": "G-Copy",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "외장하드를 NAS·DAS에 복사하고 체크섬으로 검증하는 DI실용 백업 앱",
   "private": true,
   "main": "main.js",
