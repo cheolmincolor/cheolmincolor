@@ -1,0 +1,19 @@
+{
+  "name": "grayzone-ledger",
+  "productName": "GRAYZONE Ledger",
+  "version": "1.0.0",
+  "description": "GRAYZONE 매출 장부 (구글 시트 연동 경리 앱)",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.js",
+    "icons": "node scripts/make-icons.js",
+    "package": "bash package.sh"
+  },
+  "devDependencies": {
+    "@electron/packager": "20.3.0",
+    "electron": "45.3.3",
+    "playwright": "1.63.0"
+  }
+}

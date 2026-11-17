@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- 장부 한 장: 가운데 줄 하나가 회색(그레이존)으로 칠해져 있습니다. -->
+  <rect x="100" y="100" width="824" height="824" rx="184" fill="#1f1f1e"/>
+  <rect x="262" y="226" width="500" height="572" rx="44" fill="#f4f4f2"/>
+  <rect x="322" y="318" width="380" height="34" rx="17" fill="#c3c2b7"/>
+  <rect x="306" y="420" width="412" height="96" rx="20" fill="#8a8984"/>
+  <rect x="322" y="584" width="380" height="34" rx="17" fill="#c3c2b7"/>
+  <rect x="322" y="672" width="236" height="34" rx="17" fill="#c3c2b7"/>
+</svg>

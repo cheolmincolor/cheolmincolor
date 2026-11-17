@@ -1,0 +1,55 @@
+# GRAYZONE 장부 데스크톱 앱: 테스트하고 Mac·Windows 용 zip 을 만듭니다.
+# 결과 zip 은 Actions 실행 화면 아래쪽 「Artifacts」에서 받습니다.
+name: GRAYZONE 장부 앱
+
+on:
+  push:
+    paths:
+      - 'grayzone-ledger/**'
+      - '.github/workflows/grayzone-ledger.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: grayzone-ledger
+
+jobs:
+  test-and-windows:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: 테스트 (시트 규칙·로그인·화면·Electron)
+        run: xvfb-run -a node --test test/*.test.js
+      - name: Windows 용 zip
+        run: TARGETS=win32-x64 bash package.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GRAYZONE-Ledger-windows
+          path: grayzone-ledger/dist/*.zip
+          retention-days: 30
+
+  mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: Mac 용 zip (Apple Silicon · Intel, ad-hoc 서명)
+        run: TARGETS="darwin-arm64 darwin-x64" bash package.sh
+      - name: 서명된 Apple Silicon 앱이 실제로 뜨는지 확인
+        run: GZ_EXE="dist/GRAYZONE Ledger-darwin-arm64/GRAYZONE Ledger.app/Contents/MacOS/GRAYZONE Ledger" node --test test/electron.test.js
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GRAYZONE-Ledger-mac
+          path: grayzone-ledger/dist/*.zip
+          retention-days: 30

@@ -1,163 +1,7 @@
-<!DOCTYPE html>
-<html lang="ko">
-<head>
-<meta charset="utf-8">
-<base target="_top">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>GRAYZONE 장부</title>
-<style>
-:root {
-  --bg: #f4f4f2; --surface: #ffffff; --ink: #0b0b0b; --ink2: #52514e; --muted: #7b7973;
-  --line: #e1e0d9; --axis: #c3c2b7; --fill: #ecebe6; --btn: #1f1f1e; --btn-ink: #ffffff;
-  --s1: #2a78d6; --s2: #eb6834;
-  --bad: #c22f2f; --bad-bg: #fbe9e7; --ok: #1f7a1f; --ok-bg: #e6f3e6; --wait: #8a5a00; --wait-bg: #fbf0d6;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink2: #c3c2b7; --muted: #979590;
-    --line: #2c2c2a; --axis: #383835; --fill: #262624; --btn: #f0efec; --btn-ink: #0b0b0b;
-    --s1: #3987e5; --s2: #d95926;
-    --bad: #f08a8a; --bad-bg: #3a1f1f; --ok: #7fd07f; --ok-bg: #1c2f1c; --wait: #e5c06a; --wait-bg: #33290f;
-  }
-}
-* { box-sizing: border-box; }
-html, body { margin: 0; background: var(--bg); color: var(--ink); }
-body { font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", "Malgun Gothic", "Noto Sans KR", sans-serif; -webkit-text-size-adjust: 100%; }
-button, input, select, textarea { font: inherit; color: inherit; }
-button { cursor: pointer; }
-.num { font-variant-numeric: tabular-nums; }
-.wrap { max-width: 760px; margin: 0 auto; padding: 0 16px 120px; }
-
-header { position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 12px 0 10px; display: flex; align-items: center; gap: 10px; }
-header h1 { font-size: 17px; letter-spacing: .04em; margin: 0; flex: 1; font-weight: 700; }
-header h1 small { font-weight: 500; color: var(--muted); letter-spacing: 0; margin-left: 4px; }
-select, .icon-btn { height: 36px; border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 0 10px; }
-.icon-btn { width: 36px; padding: 0; display: grid; place-items: center; text-decoration: none; font-size: 16px; color: var(--ink); }
-.busy .icon-btn.refresh { animation: spin .8s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
-
-.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin-bottom: 12px; }
-.card h2 { font-size: 13px; font-weight: 600; color: var(--ink2); margin: 0 0 10px; }
-.kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
-.kpi { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; min-width: 0; text-align: left; }
-button.kpi:active { background: var(--fill); }
-.kpi .label { font-size: 12px; color: var(--ink2); }
-.kpi .value { font-size: 20px; font-weight: 700; margin-top: 2px; white-space: nowrap; }
-.kpi .value small { font-size: 12px; font-weight: 500; color: var(--ink2); margin-left: 1px; }
-.kpi .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
-
-.legend { display: flex; gap: 14px; font-size: 12px; color: var(--ink2); margin-bottom: 4px; }
-.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
-.readout { font-size: 13px; min-height: 20px; margin-bottom: 4px; }
-.readout b { font-weight: 600; }
-svg.chart { width: 100%; height: auto; display: block; touch-action: pan-y; }
-svg.chart text { font-size: 11px; fill: var(--muted); }
-svg.chart .hit { fill: transparent; }
-svg.chart .hit.on { fill: var(--fill); }
-
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-th, td { padding: 7px 4px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
-th { font-weight: 500; color: var(--muted); font-size: 12px; }
-th:first-child, td:first-child { text-align: left; }
-tr:last-child td { border-bottom: 0; }
-td.dim { color: var(--muted); }
-tfoot td { font-weight: 600; border-top: 1px solid var(--axis); }
-.meter { height: 6px; border-radius: 3px; background: var(--fill); margin-top: 5px; overflow: hidden; }
-.meter i { display: block; height: 100%; background: var(--s1); border-radius: 3px; }
-.rank { display: grid; grid-template-columns: 1fr auto; gap: 0 10px; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
-.rank:last-child { border-bottom: 0; }
-.rank .meter { grid-column: 1 / -1; }
-.rank small { color: var(--muted); margin-left: 6px; }
-
-.tools { display: flex; gap: 8px; margin-bottom: 10px; }
-.tools input[type=search] { flex: 1; min-width: 0; height: 40px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 0 12px; }
-.chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
-.chip { height: 32px; padding: 0 12px; border-radius: 16px; border: 1px solid var(--line); background: var(--surface); font-size: 13px; color: var(--ink2); }
-.chip.on { background: var(--btn); color: var(--btn-ink); border-color: var(--btn); }
-.chips .gap { flex: 1; }
-
-.group { display: flex; justify-content: space-between; align-items: baseline; padding: 14px 2px 6px; font-size: 13px; color: var(--ink2); }
-.group b { font-size: 15px; color: var(--ink); }
-.list { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
-.item { display: grid; grid-template-columns: auto 1fr auto; gap: 2px 10px; width: 100%; padding: 11px 12px; border: 0; border-bottom: 1px solid var(--line); background: none; text-align: left; align-items: start; }
-.item:last-child { border-bottom: 0; }
-.item:active { background: var(--fill); }
-.item .day { color: var(--muted); font-size: 12px; padding-top: 2px; min-width: 38px; }
-.item .main { min-width: 0; }
-.item .t { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.item .s { font-size: 12px; color: var(--ink2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.item .amt { text-align: right; font-weight: 600; white-space: nowrap; }
-.item .tags { text-align: right; margin-top: 3px; }
-.tag { display: inline-block; font-size: 11px; line-height: 18px; padding: 0 6px; border-radius: 9px; background: var(--fill); color: var(--ink2); margin-left: 3px; white-space: nowrap; }
-.tag.ok { background: var(--ok-bg); color: var(--ok); }
-.tag.bad { background: var(--bad-bg); color: var(--bad); }
-.tag.wait { background: var(--wait-bg); color: var(--wait); }
-.acts { grid-column: 1 / -1; display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
-.acts button { height: 32px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--axis); background: var(--surface); font-size: 13px; }
-.acts button.pri { background: var(--btn); color: var(--btn-ink); border-color: var(--btn); }
-.empty { text-align: center; color: var(--muted); padding: 36px 0; }
-
-nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; background: var(--surface); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
-nav .in { max-width: 760px; margin: 0 auto; display: grid; grid-template-columns: repeat(3, 1fr); }
-nav button { height: 54px; border: 0; background: none; color: var(--muted); font-size: 13px; }
-nav button.on { color: var(--ink); font-weight: 700; }
-nav button .badge { display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--bad-bg); color: var(--bad); font-size: 11px; font-weight: 600; margin-left: 4px; }
-.fab { position: fixed; z-index: 7; right: max(16px, calc(50vw - 364px)); bottom: calc(70px + env(safe-area-inset-bottom)); height: 50px; padding: 0 20px; border-radius: 25px; border: 0; background: var(--btn); color: var(--btn-ink); font-weight: 700; box-shadow: 0 4px 14px rgba(0,0,0,.25); }
-
-.scrim { position: fixed; inset: 0; z-index: 20; background: rgba(0,0,0,.45); display: flex; align-items: flex-end; justify-content: center; }
-.sheet { background: var(--surface); width: 100%; max-width: 560px; max-height: 92vh; overflow: auto; border-radius: 18px 18px 0 0; padding: 18px 16px calc(18px + env(safe-area-inset-bottom)); }
-@media (min-width: 620px) { .scrim { align-items: center; } .sheet { border-radius: 18px; } }
-.sheet h3 { margin: 0 0 4px; font-size: 17px; }
-.sheet .sub { color: var(--ink2); font-size: 13px; margin-bottom: 12px; }
-.facts { display: grid; grid-template-columns: 84px 1fr; gap: 6px 10px; font-size: 14px; margin: 12px 0 16px; }
-.facts dt { color: var(--muted); }
-.facts dd { margin: 0; overflow-wrap: anywhere; }
-.row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-label.f { display: block; font-size: 12px; color: var(--ink2); margin-bottom: 10px; min-width: 0; }
-label.f input, label.f select, label.f textarea { display: block; width: 100%; height: 42px; margin-top: 4px; border: 1px solid var(--axis); border-radius: 10px; background: var(--surface); padding: 0 10px; font-size: 16px; }
-label.f textarea { height: 64px; padding: 8px 10px; resize: vertical; }
-label.check { display: flex; align-items: center; gap: 8px; font-size: 14px; margin: 0 0 12px; }
-details { margin-bottom: 12px; }
-summary { font-size: 13px; color: var(--ink2); padding: 6px 0 10px; cursor: pointer; }
-.btns { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
-.btn { flex: 1; min-width: 96px; height: 46px; border-radius: 12px; border: 1px solid var(--axis); background: var(--surface); font-weight: 600; }
-.btn.pri { background: var(--btn); color: var(--btn-ink); border-color: var(--btn); }
-.btn.danger { color: var(--bad); flex: 0 0 auto; }
-.btn:disabled { opacity: .5; }
-.err { color: var(--bad); font-size: 13px; min-height: 18px; margin-top: 8px; }
-.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 12px; }
-.seg button { height: 40px; border-radius: 10px; border: 1px solid var(--axis); background: var(--surface); }
-.seg button.on { background: var(--btn); color: var(--btn-ink); border-color: var(--btn); }
-
-.toast { position: fixed; z-index: 30; left: 50%; transform: translateX(-50%); bottom: calc(132px + env(safe-area-inset-bottom)); background: var(--btn); color: var(--btn-ink); border-radius: 12px; padding: 10px 14px; font-size: 14px; display: flex; gap: 12px; align-items: center; max-width: calc(100vw - 32px); box-shadow: 0 4px 14px rgba(0,0,0,.25); }
-.toast button { border: 0; background: none; color: inherit; font-weight: 700; text-decoration: underline; padding: 0; white-space: nowrap; }
-.loading { text-align: center; color: var(--muted); padding: 80px 0; }
-</style>
-</head>
-<body>
-<div class="wrap">
-  <header>
-    <h1>GRAYZONE<small>장부</small></h1>
-    <select id="year" aria-label="연도"></select>
-    <a class="icon-btn" id="sheetLink" target="_blank" rel="noopener" title="시트 열기" aria-label="시트 열기">▦</a>
-    <button class="icon-btn refresh" id="refresh" title="새로 고침" aria-label="새로 고침">↻</button>
-  </header>
-  <main id="app"><div class="loading">장부를 불러오는 중…</div></main>
-</div>
-<button class="fab" id="add">+ 작업 등록</button>
-<nav><div class="in">
-  <button data-tab="home">요약</button>
-  <button data-tab="ledger">장부</button>
-  <button data-tab="unpaid">미수금<span class="badge" id="unpaidBadge" hidden></span></button>
-</div></nav>
-<div id="modal"></div>
-<div id="toast"></div>
-
-<script>
 (function () {
 'use strict';
 
-var S = { jobs: [], today: '', sheetUrl: '', year: null, tab: 'home', q: '', lf: 'all', uf: 'all', us: 'old', loaded: false };
+var S = { jobs: [], today: '', sheetUrl: '', title: '', setup: false, status: null, year: null, tab: 'home', q: '', lf: 'all', uf: 'all', us: 'old', loaded: false };
 var $ = function (s, el) { return (el || document).querySelector(s); };
 var app = $('#app'), modal = $('#modal'), toastEl = $('#toast');
 
@@ -178,29 +22,105 @@ function people(j) { return [j.director && '감독 ' + j.director, j.pd && 'PD '
 function needsInvoice(j) { return j.invoice !== '완료' && j.unpaid > 0; }
 
 // ---------- 서버 호출 ----------
+var busy = 0;
 function call(name, args) {
-  return new Promise(function (resolve, reject) {
-    if (!(window.google && google.script && google.script.run)) {
-      reject(new Error('이 화면은 Apps Script 웹앱으로 열어야 동작합니다.'));
-      return;
-    }
-    document.body.classList.add('busy');
-    var run = google.script.run
-      .withSuccessHandler(function (json) { document.body.classList.remove('busy'); resolve(JSON.parse(json)); })
-      .withFailureHandler(function (e) { document.body.classList.remove('busy'); reject(e); });
-    run[name].apply(run, args || []);
+  if (!window.gz) return Promise.reject(new Error('이 화면은 GRAYZONE 장부 앱 안에서 열어야 동작합니다.'));
+  busy++; document.body.classList.add('busy');
+  return window.gz.call(name, args || []).then(function (r) {
+    if (--busy === 0) document.body.classList.remove('busy');
+    if (r && 'ok' in r) return r.ok;
+    var e = new Error((r && r.err) || '알 수 없는 오류');
+    e.auth = !!(r && r.auth);
+    throw e;
+  }, function (e) {
+    if (--busy === 0) document.body.classList.remove('busy');
+    throw e;
   });
 }
 function errText(e) { return String((e && e.message) || e).replace(/^(Error|Exception):\s*/, ''); }
 function setData(d) {
-  S.jobs = d.jobs; S.today = d.today; S.sheetUrl = d.sheetUrl; S.loaded = true;
+  S.jobs = d.jobs; S.today = d.today; S.sheetUrl = d.sheetUrl; S.title = d.title; S.loaded = true; S.setup = false;
+  document.body.classList.remove('setup');
   if (S.year === null) S.year = Number(S.today.slice(0, 4));
   render();
 }
 function load() {
-  return call('getData').then(setData).catch(function (e) {
-    if (!S.loaded) app.innerHTML = '<div class="empty">' + esc(errText(e)) + '</div>';
+  return call('status').then(function (st) {
+    if (!st.hasClient || !st.signedIn || !st.spreadsheetId) return showSetup(st);
+    return call('getData').then(setData);
+  }).catch(function (e) {
+    if (e.auth) return call('status').then(function (st) { showSetup(st, errText(e)); });
+    if (!S.loaded) app.innerHTML = '<div class="empty">' + esc(errText(e)) + '<div class="btns" style="justify-content:center;margin-top:14px"><button class="btn" style="flex:0 0 auto" data-retry>다시 시도</button></div></div>';
     else toast(errText(e));
+  });
+}
+/** 로그인이 풀린 채로 저장하려 하면 설정 화면으로 보냅니다. */
+function failed(e) {
+  if (e && e.auth) { closeSheet(); call('status').then(function (st) { showSetup(st, errText(e)); }); }
+  return e;
+}
+
+// ---------- 처음 설정 ----------
+function showSetup(st, message) {
+  S.setup = true; S.status = st;
+  document.body.classList.add('setup');
+  closeSheet();
+  var n = !st.hasClient ? 1 : !st.signedIn ? 2 : 3;
+  var step = function (i, title, body, done) {
+    return '<div class="card step ' + (i < n ? 'done' : i === n ? 'now' : '') + '"><span class="no">' + (i < n ? '✓' : i) + '</span><div>' +
+      '<h2>' + title + '</h2>' + (i < n ? '<div class="ok">' + done + '</div>' : i === n ? body : '') + '</div></div>';
+  };
+  app.innerHTML = '<div class="steps"><p class="intro">처음 한 번만 하면 됩니다. 자세한 방법은 설치 안내(README)를 보세요.</p>' +
+    step(1, 'OAuth 클라이언트 파일 고르기',
+      '<p>Google Cloud 콘솔에서 만든 「데스크톱 앱」 클라이언트의 JSON 파일(client_secret_….json)을 고릅니다.</p>' +
+      '<div class="btns"><button class="btn pri" data-setup="pickClient">파일 고르기…</button></div>', '클라이언트 파일을 골랐습니다') +
+    step(2, '구글 로그인',
+      '<p>브라우저가 열리면 매출 장부 시트의 주인 계정으로 로그인하고 허용을 누릅니다. 「스프레드시트 보기·수정」 항목에 꼭 체크하세요.</p>' +
+      '<div class="btns"><button class="btn pri" data-setup="signIn">브라우저에서 로그인</button></div>', esc(st.email || '로그인했습니다')) +
+    step(3, '매출 장부 시트 연결',
+      '<p>브라우저에서 「GRAYZONE 매출 장부」를 열고 주소창의 주소를 복사해 붙여 넣습니다.</p>' +
+      '<input id="sheetUrl" placeholder="https://docs.google.com/spreadsheets/d/…" autocomplete="off" spellcheck="false">' +
+      '<div class="btns"><button class="btn pri" data-setup="setSheet">연결</button></div>', '') +
+    '<div class="err" style="text-align:center" id="setupErr">' + esc(message || '') + '</div>' +
+    (st.hasClient ? '<div class="btns" style="justify-content:center"><button class="btn" style="flex:0 0 auto" data-setup="reset">처음부터 다시</button></div>' : '') +
+    '</div>';
+  var u = $('#sheetUrl');
+  if (u) u.focus();
+}
+function setupAction(action, btn) {
+  var err = $('#setupErr');
+  var args = [];
+  if (action === 'setSheet') args = [$('#sheetUrl').value];
+  if (action === 'reset' && !confirm('클라이언트 파일·로그인·시트 연결을 모두 지우고 처음부터 할까요? 시트의 내용은 바뀌지 않습니다.')) return;
+  btn.disabled = true;
+  err.textContent = action === 'signIn' ? '브라우저에서 로그인을 마쳐 주세요…' : '';
+  call(action, args).then(function (st) {
+    if (st.hasClient && st.signedIn && st.spreadsheetId) return load();
+    showSetup(st);
+  }).catch(function (e) {
+    btn.disabled = false;
+    err.textContent = errText(e);
+  });
+}
+
+// ---------- 설정 창 ----------
+function showSettings() {
+  if (S.setup) return;
+  call('status').then(function (st) {
+    var el = openSheet('<h3>설정</h3><div class="sub">연결 상태를 확인하고 바꿀 수 있습니다.</div>' +
+      '<dl class="facts"><dt>구글 계정</dt><dd>' + esc(st.email || '-') + '</dd><dt>시트</dt><dd>' + esc(st.spreadsheetTitle || st.spreadsheetId) + '</dd></dl>' +
+      '<label class="f">다른 시트 연결 (주소 붙여넣기)<input id="newSheet" placeholder="https://docs.google.com/spreadsheets/d/…" autocomplete="off" spellcheck="false"></label>' +
+      '<div class="btns"><button class="btn" data-a="sheet">시트 바꾸기</button><button class="btn" data-a="logout">로그아웃</button></div>' +
+      '<div class="btns"><button class="btn danger" data-a="reset">처음부터 다시 설정</button><button class="btn" data-a="close">닫기</button></div><div class="err"></div>');
+    el.addEventListener('click', function (e) {
+      var a = e.target.dataset.a;
+      if (a === 'close') closeSheet();
+      if (a === 'sheet') submit(el, call('setSheet', [$('#newSheet', el).value]).then(function () { S.loaded = false; return load(); }));
+      if (a === 'logout') submit(el, call('signOut').then(function (st2) { showSetup(st2); }));
+      if (a === 'reset' && confirm('클라이언트 파일·로그인·시트 연결을 모두 지우고 처음부터 할까요? 시트의 내용은 바뀌지 않습니다.')) {
+        submit(el, call('reset').then(function (st2) { showSetup(st2); }));
+      }
+    });
   });
 }
 /** 행 하나를 고치고, 성공하면 (되돌리기 가능한) 알림을 띄웁니다. */
@@ -212,7 +132,7 @@ function patchJob(j, patch, message) {
     if (!message) return;
     toast(message, '되돌리기', function () {
       var now = S.jobs.filter(function (x) { return x.row === j.row; })[0];
-      if (now) patchJob(now, undo, '되돌렸습니다');
+      if (now) patchJob(now, undo, '되돌렸습니다').catch(function (e) { if (!failed(e).auth) toast(errText(e)); });
     });
   });
 }
@@ -461,6 +381,7 @@ function submit(el, promise) {
   Array.prototype.forEach.call(btns, function (b) { b.disabled = true; });
   if (err) err.textContent = '';
   return promise.then(function (r) { closeSheet(); return r; }, function (e) {
+    if (e && e.auth) { failed(e); return; }
     Array.prototype.forEach.call(btns, function (b) { b.disabled = false; });
     if (err) err.textContent = errText(e); else toast(errText(e));
     throw e;
@@ -597,6 +518,9 @@ document.addEventListener('input', function (e) {
   if (t.id === 'q') { S.q = t.value; $('#ledgerList').innerHTML = ledgerList(); }
 });
 app.addEventListener('click', function (e) {
+  var s = e.target.closest('[data-setup]');
+  if (s) { setupAction(s.dataset.setup, s); return; }
+  if (e.target.closest('[data-retry]')) { app.innerHTML = '<div class="loading">장부를 불러오는 중…</div>'; load(); return; }
   var t = e.target.closest('[data-act],[data-row],[data-lf],[data-uf],[data-us],[data-go]');
   if (!t) return;
   var d = t.dataset;
@@ -606,7 +530,7 @@ app.addEventListener('click', function (e) {
   if (d.go) { var p = d.go.split(':'); S.tab = p[0]; S.uf = p[1]; render(); window.scrollTo(0, 0); return; }
   var j = jobAt(d.row);
   if (!j) return;
-  if (d.act === 'invoice') patchJob(j, { invoice: '완료' }, '계산서 발행으로 표시했습니다').catch(function (err) { toast(errText(err)); });
+  if (d.act === 'invoice') patchJob(j, { invoice: '완료' }, '계산서 발행으로 표시했습니다').catch(function (err) { if (!failed(err).auth) toast(errText(err)); });
   else if (d.act === 'pay') showPay(j);
   else showDetail(j);
 });
@@ -617,7 +541,19 @@ $('nav').addEventListener('click', function (e) {
 });
 $('#year').addEventListener('change', function (e) { S.year = Number(e.target.value); render(); });
 $('#refresh').addEventListener('click', load);
-$('#add').addEventListener('click', function () { if (S.loaded) showForm(null); });
+$('#settings').addEventListener('click', function () { if (S.setup) load(); else showSettings(); });
+$('#add').addEventListener('click', function () { if (S.loaded && !S.setup) showForm(null); });
+if (window.gz && window.gz.onMenu) window.gz.onMenu(function (action) {
+  if (S.setup) return;
+  if (action === 'add' && S.loaded && !modal.innerHTML) showForm(null);
+  if (action === 'refresh') load();
+  if (action === 'settings') showSettings();
+  if (action === 'sheet' && S.sheetUrl) window.open(S.sheetUrl, '_blank');
+  if (action.indexOf('tab:') === 0 && S.loaded) { closeSheet(); S.tab = action.slice(4); render(); window.scrollTo(0, 0); }
+});
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Enter' && e.target.id === 'sheetUrl') { var b = $('[data-setup=setSheet]'); if (b) setupAction('setSheet', b); }
+});
 var resizeTimer = null;
 window.addEventListener('resize', function () {
   clearTimeout(resizeTimer);
@@ -627,6 +563,3 @@ document.addEventListener('keydown', function (e) { if (e.key === 'Escape') clos
 
 load();
 })();
-</script>
-</body>
-</html>
