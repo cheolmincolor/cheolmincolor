@@ -19,7 +19,7 @@ func dropCache(f *os.File) {
 func allocAligned(n int) []byte {
 	b, err := unix.Mmap(-1, 0, n, unix.PROT_READ|unix.PROT_WRITE, unix.MAP_ANON|unix.MAP_PRIVATE)
 	if err != nil {
-		panic("tandem: cannot allocate I/O buffer: " + err.Error())
+		panic("g-copy: cannot allocate I/O buffer: " + err.Error())
 	}
 	return b
 }

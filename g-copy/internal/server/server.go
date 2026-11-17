@@ -19,13 +19,13 @@ import (
 	"strings"
 	"sync"
 
-	"tandem/internal/engine"
+	"gcopy/internal/engine"
 )
 
 //go:embed web
 var webFS embed.FS
 
-const cookieName = "tandem_session"
+const cookieName = "gcopy_session"
 
 // Server holds the single running (or last finished) job.
 type Server struct {
@@ -94,7 +94,7 @@ func (s *Server) Handler() http.Handler {
 		if r.URL.Path == "/" {
 			if t := r.URL.Query().Get("token"); t != "" {
 				if !s.validToken(t) {
-					http.Error(w, "이 주소는 더 이상 유효하지 않습니다. Tandem을 실행한 창에 표시된 주소로 접속하세요.", http.StatusForbidden)
+					http.Error(w, "이 주소는 더 이상 유효하지 않습니다. G-Copy를 실행한 창에 표시된 주소로 접속하세요.", http.StatusForbidden)
 					return
 				}
 				http.SetCookie(w, &http.Cookie{Name: cookieName, Value: t, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode})
@@ -105,7 +105,7 @@ func (s *Server) Handler() http.Handler {
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			c, err := r.Cookie(cookieName)
 			if err != nil || !s.validToken(c.Value) {
-				writeErr(w, http.StatusUnauthorized, "세션이 만료되었습니다. Tandem을 실행한 창에 표시된 주소로 다시 접속하세요.")
+				writeErr(w, http.StatusUnauthorized, "세션이 만료되었습니다. G-Copy를 실행한 창에 표시된 주소로 다시 접속하세요.")
 				return
 			}
 			if r.Method != http.MethodGet {

@@ -55,7 +55,7 @@ func writeMHL(path, algo string, started, finished time.Time, entries []mhlEntry
 	}
 	w := bufio.NewWriterSize(f, 1<<20)
 	fmt.Fprint(w, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<hashlist version=\"1.1\">\n")
-	fmt.Fprintf(w, "  <creatorinfo>\n    <username>%s</username>\n    <hostname>%s</hostname>\n    <tool>Tandem %s</tool>\n    <startdate>%s</startdate>\n    <finishdate>%s</finishdate>\n  </creatorinfo>\n",
+	fmt.Fprintf(w, "  <creatorinfo>\n    <username>%s</username>\n    <hostname>%s</hostname>\n    <tool>G-Copy %s</tool>\n    <startdate>%s</startdate>\n    <finishdate>%s</finishdate>\n  </creatorinfo>\n",
 		xmlText(uname), xmlText(host), Version, started.UTC().Format(ts), finished.UTC().Format(ts))
 	for _, e := range entries {
 		fmt.Fprintf(w, "  <hash>\n    <file>%s</file>\n    <size>%d</size>\n    <lastmodificationdate>%s</lastmodificationdate>\n    <%s>%s</%s>\n    <hashdate>%s</hashdate>\n  </hash>\n",

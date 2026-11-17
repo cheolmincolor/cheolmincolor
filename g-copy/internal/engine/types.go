@@ -15,8 +15,8 @@ const (
 	mtimeTolerance  = 2 * time.Second // FAT/exFAT/SMB round modification times
 	maxErrors       = 200
 	deadAfterFails  = 10 // consecutive failed files before a destination is given up
-	partialSuffix   = ".tandem-partial"
-	ReplacedDirName = "_Tandem_Replaced"
+	partialSuffix   = ".gcopy-partial"
+	ReplacedDirName = "_G-Copy_Replaced"
 )
 
 // Options describes one backup run.

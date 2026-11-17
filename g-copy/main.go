@@ -1,4 +1,4 @@
-// Tandem backs up drives to NAS/DAS storage and verifies every file.
+// G-Copy backs up drives to NAS/DAS storage and verifies every file.
 //
 // It runs a small local server and shows its interface in the browser.
 package main
@@ -19,8 +19,8 @@ import (
 	"syscall"
 	"time"
 
-	"tandem/internal/engine"
-	"tandem/internal/server"
+	"gcopy/internal/engine"
+	"gcopy/internal/server"
 )
 
 func main() {
@@ -37,13 +37,13 @@ func main() {
 		signal.Ignore(syscall.SIGPIPE)
 	}
 
-	configDir := os.Getenv("TANDEM_CONFIG_DIR")
+	configDir := os.Getenv("GCOPY_CONFIG_DIR")
 	if configDir == "" {
 		base, err := os.UserConfigDir()
 		if err != nil {
 			base = os.TempDir()
 		}
-		configDir = filepath.Join(base, "Tandem")
+		configDir = filepath.Join(base, "G-Copy")
 	}
 	var extra []string
 	for _, v := range strings.Split(*volumes, ",") {
@@ -69,7 +69,7 @@ func main() {
 	url := fmt.Sprintf("http://%s/?token=%s", ln.Addr(), srv.Token())
 	httpSrv := &http.Server{Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
 
-	fmt.Printf("Tandem %s\n\n  열기: %s\n  종료: Ctrl+C (또는 이 창 닫기)\n\n", engine.Version, url)
+	fmt.Printf("G-Copy %s\n\n  열기: %s\n  종료: Ctrl+C (또는 이 창 닫기)\n\n", engine.Version, url)
 	if !*noOpen {
 		openBrowser(url)
 	}

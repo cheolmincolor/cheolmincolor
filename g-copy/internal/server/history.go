@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"tandem/internal/engine"
+	"gcopy/internal/engine"
 )
 
 const historyMax = 200

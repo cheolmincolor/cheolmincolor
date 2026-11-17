@@ -118,7 +118,7 @@ func sameOrInside(path string, root os.FileInfo) bool {
 }
 
 func checkWritable(dir string) error {
-	f, err := os.CreateTemp(dir, ".tandem-write-test-*")
+	f, err := os.CreateTemp(dir, ".gcopy-write-test-*")
 	if err != nil {
 		return err
 	}

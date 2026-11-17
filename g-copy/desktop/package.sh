@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds the Tandem desktop app for each target: the Go engine plus the
+# Builds the G-Copy desktop app for each target: the Go engine plus the
 # Electron shell, zipped and ready to hand out.
 #
 #   bash package.sh                         # macOS: Apple Silicon and Intel
@@ -27,33 +27,33 @@ for target in $TARGETS; do
 
   # 1. the engine for this platform
   rm -rf engine && mkdir engine
-  (cd .. && CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch go build -trimpath -ldflags "-s -w" -o "desktop/engine/tandem-engine$ext" .)
+  (cd .. && CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch go build -trimpath -ldflags "-s -w" -o "desktop/engine/gcopy-engine$ext" .)
 
   # 2. the app: shell in app.asar, engine next to it in the resources folder
-  npx electron-packager . Tandem --platform="$os" --arch="$arch" --out="$OUT" --overwrite \
+  npx electron-packager . G-Copy --platform="$os" --arch="$arch" --out="$OUT" --overwrite \
     --asar --extra-resource=engine --icon=build/icon \
-    --app-bundle-id=app.tandem.desktop --app-version="$VERSION" \
+    --app-bundle-id=app.gcopy.desktop --app-version="$VERSION" \
     --app-category-type=public.app-category.utilities --extend-info=build/mac-info.plist \
     --ignore='^/(dist|engine|build|package\.sh|README\.md)($|/)' --quiet
   rm -rf engine
 
   # 3. zip it
-  dir="$OUT/Tandem-$os-$arch"
+  dir="$OUT/G-Copy-$os-$arch"
   if [ "$os" = darwin ]; then
     # Apple Silicon refuses to run code without a signature. An "ad-hoc"
     # signature needs no Apple account and is enough to run the app.
     if [ "$(uname)" = Darwin ]; then
-      codesign --force --deep --sign - "$dir/Tandem.app"
+      codesign --force --deep --sign - "$dir/G-Copy.app"
     elif command -v rcodesign >/dev/null; then
-      rcodesign sign "$dir/Tandem.app" >/dev/null 2>&1 || { echo "   서명에 실패했습니다" >&2; exit 1; }
+      rcodesign sign "$dir/G-Copy.app" >/dev/null 2>&1 || { echo "   서명에 실패했습니다" >&2; exit 1; }
     else
       echo "   주의: 서명 도구(rcodesign)가 없어 서명하지 않았습니다. Apple Silicon에서 실행되지 않을 수 있습니다." >&2
     fi
-    zip="$OUT/Tandem-$VERSION-mac-$arch.zip"
-    rm -f "$zip"; (cd "$dir" && zip -qry "$zip" Tandem.app)   # -y keeps the symlinks inside the app
+    zip="$OUT/G-Copy-$VERSION-mac-$arch.zip"
+    rm -f "$zip"; (cd "$dir" && zip -qry "$zip" G-Copy.app)   # -y keeps the symlinks inside the app
   else
     label=windows; [ "$os" = linux ] && label=linux
-    name="Tandem-$VERSION-$label-$arch"
+    name="G-Copy-$VERSION-$label-$arch"
     rm -rf "${OUT:?}/$name" "$OUT/$name.zip"; mv "$dir" "$OUT/$name"
     (cd "$OUT" && zip -qry "$name.zip" "$name")
     zip="$OUT/$name.zip"

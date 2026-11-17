@@ -1,4 +1,4 @@
-# Tandem
+# G-Copy
 
 외장하드의 데이터를 NAS·DAS에 **복사하고, 다시 읽어서 체크섬으로 확인하는** DI실용 백업 앱입니다.
 
@@ -11,12 +11,12 @@
 
 자체 창이 있는 앱입니다. 폴더를 끌어다 놓을 수 있고, Dock·작업 표시줄에 진행률이 보이며, 끝나면 알림이 옵니다.
 
-zip을 풀고 `Tandem.app`을 응용 프로그램 폴더로 옮긴 뒤 실행합니다. macOS 13 이상이 필요합니다.
+zip을 풀고 `G-Copy.app`을 응용 프로그램 폴더로 옮긴 뒤 실행합니다. macOS 13 이상이 필요합니다.
 
 | Mac 종류 | 받을 파일 |
 |---|---|
-| Apple Silicon (M1 이후) | `Tandem-버전-mac-arm64.zip` |
-| Intel | `Tandem-버전-mac-x64.zip` |
+| Apple Silicon (M1 이후) | `G-Copy-버전-mac-arm64.zip` |
+| Intel | `G-Copy-버전-mac-x64.zip` |
 
 어느 쪽인지는  메뉴 > 이 Mac에 관하여에서 확인합니다. "칩"에 Apple M…이 보이면 Apple Silicon입니다.
 
@@ -25,7 +25,7 @@ Mac에서 처음 열 때 "확인되지 않은 개발자" 경고가 나오면 **�
 직접 만들려면 Go 1.22 이상, Node.js, zip이 필요합니다. Linux와 macOS에서 됩니다.
 
 ```sh
-cd tandem/desktop
+cd g-copy/desktop
 npm ci
 bash package.sh        # dist/ 에 Mac용 zip 두 개 (Apple Silicon, Intel)
 npm start              # 패키징 없이 바로 실행
@@ -36,9 +36,9 @@ npm start              # 패키징 없이 바로 실행
 앱 없이 엔진만 실행하면 브라우저에 같은 화면이 열립니다. 끌어다 놓기와 Dock 진행률은 없습니다.
 
 ```sh
-cd tandem
-go build -o tandem .
-./tandem
+cd g-copy
+go build -o gcopy .
+./gcopy
 ```
 
 실행한 터미널 창을 닫거나 `Ctrl+C`를 누르면 종료합니다. 이때 복사 중이던 파일의 임시 파일은 지우고 끝냅니다.
@@ -64,7 +64,7 @@ go build -o tandem .
 ## 한 파일이 백업되는 순서
 
 1. 원본을 **한 번** 읽으면서 체크섬을 계산하고, 모든 대상에 동시에 씁니다.
-2. 이때 대상에는 임시 이름(`.파일이름.tandem-partial`)으로 씁니다.
+2. 이때 대상에는 임시 이름(`.파일이름.gcopy-partial`)으로 씁니다.
 3. 각 대상에서 방금 쓴 파일을 **디스크에서 다시 읽어** 체크섬을 비교합니다.
 4. 일치하면 그제야 진짜 이름으로 바꿉니다. 다르면 그 복사본은 버리고 실패로 보고합니다.
 
@@ -75,7 +75,7 @@ go build -o tandem .
 | 상황 | 동작 |
 |---|---|
 | 대상에 같은 크기·같은 수정 날짜의 파일이 있음 | 건너뜁니다 (날짜는 2초까지 차이를 허용) |
-| 대상에 이름은 같지만 크기나 날짜가 다른 파일이 있음 | 새로 복사합니다. 이전 파일은 지우지 않고 `대상/_Tandem_Replaced/날짜/`로 옮깁니다 |
+| 대상에 이름은 같지만 크기나 날짜가 다른 파일이 있음 | 새로 복사합니다. 이전 파일은 지우지 않고 `대상/_G-Copy_Replaced/날짜/`로 옮깁니다 |
 | 원본에서 지운 파일 | 대상에서 **지우지 않습니다** |
 | 큰 파일 (16 MB 이상) | 한 번에 하나씩 순서대로 복사합니다 (하드디스크에 유리) |
 | 작은 파일 (이미지 시퀀스 등) | 4개씩 동시에 처리합니다 |
@@ -115,7 +115,7 @@ go build -o tandem .
 ```sh
 go test ./...          # 엔진과 서버 테스트
 go vet ./...
-GOOS=darwin GOARCH=arm64 go build -o dist/tandem-mac-arm64 .
+GOOS=darwin GOARCH=arm64 go build -o dist/gcopy-mac-arm64 .
 ```
 
 | 위치 | 내용 |
@@ -129,4 +129,4 @@ GOOS=darwin GOARCH=arm64 go build -o dist/tandem-mac-arm64 .
 
 플랫폼별로 다른 부분은 `plat_*.go`, `disk_*.go`, `volumes_*.go`에 있습니다. macOS에서는 OS 캐시를 거치지 않고 읽고 쓰고(`F_NOCACHE`), Linux에서는 기록 후 캐시를 비워서, 검증이 메모리가 아닌 디스크의 내용을 읽도록 합니다.
 
-기록은 사용자 설정 폴더의 `Tandem/history.json`에 최근 200건까지, 마지막으로 쓴 대상과 선택 항목은 `Tandem/settings.json`에 남습니다.
+기록은 사용자 설정 폴더의 `G-Copy/history.json`에 최근 200건까지, 마지막으로 쓴 대상과 선택 항목은 `G-Copy/settings.json`에 남습니다.

@@ -1,4 +1,4 @@
-module tandem
+module gcopy
 
 go 1.22
 

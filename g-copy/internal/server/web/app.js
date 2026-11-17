@@ -67,7 +67,7 @@ function joinPath(a, b) {
 
 // Present only inside the desktop app (see desktop/preload.js). In a plain
 // browser everything below that uses it is simply skipped.
-const native = window.tandemNative || null;
+const native = window.gcopyNative || null;
 if (native) document.body.classList.add('native');
 
 // Preferences live in the engine (see /api/settings), so they survive
@@ -99,7 +99,7 @@ async function api(path, body) {
   try {
     res = await fetch(path, opt);
   } catch (e) {
-    block('Tandem과 연결이 끊어졌습니다. 앱이 실행 중인지 확인하세요. 다시 연결되면 이 화면은 자동으로 돌아옵니다.');
+    block('G-Copy와 연결이 끊어졌습니다. 앱이 실행 중인지 확인하세요. 다시 연결되면 이 화면은 자동으로 돌아옵니다.');
     throw e;
   }
   const data = await res.json().catch(() => ({}));
@@ -251,7 +251,7 @@ function renderRun(job) {
   $('run-pct').textContent = pct;
   $('run-stats').textContent = stats;
   $('run-file').textContent = file;
-  document.title = (pct ? pct + ' — ' : '') + 'Tandem';
+  document.title = (pct ? pct + ' — ' : '') + 'G-Copy';
   // Dock / taskbar: a bar while copying, a pulsing one while still counting
   if (native) native.setProgress(job.status === 'copying' && job.workTotal > 0 ? job.workDone / job.workTotal : 2, true);
 }
@@ -334,12 +334,12 @@ function renderResult(job) {
     h('p', { class: 'why' }, e.message),
   )));
 
-  document.title = (job.status === 'done' ? '✓ 완료' : job.status === 'cancelled' ? '취소됨' : '⚠ 확인 필요') + ' — Tandem';
+  document.title = (job.status === 'done' ? '✓ 완료' : job.status === 'cancelled' ? '취소됨' : '⚠ 확인 필요') + ' — G-Copy';
   if (native) {
     native.setProgress(-1, false);
     if (announce !== job.id) return;
     announce = null; // tell the user once, in case the window is in the background
-    native.notify('Tandem — ' + title, sub);
+    native.notify('G-Copy — ' + title, sub);
   }
 }
 
@@ -357,7 +357,7 @@ function applyJob(job) {
   if (job.status === 'idle') {
     state.job = null;
     if (native) native.setProgress(-1, false);
-    if (state.mode !== 'setup') { setMode('setup'); renderSetup(); document.title = 'Tandem'; }
+    if (state.mode !== 'setup') { setMode('setup'); renderSetup(); document.title = 'G-Copy'; }
     return;
   }
   const fresh = !state.job || state.job.id !== job.id || state.mode === 'setup';
@@ -432,7 +432,7 @@ $('btn-new').addEventListener('click', async () => {
   state.sources = [];                       // the next drive…
   state.dests = state.dests.map((d) => item(d.path)); // …to the same place
   setMode('setup');
-  document.title = 'Tandem';
+  document.title = 'G-Copy';
   renderSetup();
   refreshDests();
 });

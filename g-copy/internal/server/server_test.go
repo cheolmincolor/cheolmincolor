@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"tandem/internal/engine"
+	"gcopy/internal/engine"
 )
 
 type client struct {
@@ -153,7 +153,7 @@ func TestJobThroughTheAPIAndHistory(t *testing.T) {
 	src, dst := filepath.Join(tmp, "A001"), filepath.Join(tmp, "NAS")
 	os.MkdirAll(src, 0o755)
 	os.MkdirAll(dst, 0o755)
-	os.WriteFile(filepath.Join(src, "clip.mov"), bytes.Repeat([]byte("tandem"), 50000), 0o644)
+	os.WriteFile(filepath.Join(src, "clip.mov"), bytes.Repeat([]byte("gcopy"), 50000), 0o644)
 
 	if code, out := c.do("GET", "/api/job", nil, nil); code != 200 || out["status"] != "idle" {
 		t.Fatalf("initial state: %d %v", code, out)
@@ -174,7 +174,7 @@ func TestJobThroughTheAPIAndHistory(t *testing.T) {
 		_, out = c.do("GET", "/api/job", nil, nil)
 	}
 	got, err := os.ReadFile(filepath.Join(dst, "A001", "clip.mov"))
-	if err != nil || len(got) != 300000 {
+	if err != nil || len(got) != 250000 {
 		t.Errorf("copied file: %v, %d bytes", err, len(got))
 	}
 

@@ -1,6 +1,6 @@
 'use strict';
 
-// Tandem desktop shell.
+// G-Copy desktop shell.
 //
 // The backup engine is a separate program (built from the Go code one
 // folder up). This shell starts it, shows its interface in an app window,
@@ -20,15 +20,15 @@ let closingOnPurpose = false;
 let shuttingDown = false;
 
 function enginePath() {
-  if (process.env.TANDEM_ENGINE) return process.env.TANDEM_ENGINE;
-  const name = process.platform === 'win32' ? 'tandem-engine.exe' : 'tandem-engine';
+  if (process.env.GCOPY_ENGINE) return process.env.GCOPY_ENGINE;
+  const name = process.platform === 'win32' ? 'gcopy-engine.exe' : 'gcopy-engine';
   return path.join(app.isPackaged ? process.resourcesPath : __dirname, 'engine', name);
 }
 
 // startEngine launches the engine and resolves with the address it prints.
 function startEngine() {
   return new Promise((resolve, reject) => {
-    const extra = (process.env.TANDEM_ENGINE_ARGS || '').split(' ').filter(Boolean);
+    const extra = (process.env.GCOPY_ENGINE_ARGS || '').split(' ').filter(Boolean);
     const child = spawn(enginePath(), ['-desktop', ...extra], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     engine = child;
     engineGone = new Promise((done) => child.once('exit', done));
@@ -65,7 +65,7 @@ async function stopEngine() {
 
 function engineDied(code) {
   if (shuttingDown) return;
-  dialog.showErrorBox('Tandem', '백업 엔진이 예기치 않게 종료되었습니다 (코드 ' + code + ').\n앱을 다시 실행하세요. 검증을 마친 파일은 대상에 그대로 있습니다.');
+  dialog.showErrorBox('G-Copy', '백업 엔진이 예기치 않게 종료되었습니다 (코드 ' + code + ').\n앱을 다시 실행하세요. 검증을 마친 파일은 대상에 그대로 있습니다.');
   shuttingDown = true;
   app.quit();
 }
@@ -74,7 +74,7 @@ function createWindow(url) {
   engineOrigin = new URL(url).origin;
   win = new BrowserWindow({
     width: 1120, height: 800, minWidth: 420, minHeight: 520,
-    title: 'Tandem',
+    title: 'G-Copy',
     backgroundColor: '#151515', // same as the page, so there is no white flash while it loads
     autoHideMenuBar: true,
     webPreferences: {
@@ -166,7 +166,7 @@ if (!app.requestSingleInstanceLock()) {
     try {
       createWindow(await startEngine());
     } catch (e) {
-      dialog.showErrorBox('Tandem을 시작할 수 없습니다', e.message);
+      dialog.showErrorBox('G-Copy를 시작할 수 없습니다', e.message);
       shuttingDown = true;
       app.quit();
     }

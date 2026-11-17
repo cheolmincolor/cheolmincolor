@@ -5,7 +5,7 @@
 
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
-contextBridge.exposeInMainWorld('tandemNative', {
+contextBridge.exposeInMainWorld('gcopyNative', {
   platform: process.platform,
 
   // Opens the system folder dialog; resolves with a path, or null if cancelled.

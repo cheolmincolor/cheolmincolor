@@ -1,12 +1,12 @@
 {
-  "name": "tandem-desktop",
-  "productName": "Tandem",
+  "name": "gcopy-desktop",
+  "productName": "G-Copy",
   "version": "0.2.0",
   "description": "외장하드를 NAS·DAS에 복사하고 체크섬으로 검증하는 DI실용 백업 앱",
   "private": true,
   "main": "main.js",
   "scripts": {
-    "engine": "cd .. && go build -o desktop/engine/tandem-engine .",
+    "engine": "cd .. && go build -o desktop/engine/gcopy-engine .",
     "start": "npm run engine && electron .",
     "package": "bash package.sh"
   },
