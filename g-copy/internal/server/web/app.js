@@ -138,6 +138,7 @@ function options() {
     algo: $('opt-algo').value,
     subfolder: $('opt-subfolder').checked,
     reverify: $('opt-reverify').checked,
+    mirror: $('opt-mirror').checked,
   };
 }
 
@@ -190,6 +191,7 @@ function renderSetup() {
     hint = '복사 위치:  ' + first + (more > 0 ? '  외 ' + more + '곳' : '');
   }
   $('hint').textContent = hint;
+  $('mirror-hint').hidden = !$('opt-mirror').checked;
 }
 
 function destExtra(job, i) {
@@ -198,6 +200,11 @@ function destExtra(job, i) {
   if (!d) return out;
   const finished = FINISHED.includes(job.status);
   if (job.status === 'scanning' || job.status === 'comparing') return [h('span', {}, '대기 중')];
+  if (job.status === 'confirming') {
+    return [d.toRemove > 0
+      ? h('span', { class: 'warnc' }, '정리할 파일 ' + num(d.toRemove) + '개 · ' + fmtBytes(d.toRemoveBytes))
+      : h('span', {}, '정리할 파일 없음')];
+  }
   if (d.complete) {
     out.push(h('span', { class: 'ok' }, d.copied > 0 ? '✓ ' + num(d.copied) + '개 복사·검증' : d.reverified > 0 ? '✓ ' + num(d.reverified) + '개 재검증' : '✓ 이미 최신'));
   } else {
@@ -208,6 +215,8 @@ function destExtra(job, i) {
   if (d.replaced > 0) out.push(h('span', {}, '교체 ' + num(d.replaced)));
   if (d.failed > 0) out.push(h('span', { class: 'bad' }, '실패 ' + num(d.failed)));
   if (d.stopped) out.push(h('span', { class: 'bad' }, '중단됨'));
+  if (d.removed > 0) out.push(h('span', {}, '정리 ' + num(d.removed)));
+  else if (job.mirror === 'approved' && d.toRemove > 0 && !finished) out.push(h('span', {}, '정리 예정 ' + num(d.toRemove)));
   if (finished) {
     out.push(h('button', { class: 'link', type: 'button', onclick: () => reveal(d) }, '폴더 열기'));
     for (const r of d.reports) out.push(h('span', { class: 'report', title: r }, '리포트: ' + baseName(r)));
@@ -273,6 +282,9 @@ function renderResult(job) {
     } else if (job.filesVerified > 0) {
       title = '검증 완료';
       sub = '대상에 있던 파일 ' + num(job.filesVerified) + '개를 다시 읽어 확인했고, 모두 원본과 일치합니다 (' + algo + ').';
+    } else if (job.dests.some((d) => d.removed > 0)) {
+      title = '동기화 완료';
+      sub = '복사할 파일은 없었고, 원본에 없는 파일을 대상에서 정리했습니다.';
     } else {
       title = '이미 최신입니다';
       sub = '복사할 파일이 없습니다. 파일 ' + num(job.filesSkipped) + '개가 같은 크기와 날짜로 이미 대상에 있습니다.';
@@ -319,6 +331,11 @@ function renderResult(job) {
   );
 
   const notes = job.warnings.map((w) => h('li', { class: 'warn' }, w));
+  const removed = job.dests.reduce((n, d) => n + d.removed, 0);
+  const listed = job.dests.reduce((n, d) => n + d.toRemove, 0);
+  if (job.mirror === 'approved' && removed > 0) notes.push(h('li', {}, '동기화: 원본에 없는 파일 ' + num(removed) + '개를 지우지 않고 각 대상의 _G-Copy_Removed 폴더로 옮겼습니다.'));
+  if (job.mirror === 'declined') notes.push(h('li', {}, '동기화: 원본에 없는 파일 ' + num(listed) + '개는 옮기지 않고 그대로 두었습니다.'));
+  if (job.mirror === 'nothing') notes.push(h('li', {}, '동기화: 대상에 원본에 없는 파일이 없었습니다.'));
   const left = [];
   if (job.excluded > 0) left.push('.DS_Store 같은 시스템 파일 ' + num(job.excluded) + '개');
   if (job.special > 0) left.push('링크·특수 파일 ' + num(job.special) + '개');
@@ -369,11 +386,60 @@ function applyJob(job) {
     state.dests = job.options.destinations.map(item);
     renderLanes();
   }
-  setMode(finished ? 'finished' : 'running');
+  setMode(finished ? 'finished' : job.status === 'confirming' ? 'confirm' : 'running');
   if (!finished) announce = job.id;
   state.dests.forEach((d, i) => d.extraEl && d.extraEl.replaceChildren(...destExtra(job, i)));
-  if (finished) renderResult(job); else renderRun(job);
+  if (finished) renderResult(job);
+  else if (job.status === 'confirming') renderConfirm(job);
+  else renderRun(job);
 }
+
+// ── sync: show what would be moved, and ask ─────────────────────────────
+
+let confirmShown = null; // job id: the list is built once, so scrolling it is not reset
+
+function renderConfirm(job) {
+  if (confirmShown === job.id) return;
+  confirmShown = job.id;
+  const total = job.dests.reduce((n, d) => n + d.toRemove, 0);
+  const bytes = job.dests.reduce((n, d) => n + d.toRemoveBytes, 0);
+  $('cf-title').textContent = '원본에 없는 파일 ' + num(total) + '개가 대상에 있습니다';
+  $('cf-sub').textContent = '"옮기고 계속"을 누르면 백업을 마친 뒤 이 파일들(' + fmtBytes(bytes) + ')을 각 대상의 ' +
+    '_G-Copy_Removed 폴더로 옮깁니다. 지우지는 않으니 필요하면 다시 꺼낼 수 있습니다.';
+  $('cf-dests').replaceChildren(...job.dests.map((d) => h('section', { class: 'cf-dest' },
+    h('header', {}, h('strong', { title: d.path }, baseName(d.path)),
+      h('span', {}, d.toRemove > 0 ? num(d.toRemove) + '개 · ' + fmtBytes(d.toRemoveBytes) : '없음')),
+    d.toRemove > 0
+      ? h('ul', {}, ...d.removeList.map((p) => h('li', {}, p)),
+        d.toRemove > d.removeList.length ? h('li', { class: 'more' }, '외 ' + num(d.toRemove - d.removeList.length) + '개') : null)
+      : h('p', { class: 'none' }, '이 대상에는 정리할 파일이 없습니다.'),
+  )));
+  for (const b of ['cf-move', 'cf-keep', 'cf-cancel']) $(b).disabled = false;
+  document.title = '확인 필요 — G-Copy';
+  if (native) {
+    native.setProgress(-1, true);
+    native.notify('G-Copy — 확인이 필요합니다', '원본에 없는 파일 ' + num(total) + '개를 대상에서 정리할지 정해 주세요.');
+  }
+}
+
+async function answerConfirm(remove) {
+  for (const b of ['cf-move', 'cf-keep', 'cf-cancel']) $(b).disabled = true;
+  try {
+    applyJob(await api('/api/job/confirm', { remove }));
+  } catch (e) {
+    $('cf-sub').textContent = e.message;
+    for (const b of ['cf-move', 'cf-keep', 'cf-cancel']) $(b).disabled = false;
+  }
+  schedule(250);
+}
+
+$('cf-move').addEventListener('click', () => answerConfirm(true));
+$('cf-keep').addEventListener('click', () => answerConfirm(false));
+$('cf-cancel').addEventListener('click', async () => {
+  for (const b of ['cf-move', 'cf-keep', 'cf-cancel']) $(b).disabled = true;
+  try { await api('/api/job/cancel', {}); } catch { /* shown by api() */ }
+  schedule(100);
+});
 
 async function poll() {
   try {
@@ -382,7 +448,7 @@ async function poll() {
     schedule(1500); // keep trying: the run itself continues in the app
     return;
   }
-  if (state.mode === 'running') schedule(400);
+  if (state.mode === 'running' || state.mode === 'confirm') schedule(400);
 }
 
 async function startJob(opts) {
@@ -391,8 +457,9 @@ async function startJob(opts) {
   $('btn-start').disabled = true;
   try {
     const job = await api('/api/job', opts);
-    store.set('opts', { algo: opts.algo, subfolder: opts.subfolder, reverify: opts.reverify });
+    store.set('opts', { algo: opts.algo, subfolder: opts.subfolder, reverify: opts.reverify, mirror: !!opts.mirror });
     $('run-fill').style.width = '0%';
+    $('run-pct').textContent = ''; // not the last run's number
     applyJob(job);
     schedule(250);
   } catch (e) {
@@ -437,11 +504,15 @@ $('btn-new').addEventListener('click', async () => {
   refreshDests();
 });
 
-for (const id of ['opt-subfolder', 'opt-reverify', 'opt-algo']) $(id).addEventListener('change', renderSetup);
+for (const id of ['opt-subfolder', 'opt-reverify', 'opt-mirror', 'opt-algo']) $(id).addEventListener('change', renderSetup);
 
 // ── folder picker ───────────────────────────────────────────────────────
 
-const picker = { kind: 'src', path: '', free: null, volumes: [] };
+const picker = { kind: 'src', path: '', free: null, volumes: [], typed: false };
+
+// Once the person types in the path field, nothing loading in the
+// background may replace what they typed.
+$('path-input').addEventListener('input', () => { picker.typed = true; });
 
 function volButton(name, meta, path, ico, used) {
   return h('li', {}, h('button', {
@@ -476,7 +547,6 @@ async function browse(path) {
   const err = $('browse-err');
   const seq = ++browseSeq;
   const input = $('path-input');
-  const before = input.value;
   let data;
   try {
     data = await api('/api/browse?path=' + encodeURIComponent(path));
@@ -490,8 +560,7 @@ async function browse(path) {
   err.hidden = true;
   picker.path = data.path;
   picker.free = data.free ?? null;
-  // Do not overwrite a path the user started typing while this was loading.
-  if (input.value === before || path === input.value.trim()) input.value = data.path;
+  if (!picker.typed || path === input.value.trim()) { input.value = data.path; picker.typed = false; }
   $('picker-chosen').textContent = tailPath(data.path);
   $('picker-choose').disabled = false;
 
@@ -514,6 +583,8 @@ async function browse(path) {
 async function openPicker(kind) {
   picker.kind = kind;
   picker.path = '';
+  picker.typed = false;
+  $('path-input').value = '';
   $('picker-title').textContent = kind === 'src' ? '원본 선택' : '대상 선택';
   $('btn-mkdir').hidden = kind !== 'dst';
   $('mkdir-form').hidden = true;
@@ -527,7 +598,7 @@ async function openPicker(kind) {
     picker.volumes = state.volumes = (await api('/api/volumes')).volumes;
   } catch { return; }
   renderSide();
-  if (seq !== browseSeq) return; // the user already went somewhere
+  if (seq !== browseSeq || picker.typed) return; // the user already went somewhere, or is typing
   const start = picker.volumes.find((v) => v.kind === 'external') || picker.volumes.find((v) => v.kind === 'home') || picker.volumes[0];
   if (start) await browse(start.path);
 }
@@ -661,6 +732,8 @@ $('btn-history').addEventListener('click', async () => {
     ico.classList.add(tone);
     const what = j.options.sources.map(baseName).join(', ') + '  →  ' + j.options.destinations.map(baseName).join(', ');
     let detail = '복사 ' + num(j.filesCopied) + '개 · ' + fmtBytes(j.bytesCopied) + ' · 건너뜀 ' + num(j.filesSkipped) + ' · ' + fmtDur(j.seconds);
+    const gone = (j.dests || []).reduce((n, d) => n + (d.removed || 0), 0);
+    if (gone > 0) detail += ' · 정리 ' + num(gone);
     if (j.status === 'cancelled') detail = '취소됨 · ' + detail;
     if (j.status === 'failed') detail = (j.message || '실패 ' + num(j.filesFailed) + '개 · 문제 ' + num(j.errorCount) + '건') + (j.message ? '' : ' · ' + detail);
     return h('li', {}, ico, h('span', { class: 'what', title: what }, what), h('span', { class: 'when' }, df.format(new Date(j.startedAt))), h('span', { class: 'detail' }, detail));
@@ -692,6 +765,7 @@ async function refreshDests() {
     $('opt-algo').value = o.algo === 'md5' ? 'md5' : 'xxh64';
     $('opt-subfolder').checked = o.subfolder !== false;
     $('opt-reverify').checked = !!o.reverify;
+    $('opt-mirror').checked = !!o.mirror;
   }
   renderSetup();
   let job;
@@ -701,7 +775,7 @@ async function refreshDests() {
   } catch { schedule(1500); return; }
   if (job.status !== 'idle') {
     applyJob(job);
-    if (state.mode === 'running') schedule(400);
+    if (state.mode === 'running' || state.mode === 'confirm') schedule(400);
     return;
   }
   // Remember where backups went last time: the NAS path rarely changes.

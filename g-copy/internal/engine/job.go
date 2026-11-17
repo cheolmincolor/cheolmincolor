@@ -34,6 +34,12 @@ type destRun struct {
 	consecFails                                          atomic.Int32
 	dead                                                 atomic.Bool
 
+	// sync mode, filled in before copying
+	extras      []extraFile
+	pruneDirs   []dirRef
+	removeBytes int64
+	removed     atomic.Int64
+
 	mu      sync.Mutex
 	entries [][]mhlEntry // per source
 	reports []string
@@ -55,6 +61,11 @@ type Job struct {
 	files     []srcFile
 	acts      []action // len(files) * len(dests)
 	emptyDirs []dirRef
+
+	srcKeys       []map[string]bool // per source: pathKey of every name in it
+	srcUnreadable []bool            // per source: part of it could not be read
+	confirmCh     chan bool
+	mirror        string // guarded by mu
 
 	mu      sync.Mutex
 	status  Status
@@ -103,6 +114,8 @@ func start(opts Options, onFinish func(State), afterWrite func(string)) (*Job, e
 	if err := j.prepare(); err != nil {
 		return nil, err
 	}
+	j.srcUnreadable = make([]bool, len(j.srcRoots))
+	j.confirmCh = make(chan bool, 1)
 	j.ctx, j.cancel = context.WithCancel(context.Background())
 	go func() {
 		j.run()
@@ -181,9 +194,20 @@ func (j *Job) run() {
 		fatal(err)
 		return
 	}
+	removeAfter := false
+	if j.opts.Mirror {
+		var err error
+		if removeAfter, err = j.askMirror(); err != nil {
+			fatal(err)
+			return
+		}
+	}
 	j.setStatus(StatusCopying)
 	j.makeEmptyDirs()
 	j.copyAll()
+	if removeAfter && j.ctx.Err() == nil {
+		j.removeExtras() // after copying, so a cancelled run leaves the destination as it was
+	}
 	j.writeReports()
 
 	switch {
@@ -193,6 +217,38 @@ func (j *Job) run() {
 		j.finish(StatusFailed, "")
 	default:
 		j.finish(StatusDone, "")
+	}
+}
+
+// askMirror lists what sync mode would move aside and, if there is
+// anything, waits for the user to approve it.
+func (j *Job) askMirror() (bool, error) {
+	setMirror := func(m string) { j.mu.Lock(); j.mirror = m; j.mu.Unlock() }
+	for s, bad := range j.srcUnreadable {
+		if bad {
+			// A folder we could not read looks empty, and its backup would
+			// be moved aside. Never sync against an incomplete listing.
+			setMirror(MirrorSkipped)
+			j.warnOnce("mirror-unreadable", j.srcNames[s]+": 원본의 일부를 읽을 수 없어서 동기화 정리는 하지 않았습니다. 대상의 파일은 그대로 두었습니다.")
+			return false, nil
+		}
+	}
+	if err := j.findExtras(); err != nil {
+		return false, err
+	}
+	if !j.hasExtras() {
+		setMirror(MirrorNothing)
+		return false, nil
+	}
+	j.mu.Lock()
+	j.mirror = MirrorPending
+	j.status = StatusConfirming
+	j.mu.Unlock()
+	select {
+	case remove := <-j.confirmCh:
+		return remove, nil
+	case <-j.ctx.Done():
+		return false, j.ctx.Err()
 	}
 }
 
@@ -653,6 +709,7 @@ func (j *Job) Snapshot() State {
 		StartedAt: j.started,
 		Errors:    append([]FileError{}, j.errs...),
 		Warnings:  append([]string{}, j.warns...),
+		Mirror:    j.mirror,
 		Current:   []string{},
 	}
 	for _, c := range j.current {
@@ -664,7 +721,7 @@ func (j *Job) Snapshot() State {
 		st.EndedAt, end = &e, e
 	}
 	finished := j.status.Finished()
-	planned := j.status == StatusCopying || finished
+	planned := j.status == StatusConfirming || j.status == StatusCopying || finished
 	j.mu.Unlock()
 
 	sort.Strings(st.Current)
@@ -691,9 +748,18 @@ func (j *Job) Snapshot() State {
 			Replaced: dr.replaced.Load(), Failed: dr.failed.Load(), Bytes: dr.bytes.Load(),
 			Stopped: dr.dead.Load(), Reports: []string{}, Folders: append([]string{}, dr.bases...),
 		}
-		if planned { // these are written by the compare step and stable afterwards
+		ds.RemoveList = []string{}
+		if planned { // these are written before copying and stable afterwards
 			ds.Free, ds.Need, ds.Skipped = dr.free, dr.need, dr.skipped.Load()
+			ds.ToRemove, ds.ToRemoveBytes = int64(len(dr.extras)), dr.removeBytes
+			for _, e := range dr.extras {
+				if len(ds.RemoveList) == maxRemoveList {
+					break
+				}
+				ds.RemoveList = append(ds.RemoveList, j.showSrc(e.src, e.rel))
+			}
 		}
+		ds.Removed = dr.removed.Load()
 		if finished {
 			ds.Reports = append(ds.Reports, dr.reports...)
 			ds.Complete = clean && ds.Failed == 0 && !ds.Stopped

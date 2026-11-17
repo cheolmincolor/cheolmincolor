@@ -6,7 +6,7 @@ import "time"
 
 const (
 	// Version is written into reports.
-	Version = "0.2.0"
+	Version = "0.3.0"
 
 	chunkSize       = 4 << 20  // read/write unit
 	bigFileSize     = 16 << 20 // files this size or larger are copied one at a time
@@ -17,6 +17,9 @@ const (
 	deadAfterFails  = 10 // consecutive failed files before a destination is given up
 	partialSuffix   = ".gcopy-partial"
 	ReplacedDirName = "_G-Copy_Replaced"
+	RemovedDirName  = "_G-Copy_Removed"
+
+	maxRemoveList = 300 // file names shown per destination before syncing
 )
 
 // Options describes one backup run.
@@ -26,18 +29,30 @@ type Options struct {
 	Algo         string   `json:"algo"`      // "xxh64" (default) or "md5"
 	Subfolder    bool     `json:"subfolder"` // copy into <destination>/<source name>/
 	Reverify     bool     `json:"reverify"`  // re-hash files that are already up to date
+	Mirror       bool     `json:"mirror"`    // sync: move aside destination files the source no longer has
 }
 
 // Status is the lifecycle stage of a job.
 type Status string
 
 const (
-	StatusScanning  Status = "scanning"
-	StatusComparing Status = "comparing"
-	StatusCopying   Status = "copying"
-	StatusDone      Status = "done"
-	StatusFailed    Status = "failed"
-	StatusCancelled Status = "cancelled"
+	StatusScanning   Status = "scanning"
+	StatusComparing  Status = "comparing"
+	StatusConfirming Status = "confirming" // sync: waiting for the user to approve the list
+	StatusCopying    Status = "copying"
+	StatusDone       Status = "done"
+	StatusFailed     Status = "failed"
+	StatusCancelled  Status = "cancelled"
+)
+
+// Sync outcomes, reported in State.Mirror.
+const (
+	MirrorOff      = ""         // sync not requested
+	MirrorNothing  = "nothing"  // requested; the destinations had nothing extra
+	MirrorPending  = "pending"  // waiting for the user's answer
+	MirrorApproved = "approved" // the user agreed; files are moved aside
+	MirrorDeclined = "declined" // the user chose to leave them
+	MirrorSkipped  = "skipped"  // not done for safety (see Warnings)
 )
 
 // Finished reports whether the job has stopped running.
@@ -54,19 +69,23 @@ type FileError struct {
 
 // DestState is the per-destination part of a job snapshot.
 type DestState struct {
-	Path       string   `json:"path"`
-	Free       int64    `json:"free"`
-	Need       int64    `json:"need"`
-	Copied     int64    `json:"copied"`
-	Skipped    int64    `json:"skipped"`
-	Reverified int64    `json:"reverified"`
-	Replaced   int64    `json:"replaced"`
-	Failed     int64    `json:"failed"`
-	Bytes      int64    `json:"bytes"`
-	Stopped    bool     `json:"stopped"`
-	Complete   bool     `json:"complete"` // finished, and holds every file it should
-	Reports    []string `json:"reports"`
-	Folders    []string `json:"folders"`
+	Path          string   `json:"path"`
+	Free          int64    `json:"free"`
+	Need          int64    `json:"need"`
+	Copied        int64    `json:"copied"`
+	Skipped       int64    `json:"skipped"`
+	Reverified    int64    `json:"reverified"`
+	Replaced      int64    `json:"replaced"`
+	Failed        int64    `json:"failed"`
+	Bytes         int64    `json:"bytes"`
+	Stopped       bool     `json:"stopped"`
+	ToRemove      int64    `json:"toRemove"` // sync: files found that the source no longer has
+	ToRemoveBytes int64    `json:"toRemoveBytes"`
+	RemoveList    []string `json:"removeList"` // their names (at most maxRemoveList)
+	Removed       int64    `json:"removed"`    // moved to _G-Copy_Removed
+	Complete      bool     `json:"complete"`   // finished, and holds every file it should
+	Reports       []string `json:"reports"`
+	Folders       []string `json:"folders"`
 }
 
 // State is a point-in-time snapshot of a job, safe to serialise.
@@ -94,6 +113,7 @@ type State struct {
 	ErrorCount    int64       `json:"errorCount"`
 	Errors        []FileError `json:"errors"`
 	Warnings      []string    `json:"warnings"`
+	Mirror        string      `json:"mirror"` // sync outcome; see the Mirror* constants
 	Current       []string    `json:"current"`
 	Dests         []DestState `json:"dests"`
 }

@@ -74,6 +74,7 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("GET /api/job", s.handleJobGet)
 	api.HandleFunc("POST /api/job", s.handleJobStart)
 	api.HandleFunc("POST /api/job/cancel", s.handleJobCancel)
+	api.HandleFunc("POST /api/job/confirm", s.handleJobConfirm)
 	api.HandleFunc("POST /api/job/dismiss", s.handleJobDismiss)
 	api.HandleFunc("GET /api/history", s.handleHistory)
 	api.HandleFunc("GET /api/settings", s.handleSettingsGet)
@@ -333,6 +334,33 @@ func (s *Server) handleJobCancel(w http.ResponseWriter, r *http.Request) {
 		j.Cancel()
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// handleJobConfirm answers the sync question: {"remove": true} moves the
+// listed files aside, false leaves them.
+func (s *Server) handleJobConfirm(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Remove *bool `json:"remove"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if req.Remove == nil {
+		writeErr(w, http.StatusBadRequest, "remove 값이 필요합니다")
+		return
+	}
+	s.mu.Lock()
+	j := s.job
+	s.mu.Unlock()
+	if j == nil {
+		writeErr(w, http.StatusConflict, "지금은 확인할 내용이 없습니다")
+		return
+	}
+	if err := j.Confirm(*req.Remove); err != nil {
+		writeErr(w, http.StatusConflict, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, j.Snapshot())
 }
 
 // handleJobDismiss clears a finished job so the start screen is shown again.

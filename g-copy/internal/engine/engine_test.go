@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/cespare/xxhash/v2"
+	"golang.org/x/text/unicode/norm"
 )
 
 // ── helpers ────────────────────────────────────────────────────────────
@@ -554,5 +555,252 @@ func TestOSErrorsAreExplainedInKorean(t *testing.T) {
 	}
 	if !isNoSpace(wrapped) {
 		t.Error("isNoSpace did not see through the wrapping")
+	}
+}
+
+// ── sync (mirror) mode ─────────────────────────────────────────────────
+
+// startMirror runs a sync job up to its question and returns it waiting.
+func startMirror(t *testing.T, o Options) *Job {
+	t.Helper()
+	o.Mirror = true
+	j, err := start(o, nil, nil)
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		st := j.Snapshot()
+		if st.Status == StatusConfirming || st.Status.Finished() {
+			return j
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("job never asked: %s", st.Status)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func TestMirrorMovesFilesTheSourceNoLongerHas(t *testing.T) {
+	tmp := t.TempDir()
+	src, dst := filepath.Join(tmp, "A001"), filepath.Join(tmp, "NAS")
+	makeSource(t, src)
+	os.MkdirAll(dst, 0o755)
+	o := Options{Sources: []string{src}, Destinations: []string{dst}, Subfolder: true}
+	if st := runJob(t, o, nil); st.Status != StatusDone {
+		t.Fatalf("first run: %s", st.Status)
+	}
+	base := filepath.Join(dst, "A001")
+	reportsBefore, _ := filepath.Glob(filepath.Join(base, "*.mhl"))
+
+	// On the source: delete one clip and a whole folder, add a new clip.
+	os.Remove(filepath.Join(src, "CLIPS", "A001C003.mov"))
+	os.RemoveAll(filepath.Join(src, "SEQ"))
+	writeFile(t, filepath.Join(src, "CLIPS", "A001C009.mov"), randBytes(9, 70000), day)
+	// Finder leaves .DS_Store in folders; that must not keep a folder alive.
+	writeFile(t, filepath.Join(base, "SEQ", "shot010", ".DS_Store"), []byte("x"), day)
+	// Someone put a file on the NAS by hand.
+	writeFile(t, filepath.Join(base, "CLIPS", "added-on-nas.txt"), []byte("note"), day)
+
+	time.Sleep(1100 * time.Millisecond)
+	j := startMirror(t, o)
+	st := j.Snapshot()
+	if st.Status != StatusConfirming || st.Mirror != MirrorPending {
+		t.Fatalf("did not stop to ask: %s %q", st.Status, st.Mirror)
+	}
+	d := st.Dests[0]
+	if d.ToRemove != 42 || len(d.RemoveList) != 42 || d.Copied != 0 || d.Removed != 0 {
+		t.Fatalf("plan: toRemove %d list %d copied %d removed %d", d.ToRemove, len(d.RemoveList), d.Copied, d.Removed)
+	}
+	if d.RemoveList[0] != "A001/CLIPS/A001C003.mov" || d.RemoveList[1] != "A001/CLIPS/added-on-nas.txt" {
+		t.Errorf("list starts with %v", d.RemoveList[:2])
+	}
+	// Nothing may be touched before the answer.
+	if _, err := os.Stat(filepath.Join(base, "CLIPS", "A001C003.mov")); err != nil {
+		t.Fatal("a file was moved before the user agreed")
+	}
+	if err := j.Confirm(true); err != nil {
+		t.Fatal(err)
+	}
+	if err := j.Confirm(true); err == nil {
+		t.Error("a second answer was accepted")
+	}
+	j.Wait()
+	st = j.Snapshot()
+	if st.Status != StatusDone || st.Mirror != MirrorApproved || st.FilesCopied != 1 || st.Dests[0].Removed != 42 {
+		t.Fatalf("after sync: %s %q copied %d removed %d errors %+v", st.Status, st.Mirror, st.FilesCopied, st.Dests[0].Removed, st.Errors)
+	}
+
+	// The destination now matches the source exactly…
+	sameTree(t, "synced destination", treeDigest(t, src, isSrcJunk), treeDigest(t, base, func(rel string) bool { return isReportOrKept(rel) || isSrcJunk(rel) }))
+	if _, err := os.Stat(filepath.Join(base, "SEQ")); !os.IsNotExist(err) {
+		t.Errorf("the folder deleted on the source is still there: %v", err)
+	}
+	// …the moved files are kept, intact, with their folders…
+	kept := filepath.Join(dst, RemovedDirName)
+	moved := treeDigest(t, kept, nil)
+	if len(moved) != 42 {
+		t.Errorf("%d files in %s, want 42", len(moved), RemovedDirName)
+	}
+	found := findOne(t, filepath.Join(kept, "*", "A001", "CLIPS", "A001C003.mov"))
+	if data, _ := os.ReadFile(found); len(data) != 4<<20+1 {
+		t.Errorf("moved clip has %d bytes", len(data))
+	}
+	// …and earlier reports are left alone.
+	for _, r := range reportsBefore {
+		if _, err := os.Stat(r); err != nil {
+			t.Errorf("an earlier report was moved: %s", r)
+		}
+	}
+}
+
+func TestMirrorDeclinedAndNothingToDo(t *testing.T) {
+	tmp := t.TempDir()
+	src, dst := filepath.Join(tmp, "A001"), filepath.Join(tmp, "NAS")
+	writeFile(t, filepath.Join(src, "a.mov"), randBytes(1, 5000), day)
+	writeFile(t, filepath.Join(src, "b.mov"), randBytes(2, 5000), day)
+	os.MkdirAll(dst, 0o755)
+	o := Options{Sources: []string{src}, Destinations: []string{dst}, Subfolder: true}
+
+	// First backup with sync on: nothing to compare yet, so no question.
+	j := startMirror(t, o)
+	j.Wait()
+	if st := j.Snapshot(); st.Status != StatusDone || st.Mirror != MirrorNothing || st.FilesCopied != 2 {
+		t.Fatalf("first run: %s %q copied %d", st.Status, st.Mirror, st.FilesCopied)
+	}
+
+	os.Remove(filepath.Join(src, "b.mov"))
+	j = startMirror(t, o)
+	if st := j.Snapshot(); st.Status != StatusConfirming || st.Dests[0].ToRemove != 1 {
+		t.Fatalf("second run: %s toRemove %d", st.Status, st.Dests[0].ToRemove)
+	}
+	j.Confirm(false)
+	j.Wait()
+	st := j.Snapshot()
+	if st.Status != StatusDone || st.Mirror != MirrorDeclined || st.Dests[0].Removed != 0 {
+		t.Fatalf("declined: %s %q removed %d", st.Status, st.Mirror, st.Dests[0].Removed)
+	}
+	if _, err := os.Stat(filepath.Join(dst, "A001", "b.mov")); err != nil {
+		t.Error("a declined sync moved the file anyway")
+	}
+	if _, err := os.Stat(filepath.Join(dst, RemovedDirName)); !os.IsNotExist(err) {
+		t.Error("a declined sync created the removed-files folder")
+	}
+}
+
+func TestMirrorCancelWhileAskingTouchesNothing(t *testing.T) {
+	tmp := t.TempDir()
+	src, dst := filepath.Join(tmp, "A001"), filepath.Join(tmp, "NAS")
+	writeFile(t, filepath.Join(src, "a.mov"), randBytes(1, 5000), day)
+	writeFile(t, filepath.Join(dst, "A001", "old.mov"), randBytes(2, 5000), day)
+	j := startMirror(t, Options{Sources: []string{src}, Destinations: []string{dst}, Subfolder: true})
+	j.Cancel()
+	j.Wait()
+	if st := j.Snapshot(); st.Status != StatusCancelled {
+		t.Fatalf("status %s", st.Status)
+	}
+	if _, err := os.Stat(filepath.Join(dst, "A001", "old.mov")); err != nil {
+		t.Error("cancel moved a file")
+	}
+	if _, err := os.Stat(filepath.Join(dst, "A001", "a.mov")); !os.IsNotExist(err) {
+		t.Error("cancel while asking still copied")
+	}
+}
+
+// Korean names written by macOS (decomposed) and by a NAS (composed) look
+// different byte for byte; so do names that differ only in case. They are
+// the same file to the user and must never be moved aside.
+func TestMirrorKeepsNamesThatDifferOnlyInFormOrCase(t *testing.T) {
+	tmp := t.TempDir()
+	src, dst := filepath.Join(tmp, "A001"), filepath.Join(tmp, "NAS")
+	nfc := "촬영본.mov"
+	nfd := norm.NFD.String(nfc)
+	if nfc == nfd {
+		t.Fatal("test setup: NFD form equals NFC")
+	}
+	writeFile(t, filepath.Join(src, nfc), randBytes(1, 5000), day)
+	writeFile(t, filepath.Join(src, "Clip.MOV"), randBytes(2, 5000), day)
+	writeFile(t, filepath.Join(dst, "A001", nfd), randBytes(1, 5000), day)
+	writeFile(t, filepath.Join(dst, "A001", "clip.mov"), randBytes(2, 5000), day)
+	writeFile(t, filepath.Join(dst, "A001", "really-gone.mov"), randBytes(3, 5000), day)
+
+	j := startMirror(t, Options{Sources: []string{src}, Destinations: []string{dst}, Subfolder: true})
+	st := j.Snapshot()
+	if st.Status != StatusConfirming || strings.Join(st.Dests[0].RemoveList, ",") != "A001/really-gone.mov" {
+		t.Fatalf("status %s, would remove %v", st.Status, st.Dests[0].RemoveList)
+	}
+	j.Confirm(true)
+	j.Wait()
+	for _, name := range []string{nfd, "clip.mov"} {
+		if _, err := os.Stat(filepath.Join(dst, "A001", name)); err != nil {
+			t.Errorf("%q was moved aside", name)
+		}
+	}
+}
+
+func TestMirrorWithoutSubfolderLeavesOwnFoldersAlone(t *testing.T) {
+	tmp := t.TempDir()
+	src, dst := filepath.Join(tmp, "A001"), filepath.Join(tmp, "NAS")
+	writeFile(t, filepath.Join(src, "a.mov"), randBytes(1, 5000), day)
+	writeFile(t, filepath.Join(dst, ReplacedDirName, "x", "old.mov"), []byte("kept"), day)
+	writeFile(t, filepath.Join(dst, RemovedDirName, "x", "older.mov"), []byte("kept"), day)
+	writeFile(t, filepath.Join(dst, "A001_2026-01-01_000000.mhl"), []byte("<hashlist/>"), day)
+	writeFile(t, filepath.Join(dst, ".DS_Store"), []byte("x"), day)
+	writeFile(t, filepath.Join(dst, "stray.mov"), []byte("stray"), day)
+
+	j := startMirror(t, Options{Sources: []string{src}, Destinations: []string{dst}, Subfolder: false})
+	if st := j.Snapshot(); strings.Join(st.Dests[0].RemoveList, ",") != "A001/stray.mov" {
+		t.Fatalf("would remove %v", st.Dests[0].RemoveList)
+	}
+	j.Confirm(true)
+	j.Wait()
+	for _, p := range []string{filepath.Join(ReplacedDirName, "x", "old.mov"), filepath.Join(RemovedDirName, "x", "older.mov"), "A001_2026-01-01_000000.mhl", ".DS_Store", "a.mov"} {
+		if _, err := os.Stat(filepath.Join(dst, p)); err != nil {
+			t.Errorf("%s is gone", p)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dst, "stray.mov")); !os.IsNotExist(err) {
+		t.Error("stray.mov was not moved")
+	}
+}
+
+func TestMirrorIsSkippedWhenTheSourceCannotBeFullyRead(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can read everything; permissions cannot be tested")
+	}
+	tmp := t.TempDir()
+	src, dst := filepath.Join(tmp, "A001"), filepath.Join(tmp, "NAS")
+	writeFile(t, filepath.Join(src, "a.mov"), randBytes(1, 5000), day)
+	writeFile(t, filepath.Join(src, "locked", "b.mov"), randBytes(2, 5000), day)
+	os.MkdirAll(dst, 0o755)
+	o := Options{Sources: []string{src}, Destinations: []string{dst}, Subfolder: true}
+	if st := runJob(t, o, nil); st.Status != StatusDone {
+		t.Fatalf("first run: %s", st.Status)
+	}
+	// Now part of the source cannot be read. It must not look deleted.
+	os.Chmod(filepath.Join(src, "locked"), 0)
+	defer os.Chmod(filepath.Join(src, "locked"), 0o755)
+	o.Mirror = true
+	st := runJob(t, o, nil)
+	if st.Mirror != MirrorSkipped || st.Dests[0].Removed != 0 || len(st.Warnings) != 1 {
+		t.Fatalf("mirror %q removed %d warnings %v", st.Mirror, st.Dests[0].Removed, st.Warnings)
+	}
+	if _, err := os.Stat(filepath.Join(dst, "A001", "locked", "b.mov")); err != nil {
+		t.Error("the backup of the unreadable folder was moved aside")
+	}
+}
+
+func TestConfirmWithoutAQuestionIsRefused(t *testing.T) {
+	tmp := t.TempDir()
+	src, dst := filepath.Join(tmp, "A001"), filepath.Join(tmp, "NAS")
+	writeFile(t, filepath.Join(src, "a.mov"), randBytes(1, 5000), day)
+	os.MkdirAll(dst, 0o755)
+	j, err := start(Options{Sources: []string{src}, Destinations: []string{dst}}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	j.Wait()
+	if err := j.Confirm(true); err == nil {
+		t.Error("Confirm accepted on a job that never asked")
 	}
 }

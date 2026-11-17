@@ -6,3 +6,5 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0
 	golang.org/x/sys v0.30.0
 )
+
+require golang.org/x/text v0.22.0

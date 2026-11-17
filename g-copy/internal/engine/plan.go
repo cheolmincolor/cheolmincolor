@@ -204,6 +204,7 @@ func (j *Job) scan() error {
 	for s, root := range j.srcRoots {
 		hasChild := map[string]bool{}
 		var dirs []string
+		keys := map[string]bool{} // every name the source has, for sync mode
 		err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 			if cerr := j.ctx.Err(); cerr != nil {
 				return cerr
@@ -211,6 +212,7 @@ func (j *Job) scan() error {
 			rel, _ := filepath.Rel(root, p)
 			if err != nil {
 				j.addError(j.showSrc(s, rel), "", "읽을 수 없습니다: "+osMsg(err))
+				j.srcUnreadable[s] = true
 				if d != nil && d.IsDir() {
 					return filepath.SkipDir
 				}
@@ -227,6 +229,7 @@ func (j *Job) scan() error {
 				return nil
 			}
 			hasChild[filepath.Dir(rel)] = true
+			keys[pathKey(rel)] = true // also links and special files: kept on the destination
 			if d.IsDir() {
 				dirs = append(dirs, rel)
 				return nil
@@ -234,6 +237,7 @@ func (j *Job) scan() error {
 			info, err := d.Info()
 			if err != nil {
 				j.addError(j.showSrc(s, rel), "", "읽을 수 없습니다: "+osMsg(err))
+				j.srcUnreadable[s] = true
 				return nil
 			}
 			if !info.Mode().IsRegular() {
@@ -249,6 +253,7 @@ func (j *Job) scan() error {
 		if err != nil {
 			return err
 		}
+		j.srcKeys = append(j.srcKeys, keys)
 		for _, d := range dirs {
 			if !hasChild[d] {
 				j.emptyDirs = append(j.emptyDirs, dirRef{src: s, rel: d})
