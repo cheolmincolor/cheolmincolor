@@ -35,24 +35,26 @@
 
 <main id="app" data-mode="setup">
   <div class="lanes">
-    <section class="lane" aria-labelledby="h-src">
+    <section class="lane" id="lane-src" aria-labelledby="h-src">
       <div class="lane-head">
         <h2 id="h-src">원본</h2>
         <p>백업할 외장하드나 폴더</p>
       </div>
       <ul class="cards" id="src-list"></ul>
       <button class="add setup-only" id="add-src" type="button"><svg class="ico"><use href="#i-plus"/></svg>원본 추가</button>
+      <p class="drophint setup-only native-only">또는 폴더를 여기로 끌어다 놓으세요</p>
     </section>
 
     <div class="flow" aria-hidden="true"><svg class="ico"><use href="#i-arrow"/></svg></div>
 
-    <section class="lane" aria-labelledby="h-dst">
+    <section class="lane" id="lane-dst" aria-labelledby="h-dst">
       <div class="lane-head">
         <h2 id="h-dst">대상</h2>
         <p>NAS · DAS의 백업 위치 (여러 곳에 동시에 가능)</p>
       </div>
       <ul class="cards" id="dst-list"></ul>
       <button class="add setup-only" id="add-dst" type="button"><svg class="ico"><use href="#i-plus"/></svg>대상 추가</button>
+      <p class="drophint setup-only native-only">또는 폴더를 여기로 끌어다 놓으세요</p>
     </section>
   </div>
 
@@ -139,6 +141,7 @@
   </div>
   <div class="dlg-foot">
     <button class="btn ghost" id="btn-mkdir" type="button">새 폴더</button>
+    <button class="btn ghost native-only" id="btn-native" type="button">Finder에서 선택…</button>
     <p class="chosen" id="picker-chosen"></p>
     <button class="btn ghost" data-close type="button">취소</button>
     <button class="btn primary" id="picker-choose" type="button">이 폴더 선택</button>

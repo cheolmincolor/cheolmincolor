@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSRemovableVolumesUsageDescription</key>
+  <string>외장 디스크의 파일을 백업하고 검증하려면 접근 권한이 필요합니다.</string>
+  <key>NSNetworkVolumesUsageDescription</key>
+  <string>NAS에 백업하고 검증하려면 네트워크 볼륨 접근 권한이 필요합니다.</string>
+  <key>NSDesktopFolderUsageDescription</key>
+  <string>선택한 폴더를 백업하려면 접근 권한이 필요합니다.</string>
+  <key>NSDocumentsFolderUsageDescription</key>
+  <string>선택한 폴더를 백업하려면 접근 권한이 필요합니다.</string>
+  <key>NSDownloadsFolderUsageDescription</key>
+  <string>선택한 폴더를 백업하려면 접근 권한이 필요합니다.</string>
+  <key>NSHumanReadableCopyright</key>
+  <string></string>
+</dict>
+</plist>

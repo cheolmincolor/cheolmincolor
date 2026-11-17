@@ -76,6 +76,8 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("POST /api/job/cancel", s.handleJobCancel)
 	api.HandleFunc("POST /api/job/dismiss", s.handleJobDismiss)
 	api.HandleFunc("GET /api/history", s.handleHistory)
+	api.HandleFunc("GET /api/settings", s.handleSettingsGet)
+	api.HandleFunc("POST /api/settings", s.handleSettingsSet)
 	api.HandleFunc("POST /api/reveal", s.handleReveal)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

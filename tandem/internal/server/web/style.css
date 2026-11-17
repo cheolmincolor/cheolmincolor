@@ -113,6 +113,12 @@ main { max-width: 1040px; margin: 0 auto; padding: 14px 24px 40px; }
 }
 .add:hover { color: var(--text); border-color: #6a6a6a; background: #222; }
 
+/* Only in the desktop app, which can receive dropped folders and open the system's folder dialog. */
+body:not(.native) .native-only { display: none; }
+.drophint { color: var(--faint); font-size: 12px; text-align: center; }
+.lane.drop { border-color: #8fb4d9; background: #20252b; }
+.lane.drop .add { border-color: #8fb4d9; color: var(--text); }
+
 /* ── bottom panel ───────────────────────────────────────── */
 .panel { margin-top: 14px; background: var(--panel); border: 1px solid var(--line-soft); border-radius: var(--radius); padding: 16px 18px; }
 #app[data-mode="setup"] .run-only, #app[data-mode="setup"] .done-only,

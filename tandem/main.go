@@ -7,6 +7,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -26,7 +27,15 @@ func main() {
 	port := flag.Int("port", 47800, "포트 (사용 중이면 다음 번호를 시도)")
 	noOpen := flag.Bool("no-open", false, "브라우저를 자동으로 열지 않음")
 	volumes := flag.String("volumes", "", "디스크 목록에 추가할 상위 폴더 (쉼표로 구분, 예: /mnt/nas)")
+	desktop := flag.Bool("desktop", false, "데스크톱 앱의 엔진으로 실행 (앱 창이 닫히면 함께 종료)")
 	flag.Parse()
+	if *desktop {
+		*noOpen = true
+		*port = 0 // any free port; the app window is told the address
+		// If the app window dies, our output pipe breaks. Without this, the
+		// next line we print would kill us before we could clean up.
+		signal.Ignore(syscall.SIGPIPE)
+	}
 
 	configDir := os.Getenv("TANDEM_CONFIG_DIR")
 	if configDir == "" {
@@ -65,13 +74,28 @@ func main() {
 		openBrowser(url)
 	}
 
+	stop := make(chan struct{}, 2)
 	go func() {
 		sig := make(chan os.Signal, 1)
 		// SIGHUP: the terminal window was closed.
 		signal.Notify(sig, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 		<-sig
-		fmt.Println("\n종료하는 중… 진행 중인 복사를 정리합니다.")
-		srv.CancelRunning() // removes unfinished temporary files
+		stop <- struct{}{}
+	}()
+	if *desktop {
+		// The app window holds our stdin open. When it closes it, or dies,
+		// we clean up and leave too, so no engine is ever left running
+		// unseen. (Windows has no signal for this; a closed pipe works
+		// everywhere.)
+		go func() {
+			_, _ = io.Copy(io.Discard, os.Stdin)
+			stop <- struct{}{}
+		}()
+	}
+	go func() {
+		<-stop
+		srv.CancelRunning() // first of all: removes unfinished temporary files
+		fmt.Println("\n진행 중인 복사를 정리하고 종료합니다.")
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		_ = httpSrv.Shutdown(ctx)

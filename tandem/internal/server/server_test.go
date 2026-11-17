@@ -193,6 +193,34 @@ func TestJobThroughTheAPIAndHistory(t *testing.T) {
 	}
 }
 
+func TestSettingsAreKeptByTheEngine(t *testing.T) {
+	s, _, c := setup(t)
+	if code, out := c.do("GET", "/api/settings", nil, nil); code != 200 || len(out) != 0 {
+		t.Fatalf("first read: %d %v", code, out)
+	}
+	want := map[string]any{"dests": []any{"/Volumes/NAS/Project"}, "opts": map[string]any{"algo": "md5"}}
+	if code, _ := c.do("POST", "/api/settings", want, nil); code != 200 {
+		t.Fatalf("save: %d", code)
+	}
+	// A new window (new session, as after restarting the app) reads them back.
+	again := newClient(t, c.base)
+	again.do("GET", "/?token="+s.Token(), nil, nil)
+	_, got := again.do("GET", "/api/settings", nil, nil)
+	if got["dests"].([]any)[0] != "/Volumes/NAS/Project" || got["opts"].(map[string]any)["algo"] != "md5" {
+		t.Errorf("read back: %v", got)
+	}
+	req, _ := http.NewRequest("POST", c.base+"/api/settings", strings.NewReader(`["not an object"]`))
+	req.Header.Set("Content-Type", "application/json")
+	res, err := c.http.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest {
+		t.Errorf("non-object settings: status %d, want 400", res.StatusCode)
+	}
+}
+
 func TestLoopbackHost(t *testing.T) {
 	for host, want := range map[string]bool{
 		"127.0.0.1:47800": true, "localhost:47800": true, "[::1]:47800": true, "127.0.0.1": true,

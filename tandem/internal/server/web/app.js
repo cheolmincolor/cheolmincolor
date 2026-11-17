@@ -65,12 +65,24 @@ function joinPath(a, b) {
   return a.replace(/[\\/]+$/, '') + sep + b;
 }
 
+// Present only inside the desktop app (see desktop/preload.js). In a plain
+// browser everything below that uses it is simply skipped.
+const native = window.tandemNative || null;
+if (native) document.body.classList.add('native');
+
+// Preferences live in the engine (see /api/settings), so they survive
+// restarts in the desktop app, whose window address changes every launch.
 const store = {
-  get(key, fallback) {
-    try { return JSON.parse(localStorage.getItem('tandem.' + key)) ?? fallback; } catch { return fallback; }
+  data: {},
+  queue: Promise.resolve(),
+  async load() {
+    try { this.data = await api('/api/settings'); } catch { /* start with defaults */ }
   },
+  get(key, fallback) { return this.data[key] ?? fallback; },
   set(key, value) {
-    try { localStorage.setItem('tandem.' + key, JSON.stringify(value)); } catch { /* private mode */ }
+    this.data[key] = value;
+    const snapshot = JSON.parse(JSON.stringify(this.data));
+    this.queue = this.queue.then(() => api('/api/settings', snapshot)).catch(() => {}); // saved in order
   },
 };
 
@@ -240,6 +252,8 @@ function renderRun(job) {
   $('run-stats').textContent = stats;
   $('run-file').textContent = file;
   document.title = (pct ? pct + ' — ' : '') + 'Tandem';
+  // Dock / taskbar: a bar while copying, a pulsing one while still counting
+  if (native) native.setProgress(job.status === 'copying' && job.workTotal > 0 ? job.workDone / job.workTotal : 2, true);
 }
 
 // ── finished ────────────────────────────────────────────────────────────
@@ -321,9 +335,17 @@ function renderResult(job) {
   )));
 
   document.title = (job.status === 'done' ? '✓ 완료' : job.status === 'cancelled' ? '취소됨' : '⚠ 확인 필요') + ' — Tandem';
+  if (native) {
+    native.setProgress(-1, false);
+    if (announce !== job.id) return;
+    announce = null; // tell the user once, in case the window is in the background
+    native.notify('Tandem — ' + title, sub);
+  }
 }
 
 // ── job lifecycle ───────────────────────────────────────────────────────
+
+let announce = null; // id of a job seen running in this window: its end is worth a notification
 
 let pollTimer = 0;
 function schedule(ms) {
@@ -334,6 +356,7 @@ function schedule(ms) {
 function applyJob(job) {
   if (job.status === 'idle') {
     state.job = null;
+    if (native) native.setProgress(-1, false);
     if (state.mode !== 'setup') { setMode('setup'); renderSetup(); document.title = 'Tandem'; }
     return;
   }
@@ -347,6 +370,7 @@ function applyJob(job) {
     renderLanes();
   }
   setMode(finished ? 'finished' : 'running');
+  if (!finished) announce = job.id;
   state.dests.forEach((d, i) => d.extraEl && d.extraEl.replaceChildren(...destExtra(job, i)));
   if (finished) renderResult(job); else renderRun(job);
 }
@@ -536,18 +560,76 @@ $('mkdir-form').addEventListener('submit', async (e) => {
   }
 });
 
-$('picker-choose').addEventListener('click', () => {
-  if (!picker.path) return;
-  const list = picker.kind === 'src' ? state.sources : state.dests;
-  if (!list.some((x) => x.path === picker.path)) {
-    list.push({ ...item(picker.path), free: picker.free });
-  }
-  const key = 'recent.' + picker.kind;
-  store.set(key, [picker.path, ...store.get(key, []).filter((p) => p !== picker.path)].slice(0, 6));
-  $('picker').close();
+function addFolder(kind, path, free) {
+  const list = kind === 'src' ? state.sources : state.dests;
+  if (!list.some((x) => x.path === path)) list.push({ ...item(path), free });
+  const key = 'recent.' + kind;
+  store.set(key, [path, ...store.get(key, []).filter((p) => p !== path)].slice(0, 6));
   saveDests();
   renderSetup();
+}
+
+$('picker-choose').addEventListener('click', () => {
+  if (!picker.path) return;
+  addFolder(picker.kind, picker.path, picker.free);
+  $('picker').close();
 });
+
+// ── desktop app only: the system's folder dialog, and dropped folders ───
+
+// addPaths checks each path with the engine first, so a dropped file (or a
+// disk that just went away) is explained instead of silently added.
+async function addPaths(kind, paths) {
+  const err = $('start-err');
+  const problems = [];
+  for (const p of paths) {
+    try {
+      const info = await api('/api/browse?path=' + encodeURIComponent(p));
+      addFolder(kind, info.path, info.free ?? null);
+    } catch (e) {
+      problems.push(/찾을 수 없습니다/.test(e.message) ? '폴더만 추가할 수 있습니다: ' + p : e.message);
+    }
+  }
+  if (problems.length) {
+    err.textContent = problems.join('  ·  ');
+    err.hidden = false;
+  }
+}
+
+if (native) {
+  const btn = $('btn-native');
+  btn.textContent = native.platform === 'darwin' ? 'Finder에서 선택…' : native.platform === 'win32' ? '탐색기에서 선택…' : '파일 관리자에서 선택…';
+  btn.addEventListener('click', async () => {
+    const kind = picker.kind;
+    const chosen = await native.pickFolder(kind, picker.path);
+    if (!chosen) return; // dialog cancelled
+    $('picker').close();
+    await addPaths(kind, [chosen]);
+  });
+
+  for (const [id, kind] of [['lane-src', 'src'], ['lane-dst', 'dst']]) {
+    const lane = $(id);
+    const droppable = (e) => state.mode === 'setup' && [...e.dataTransfer.types].includes('Files');
+    lane.addEventListener('dragover', (e) => {
+      if (!droppable(e)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      lane.classList.add('drop');
+    });
+    lane.addEventListener('dragleave', (e) => { if (!lane.contains(e.relatedTarget)) lane.classList.remove('drop'); });
+    lane.addEventListener('drop', async (e) => {
+      lane.classList.remove('drop');
+      if (!droppable(e)) return;
+      e.preventDefault();
+      const paths = [...e.dataTransfer.files].map((f) => native.pathForFile(f)).filter(Boolean);
+      if (paths.length) await addPaths(kind, paths);
+    });
+  }
+  // A folder dropped anywhere else must not make the window navigate to it.
+  for (const type of ['dragover', 'drop']) {
+    window.addEventListener(type, (e) => { if (!e.defaultPrevented) { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'none'; } });
+  }
+}
 
 for (const btn of document.querySelectorAll('[data-close]')) {
   btn.addEventListener('click', () => btn.closest('dialog').close());
@@ -604,6 +686,7 @@ async function refreshDests() {
 }
 
 (async function init() {
+  await store.load();
   const o = store.get('opts', null);
   if (o) {
     $('opt-algo').value = o.algo === 'md5' ? 'md5' : 'xxh64';
