@@ -62,14 +62,14 @@ for name in sorted(f for f in os.listdir(OUT) if f.endswith(".mov")):
     subprocess.run(["open", "-a", "QuickTime Player", j(name)])
     time.sleep(4)
     osa('tell application "QuickTime Player" to activate')
-    has = osa('tell application "System Events" to tell process "QuickTime Player" to get name of every window').stdout
-    if "Inspector" not in has and "속성" not in has:
+    n = osa('tell application "System Events" to tell process "QuickTime Player" to count windows').stdout.strip()
+    if n in ("", "0", "1"):
         osa('tell application "System Events" to keystroke "i" using command down')
     time.sleep(3)
     script = """tell application "System Events" to tell process "QuickTime Player"
   set out to ""
   repeat with w in windows
-    if name of w contains "Inspector" or name of w contains "속성" then
+    if true then
       repeat with e in (entire contents of w)
         try
           set v to value of e
