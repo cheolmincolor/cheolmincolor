@@ -84,6 +84,8 @@ def capture_window(number, path):
 def qt_capture(movie, name):
     """퀵타임 플레이어로 열어 창을 캡처하고 막대 밝기를 잼."""
     import Quartz
+    subprocess.run(["killall", "QuickTime Player"], capture_output=True)  # 이전 파일 창이 남아 있으면 그걸 찍게 됨
+    time.sleep(2)
     subprocess.run(["open", "-a", "QuickTime Player", movie], check=True)
     win = None
     for _ in range(60):
@@ -100,8 +102,8 @@ def qt_capture(movie, name):
     path = os.path.join(OUT, f"qt_{name}.png")
     img = capture_window(win["kCGWindowNumber"], path)
     vals = bars_in(img, (0, 0, Quartz.CGImageGetWidth(img), Quartz.CGImageGetHeight(img)))  # 퀵타임 창 = 영상 크기, 가운데 줄에서 잼
-    subprocess.run(["osascript", "-e", 'tell application "QuickTime Player" to close every document saving no'])
-    time.sleep(1)
+    subprocess.run(["killall", "QuickTime Player"], capture_output=True)
+    time.sleep(2)
     return vals
 
 
