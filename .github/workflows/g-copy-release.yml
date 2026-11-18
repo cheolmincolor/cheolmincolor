@@ -68,11 +68,23 @@ jobs:
           if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
             # made on github.com: attach the apps, keep it marked as the latest
             gh release upload "${GITHUB_REF_NAME}" $files --clobber
-            gh release edit "${GITHUB_REF_NAME}" --latest --draft=false
+            gh release edit "${GITHUB_REF_NAME}" --draft=false
             if [ -f RELEASE_NOTES.md ] && [ -z "$(gh release view "${GITHUB_REF_NAME}" --json body -q .body)" ]; then
               gh release edit "${GITHUB_REF_NAME}" --notes-file RELEASE_NOTES.md
             fi
           else
             notes=""; [ -f RELEASE_NOTES.md ] && notes="--notes-file RELEASE_NOTES.md"
-            gh release create "${GITHUB_REF_NAME}" --title "G-Copy ${GITHUB_REF_NAME#g-copy-v}" $notes --latest $files
+            gh release create "${GITHUB_REF_NAME}" --title "G-Copy ${GITHUB_REF_NAME#g-copy-v}" $notes $files
           fi
+
+      # The installed apps read latest.json from one fixed place, so other
+      # projects' releases in this repository never get in the way.
+      - name: Update the G-Copy update channel
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view g-copy-updates >/dev/null 2>&1; then
+            gh release create g-copy-updates --target "${GITHUB_SHA}" --prerelease \
+              --title "G-Copy update channel" --notes "Read by G-Copy's automatic updates. Do not delete."
+          fi
+          gh release upload g-copy-updates dist/latest.json dist/latest.json.sig --clobber

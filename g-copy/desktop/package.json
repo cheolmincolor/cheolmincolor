@@ -14,5 +14,5 @@
     "@electron/packager": "20.3.0",
     "electron": "45.3.3"
   },
-  "updateFeed": "https://github.com/cheolmincolor/cheolmincolor/releases/latest/download"
+  "updateFeed": "https://github.com/cheolmincolor/cheolmincolor/releases/download/g-copy-updates"
 }
