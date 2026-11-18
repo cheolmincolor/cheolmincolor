@@ -57,6 +57,11 @@ jobs:
         working-directory: g-copy
         run: go test -count=1 ./...
 
+      # TEMPORARY (copy review): print what the Mac-only probes observed.
+      - name: Copy review probes
+        working-directory: g-copy
+        run: go test -count=1 -run Probe -v ./internal/engine/ | grep -E 'PROBE|^(---|ok|FAIL)'
+
       - name: Build the Mac apps
         run: |
           npm ci
