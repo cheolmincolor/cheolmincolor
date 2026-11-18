@@ -24,7 +24,7 @@ permissions:
 
 jobs:
   release:
-    runs-on: macos-14
+    runs-on: macos-latest   # macos-14 was not given a runner here
     defaults:
       run:
         working-directory: g-copy/desktop

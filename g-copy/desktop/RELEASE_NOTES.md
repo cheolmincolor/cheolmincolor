@@ -1,3 +1,2 @@
-- Automatic updates: G-Copy checks for new versions, downloads them in the background and installs them when you restart or quit.
-- New look: flow lines between source and destinations, a progress ring per destination, a step indicator.
-- Remaining time is steadier and shows when the backup should finish.
+- First release through automatic updates.
+- Updates now come from G-Copy's own update channel, so releases of other apps in this repository do not get in the way.
