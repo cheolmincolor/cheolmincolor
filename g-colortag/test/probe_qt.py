@@ -86,6 +86,23 @@ def qt(movie, name):
     return vals
 
 
+def fd_info(path):
+    """퀵타임 '동영상 속성'이 보여주는 색 정보 = AVFoundation 포맷 설명의 색 확장값."""
+    try:
+        import AVFoundation as AV
+        import CoreMedia as CM
+        from Foundation import NSURL
+        asset = AV.AVURLAsset.URLAssetWithURL_options_(NSURL.fileURLWithPath_(path), None)
+        tr = asset.tracksWithMediaType_(AV.AVMediaTypeVideo)[0]
+        ext = CM.CMFormatDescriptionGetExtensions(tr.formatDescriptions()[0]) or {}
+        short = lambda v: str(v).replace("ITU_R_", "").replace("_2", "") if v is not None else "-"  # noqa: E731
+        return (f"원색={short(ext.get('CVImageBufferColorPrimaries'))} 전송={short(ext.get('CVImageBufferTransferFunction'))} "
+                f"행렬={short(ext.get('CVImageBufferYCbCrMatrix'))} 감마={ext.get('CVImageBufferGammaLevel', '-')} "
+                f"비트={ext.get('BitsPerComponent', '-')}")
+    except Exception as e:
+        return f"읽기 실패 {e}"
+
+
 def tags(path):
     r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
                         "stream=codec_name,color_primaries,color_transfer,color_space", "-of", "csv=p=0", path],
@@ -107,6 +124,11 @@ retag(j("h264_111.mov"), j("h264_141_g22.mov"), 1, 4, 1)                   # 전
 ff("-f", "lavfi", "-i", SRC, "-c:v", "prores_ks", "-profile:v", "3", "-pix_fmt", "yuv422p10le",
    "-color_primaries", "1", "-color_trc", "1", "-colorspace", "1", j("prores_111.mov"))
 retag(j("prores_111.mov"), j("prores_121.mov"), 1, 2, 1, codec="prores")
+retag(j("prores_111.mov"), j("prores_121_gama24.mov"), 1, 2, 1, codec="prores", extra=("-movflags", "+write_colr+write_gama", "-mov_gamma", "2.4"))
+ff("-f", "lavfi", "-i", SRC, "-c:v", "prores_ks", "-profile:v", "4", "-pix_fmt", "yuv444p12le",
+   "-color_primaries", "1", "-color_trc", "1", "-colorspace", "1", j("prores4444_111.mov"))
+retag(j("prores4444_111.mov"), j("prores4444_121.mov"), 1, 2, 1, codec="prores")
+retag(j("prores4444_111.mov"), j("prores4444_121_gama24.mov"), 1, 2, 1, codec="prores", extra=("-movflags", "+write_colr+write_gama", "-mov_gamma", "2.4"))
 ff("-f", "lavfi", "-i", SRC, "-c:v", "libx264", "-crf", "1", "-pix_fmt", "yuv420p",
    "-color_primaries", "1", "-color_trc", "1", "-colorspace", "1", j("h264_111.mp4"))
 retag(j("h264_111.mp4"), j("h264_121.mp4"), 1, 2, 1)
@@ -115,6 +137,7 @@ res = {"macos": subprocess.run(["sw_vers", "-productVersion"], capture_output=Tr
 print(f"macOS {res['macos']}  (기대값 참고: 그대로 표시 0·64·128·191·255 / 1.96→2.2 변환 0·73·139·199·255)")
 for name in sorted(os.listdir(V)):
     vals = qt(j(name), name)
-    res["rows"].append({"file": name, "tags": tags(j(name)), "quicktime": vals})
-    print(f"{name:26} {tags(j(name)):38} 퀵타임 막대 밝기 {vals}", flush=True)
+    info = fd_info(j(name))
+    res["rows"].append({"file": name, "tags": tags(j(name)), "quicktime": vals, "inspector": info})
+    print(f"{name:28} 퀵타임 막대 밝기 {vals} | 속성: {info}", flush=True)
 json.dump(res, open(os.path.join(OUT, "result.json"), "w"), ensure_ascii=False, indent=2)
