@@ -92,6 +92,12 @@ def patch_colr(src, dst, kind, vals, full=None):
     open(dst, "wb").write(bytes(data))
 
 
+for nm, head in (("m_nocolr_head121.mov", (1, 2, 1)), ("n_nocolr_head111.mov", (1, 1, 1)), ("o_nocolr_head222.mov", (2, 2, 2))):
+    try:  # 컨테이너 colr 없이 ProRes 헤더만
+        ff("-i", j("a_111.mov"), "-c", "copy", "-bsf:v", "prores_metadata=color_primaries=%d:color_trc=%d:colorspace=%d" % head,
+           "-movflags", "-write_colr", j(nm))
+    except Exception as ex:
+        print("만들기 실패", nm, ex)
 for t in (0, 3, 255):
     patch_colr(j("c_colr121_head121.mov"), j(f"k_colr1{t}1_patched.mov"), "nclc", (1, t, 1))
 try:  # MP4 식 nclx (전체 범위 표시 포함) 를 MOV 에
