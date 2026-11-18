@@ -77,6 +77,16 @@ def ax_text():
                     out.append(v.strip())
             for ch in get(el, "AXChildren") or []:
                 walk(ch, depth + 1)
+        def expand(el, depth=0):  # 접힌 'Video Details' 펼치기
+            if depth > 30:
+                return
+            if get(el, "AXRole") == "AXDisclosureTriangle" and get(el, "AXValue") in (0, False):
+                AS.AXUIElementPerformAction(el, "AXPress")
+            for ch in get(el, "AXChildren") or []:
+                expand(ch, depth + 1)
+        for w in get(root, "AXWindows") or []:
+            expand(w)
+        time.sleep(1)
         for w in get(root, "AXWindows") or []:
             walk(w)
         return " | ".join(out)
@@ -107,8 +117,7 @@ for name in sorted(f for f in os.listdir(OUT) if f.endswith(".mov")):
     subprocess.run(["open", "-a", "QuickTime Player", j(name)])
     time.sleep(4)
     osa('tell application "QuickTime Player" to activate')
-    n = osa('tell application "System Events" to tell process "QuickTime Player" to count windows').stdout.strip()
-    if n in ("", "0", "1"):
+    if "Inspector" not in ax_text():
         osa('tell application "System Events" to keystroke "i" using command down')
     time.sleep(3)
     script = """tell application "System Events" to tell process "QuickTime Player"
