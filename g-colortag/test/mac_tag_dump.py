@@ -41,6 +41,7 @@ def dump(path):
     fd = asset.tracksWithMediaType_(AV.AVMediaTypeVideo)[0].formatDescriptions()[0]
     e = CM.CMFormatDescriptionGetExtensions(fd) or {}
     print(f"■ {os.path.basename(path)}\n   컨테이너 {ct.describe(path)} | ProRes 헤더 {header(path)}")
+    print("   모든 키:", sorted(str(k) for k in e.keys()))
     for k in sorted(e.keys()):
         v = e[k]
         if k == "SampleDescriptionExtensionAtoms":
@@ -80,6 +81,24 @@ retag(j("a_111.mov"), j("f_colr616_head111.mov"), (6, 1, 6), (1, 1, 1))   # 어�
 retag(j("a_111.mov"), j("g_colr111_head616.mov"), (1, 1, 1), (6, 1, 6))
 retag(j("a_111.mov"), j("h_colr121_head101.mov"), (1, 2, 1), (1, 0, 1))   # 헤더 전송 0(알 수 없음)
 retag(j("a_111.mov"), j("i_colr101_head101.mov"), (1, 0, 1), (1, 0, 1))
+def patch_colr(src, dst, kind, vals, full=None):
+    """colr 아톰을 바이트 단위로 바꿔 씀 (같은 길이일 때만: nclc 18B ↔ nclx 19B 는 길이가 달라 별도 처리)."""
+    import shutil, struct
+    shutil.copy(src, dst)
+    data = bytearray(open(dst, "rb").read())
+    i = data.find(b"colrnclc")
+    if kind == "nclc":
+        data[i + 8:i + 14] = struct.pack(">HHH", *vals)
+    open(dst, "wb").write(bytes(data))
+
+
+for t in (0, 3, 255):
+    patch_colr(j("c_colr121_head121.mov"), j(f"k_colr1{t}1_patched.mov"), "nclc", (1, t, 1))
+try:  # MP4 식 nclx (전체 범위 표시 포함) 를 MOV 에
+    ff("-i", j("a_111.mov"), "-c", "copy", "-color_primaries", "1", "-color_trc", "2", "-colorspace", "1",
+       "-movflags", "+write_colr", "-f", "mp4", j("l_mp4_nclx121.mp4"))
+except Exception as ex:
+    print("nclx 만들기 실패", ex)
 if os.path.exists(j("b_apple_lt.mov")):
     ct.convert_file(j("b_apple_lt.mov"), (1, 2, 1))  # 애플 ProRes → 앱 변환
 for n in sorted(os.listdir(OUT)):
