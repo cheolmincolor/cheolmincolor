@@ -52,6 +52,13 @@ jobs:
         run: |
           V=$(sed -n 's/^APP_VERSION = "\(.*\)"/\1/p' app.py)
           bash test/mac_smoke.sh "release/$V/G-ColorTag-$V-arm64.tar.gz"
+      - name: 저장한 _1-2-1 파일을 퀵타임이 (1-2-1)로 읽는지 (애플 ProRes 포함)
+        run: |
+          V=$(sed -n 's/^APP_VERSION = "\(.*\)"/\1/p' app.py)
+          mkdir -p "$RUNNER_TEMP/tag/Applications"
+          tar -xzf "release/$V/G-ColorTag-$V-arm64.tar.gz" -C "$RUNNER_TEMP/tag/Applications"
+          APP="$RUNNER_TEMP/tag/Applications/G-ColorTag.app"
+          "$APP/Contents/MacOS/G-ColorTag-python" -I -B test/mac_tag_check.py "$APP" "$RUNNER_TEMP/native/out/tags"
       - name: 앱 미리보기가 퀵타임 플레이어와 같은 밝기인지 (실제 창 캡처)
         run: |
           V=$(sed -n 's/^APP_VERSION = "\(.*\)"/\1/p' app.py)

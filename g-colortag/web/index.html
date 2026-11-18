@@ -181,6 +181,9 @@
   body.native .screen video { display: none; }
   body.native .ov { background: rgba(14, 15, 18, .55); }
   body.native .ov.idle { background: var(--bg); }
+  /* 전체화면(퀵타임 엔진): 영상 자리가 투명하므로 아래에 깔린 화면(다른 패널·목록)이 비치지 않게 숨김 */
+  body.native.fsmode #app { visibility: hidden; }
+  body.native.fsmode .screen.fs, body.native.fsmode .screen.fs *, body.native.fsmode .transport, body.native.fsmode .transport * { visibility: visible; }
   #drop { position: fixed; inset: 0; z-index: 75; display: none; align-items: center; justify-content: center; flex-direction: column;
     gap: 10px; background: rgba(14, 15, 18, .82); border: 3px dashed var(--accent); border-radius: 14px; margin: 10px;
     pointer-events: none; font-size: 18px; font-weight: 700; }

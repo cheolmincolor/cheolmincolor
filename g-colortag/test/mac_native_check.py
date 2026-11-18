@@ -172,6 +172,39 @@ def test():
                 checks.append((f"앱 {tag} ≈ 퀵타임 {tag} (최대 차이 {d:.1f})", d <= 4))
         if not checks:
             checks.append(("퀵타임 비교 캡처", False))
+
+        # 전체화면: 1-2-1 화면만 창 가운데에 맞게, 다른 화면·아래 화면이 비치지 않게
+        def window_shot(name):
+            fr = nswin.frame()
+            ct_ = nswin.contentRectForFrameRect_(fr)
+            im = capture_window(nswin.windowNumber(), os.path.join(OUT, name))
+            sc = Quartz.CGImageGetWidth(im) / fr.size.width
+            return im, sc, (fr.size.height - ct_.size.height) * sc, ct_.size.width * sc, ct_.size.height * sc
+
+        js("GCT.enterFs('mac')")
+        time.sleep(5)  # 전체화면 전환 + 조작 막대가 숨을 시간
+        img, sc, top, cw, ch = window_shot("app_fullscreen.png")
+        vw, vh = (cw, cw * 9 / 16) if cw / ch < 16 / 9 else (ch * 16 / 9, ch)
+        vx, vy = (cw - vw) / 2, top + (ch - vh) / 2
+        fs_vals = bars_in(img, (vx, vy, vw, vh))
+        d = max(abs(x - y) for x, y in zip(fs_vals, app_vals["mac"]))
+        step(f"전체화면 {cw / sc:.0f}x{ch / sc:.0f}: 막대 밝기 {fs_vals}")
+        checks.append((f"전체화면: 1-2-1 영상이 창 가운데에 맞게 (막대 차이 {d:.1f})", d <= 4))
+        # 막대마다 위→아래로 고르게 같은 밝기인지 (다른 영상·화면이 겹치면 깨짐)
+        worst = 0.0
+        for k in range(10):
+            yy = vy + vh * (0.12 + 0.076 * k)
+            row = bars_in(img, (vx, yy - vh * 0.5, vw, vh))  # bars_in 은 상자 가운데 줄을 잼
+            worst = max(worst, max(abs(x - y) for x, y in zip(row, fs_vals)))
+        checks.append((f"전체화면: 겹쳐 보이는 화면 없음 (위아래 밝기 흔들림 {worst:.1f})", worst <= 6))
+        js("GCT.exitFs()")
+        time.sleep(5)
+        img, sc, top, cw, ch = window_shot("app_after_fullscreen.png")
+        rects2 = json.loads(js("JSON.stringify(['std','mac'].map(t => { const r = document.querySelector('.screen[data-tag=\"' + t + '\"]').getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; }))"))
+        back = {tag: bars_in(img, (x * sc, top + y * sc, w * sc, h * sc)) for tag, (x, y, w, h) in zip(("std", "mac"), rects2)}
+        d2 = max(max(abs(x - y) for x, y in zip(back[t], app_vals[t])) for t in ("std", "mac"))
+        step(f"전체화면 나간 뒤: 1-1-1 {back['std']} / 1-2-1 {back['mac']}")
+        checks.append((f"전체화면 나가면 두 화면이 제자리로 (막대 차이 {d2:.1f})", d2 <= 4))
         RESULT["checks"] = checks
         RESULT["ok"] = all(c[1] for c in checks)
         for name, good in checks:
