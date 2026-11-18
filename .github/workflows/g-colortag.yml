@@ -1,0 +1,76 @@
+# G-ColorTag 맥 앱: 설치파일·업데이트 묶음을 만들고, 실제 맥에서 확인한 뒤 GitHub 릴리스로 올립니다.
+# 앱은 이 릴리스(colortag-v버전)를 보고 자동 업데이트합니다.
+# app.py 의 APP_VERSION 을 올리고 CHANGELOG.md 맨 위에 바뀐 점을 적어 올리면 새 릴리스가 만들어집니다.
+name: G-ColorTag 맥 앱
+
+on:
+  push:
+    paths:
+      - 'g-colortag/**'
+      - '.github/workflows/g-colortag.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: g-colortag-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: g-colortag
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 도구 설치
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q genisoimage
+          python3 -m pip install -q pillow
+      - name: 설치파일·업데이트 묶음 만들기 (내려받는 파일은 체크섬 검사)
+        run: bash build_release.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: g-colortag-release
+          path: g-colortag/release/
+          retention-days: 30
+
+  mac-check:
+    needs: build
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: g-colortag-release
+          path: g-colortag/release
+      - name: 실제 맥에서 앱 확인 (Apple Silicon)
+        run: |
+          V=$(sed -n 's/^APP_VERSION = "\(.*\)"/\1/p' app.py)
+          bash test/mac_smoke.sh "release/$V/G-ColorTag-$V-arm64.tar.gz"
+
+  release:
+    needs: [build, mac-check]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: g-colortag-release
+          path: g-colortag/release
+      - name: 릴리스 올리기 (이미 있으면 건너뜀, 장부 앱의 '최신' 표시는 그대로)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V=$(sed -n 's/^APP_VERSION = "\(.*\)"/\1/p' app.py)
+          TAG="colortag-v$V"; R="release/$V"
+          if gh release view "$TAG" >/dev/null 2>&1; then echo "$TAG 은 이미 있습니다."; exit 0; fi
+          gh release create "$TAG" "$R"/*.dmg "$R"/*.tar.gz "$R/colortag-latest.json" \
+            --target "$GITHUB_SHA" --title "G-ColorTag $V" --notes-file "$R/notes.md" --latest=false

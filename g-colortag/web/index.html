@@ -1,0 +1,776 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>G-ColorTag</title>
+<style>
+  :root {
+    --bg: #0e0f12; --panel: #16181d; --panel2: #1d2026; --line: #2a2e36; --line2: #363b46;
+    --text: #eceef3; --sub: #9aa1ad; --mute: #666d79;
+    --accent: #5b8cff; --accent-soft: rgba(91, 140, 255, .14);
+    --ok: #42d392; --warn: #f2b84b; --err: #ff6b6b;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text); overflow: hidden;
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Noto Sans CJK KR", sans-serif;
+    -webkit-font-smoothing: antialiased; -webkit-user-select: none; user-select: none; }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+  button:disabled { cursor: default; }
+  #app { display: grid; grid-template-rows: 58px 1fr; height: 100%; }
+
+  /* 상단 */
+  header { display: flex; align-items: center; justify-content: space-between; padding: 0 22px;
+    border-bottom: 1px solid var(--line); background: #111317; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; letter-spacing: .2px; }
+  .logo { width: 22px; height: 22px; border-radius: 6px; background: #22252c; display: grid;
+    grid-template-columns: repeat(3, 1fr); gap: 2px; padding: 5px 4px; }
+  .logo i { border-radius: 1.5px; } .logo i:nth-child(1) { background: #ef5a5a; }
+  .logo i:nth-child(2) { background: #45c97a; } .logo i:nth-child(3) { background: #4c84f0; }
+  .btn { height: 34px; padding: 0 16px; border-radius: 9px; background: var(--panel2); border: 1px solid var(--line2);
+    font-weight: 600; transition: background .15s, border-color .15s, opacity .15s; }
+  .btn:hover:not(:disabled) { background: #252932; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover:not(:disabled) { background: #4a7bf0; }
+  .btn:disabled { opacity: .4; }
+
+  main { display: grid; grid-template-columns: 300px 1fr; min-height: 0; }
+
+  /* 왼쪽 목록 */
+  aside { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; background: #121418; }
+  .side-head { display: flex; justify-content: space-between; align-items: baseline; padding: 16px 18px 8px; }
+  .side-head b { font-size: 13px; color: var(--sub); font-weight: 600; }
+  #list { list-style: none; margin: 0; padding: 4px 10px 10px; overflow: auto; flex: 1; }
+  #list:empty { flex: 0 0 auto; padding: 0; }  /* 비어 있으면 안내 상자가 위쪽에 오도록 */
+  .item { padding: 10px 12px; border-radius: 10px; cursor: pointer; border: 1px solid transparent; margin-bottom: 4px; }
+  .item:hover { background: var(--panel); }
+  .item.cur { background: var(--panel2); border-color: var(--line2); }
+  .row1 { display: flex; align-items: center; gap: 8px; }
+  .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+  .x { width: 22px; height: 22px; border-radius: 6px; color: var(--mute); font-size: 16px; line-height: 22px; flex: none; }
+  .x:hover { background: #2a2e36; color: var(--text); }
+  .row2 { display: flex; align-items: center; gap: 8px; margin-top: 5px; font-size: 12px; min-height: 20px; }
+  .badge { padding: 1px 7px; border-radius: 6px; font: 600 11.5px/18px ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: #262a32; color: #c9ced8; white-space: nowrap; }
+  .badge.mac { background: rgba(91, 140, 255, .18); color: #a9c2ff; }
+  .badge.none { background: transparent; border: 1px dashed var(--line2); color: var(--mute); }
+  .badge.other { background: rgba(242, 184, 75, .15); color: var(--warn); }
+  .st { color: var(--sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .st.done { color: var(--ok); } .st.error { color: var(--err); } .st.working { color: #a9c2ff; }
+  .st.skipped { color: var(--mute); } .st.warn { color: var(--warn); }
+  .reveal { margin-top: 6px; font-size: 12px; color: var(--accent); }
+  .reveal:hover { text-decoration: underline; }
+  .empty { margin: 30px 18px; padding: 26px 14px; text-align: center; color: var(--mute); border: 1px dashed var(--line2);
+    border-radius: 12px; font-size: 13px; }
+  .side-foot { padding: 10px 18px 14px; border-top: 1px solid var(--line); margin-top: auto; }
+  .link { color: var(--sub); font-size: 12.5px; }
+  .link:hover:not(:disabled) { color: var(--text); }
+  .link:disabled { opacity: .35; }
+
+  /* 오른쪽 */
+  #stage { display: flex; flex-direction: column; gap: 10px; padding: 14px 24px 14px; min-width: 0; min-height: 0; overflow: auto; }
+  .stage-head { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; }
+  .stage-head .now { font-weight: 700; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .stage-head .hint { color: var(--sub); font-size: 12.5px; white-space: nowrap; }
+  .players { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden;
+    transition: border-color .15s, box-shadow .15s; }
+  .panel.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 8px 30px rgba(91, 140, 255, .12); }
+  .panel-head { display: flex; align-items: flex-start; gap: 11px; width: 100%; text-align: left; padding: 11px 15px 10px; }
+  .panel-head:hover { background: rgba(255, 255, 255, .025); }
+  .radio { width: 18px; height: 18px; border-radius: 50%; border: 2px solid #59606c; flex: none; margin-top: 2px;
+    transition: border-color .15s, background .15s; }
+  .panel.sel .radio { border-color: var(--accent); background: radial-gradient(var(--accent) 0 4px, transparent 5px); }
+  .ptext { flex: 1; min-width: 0; }
+  .ptitle { font-weight: 700; font-size: 14.5px; }
+  .pdesc { color: var(--sub); font-size: 12px; margin-top: 2px; }
+  .code { font: 700 12px/20px ui-monospace, SFMono-Regular, Menlo, monospace; padding: 0 8px; border-radius: 6px;
+    background: #262a32; color: #d6dae2; flex: none; }
+  .panel.sel .code { background: var(--accent-soft); color: #b9cdff; }
+  .screen { position: relative; background: #000; aspect-ratio: 16 / 9; cursor: pointer; }
+  .screen video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0; }
+  .screen video.on { opacity: 1; }
+  .ov { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: none; align-items: center; justify-content: center;
+    flex-direction: column; gap: 12px; color: var(--sub); font-size: 13px; text-align: center; padding: 20px;
+    background: rgba(0, 0, 0, .35); }
+  .ov.show { display: flex; }
+  .ov.err { color: var(--err); }
+  .spin { width: 26px; height: 26px; border-radius: 50%; border: 3px solid #2c3039; border-top-color: var(--accent);
+    animation: sp 0.8s linear infinite; }
+  .ov.err .spin, .ov.idle .spin { display: none; }
+  .ov.idle { background: transparent; color: var(--mute); }
+  @keyframes sp { to { transform: rotate(360deg); } }
+
+  .transport { display: flex; align-items: center; gap: 14px; padding: 8px 16px; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 12px; }
+  #playBtn { width: 36px; height: 36px; border-radius: 50%; background: var(--text); color: #111; flex: none;
+    display: grid; place-items: center; }
+  #playBtn:disabled { opacity: .25; }
+  #playBtn svg { width: 14px; height: 14px; }
+  .time { font: 500 12.5px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--sub); min-width: 44px; text-align: center; }
+  #seek { -webkit-appearance: none; appearance: none; flex: 1; height: 22px; background: transparent; cursor: pointer; --p: 0%; }
+  #seek:disabled { cursor: default; opacity: .4; }
+  #seek::-webkit-slider-runnable-track { height: 5px; border-radius: 3px;
+    background: linear-gradient(to right, var(--accent) var(--p), #2e333d var(--p)); }
+  #seek::-webkit-slider-thumb { -webkit-appearance: none; width: 15px; height: 15px; border-radius: 50%; background: #fff;
+    margin-top: -5px; box-shadow: 0 1px 4px rgba(0, 0, 0, .5); }
+  .tnote { color: var(--mute); font-size: 12px; white-space: nowrap; }
+
+  .savebar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 11px 16px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+  .choice-label { color: var(--sub); font-size: 12px; }
+  #choiceText { margin-top: 2px; font-size: 14px; }
+  #choiceText.none { color: var(--mute); }
+  #saveBtn { height: 40px; padding: 0 20px; border-radius: 10px; font-size: 14px; }
+  .note { color: var(--mute); font-size: 12px; margin-top: -2px; }
+  .cnote { color: var(--sub); font-size: 12px; margin-top: 3px; }
+  .cnote:empty { display: none; }
+  .cnote.warn { color: var(--warn); }
+  .guide { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 16px 9px; }
+  .guide-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .guide-head b { font-size: 13.5px; }
+  .guide-head span { color: var(--sub); font-size: 12px; }
+  .guide-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 7px; }
+  .gtitle { font-weight: 600; font-size: 12.5px; display: flex; align-items: center; gap: 8px; }
+  .gcol ul { margin: 4px 0 0; padding-left: 18px; color: #c3c8d1; font-size: 12.5px; }
+  .gcol li { margin: 1px 0; }
+  .gcol li.caution { color: var(--warn); }
+  .guide-foot { color: var(--sub); font-size: 12px; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
+  .banner { padding: 10px 14px; border-radius: 10px; background: rgba(255, 107, 107, .12); color: var(--err); font-size: 13px; display: none; }
+  .banner.show { display: block; }
+  .warnline { color: var(--warn); font-size: 12.5px; display: none; }
+  .warnline.show { display: block; }
+
+  .hdr-right { display: flex; align-items: center; gap: 12px; }
+  .upd { display: none; align-items: center; gap: 10px; font-size: 12.5px; color: var(--sub); }
+  .upd b { color: var(--text); }
+  .btn.sm { height: 28px; padding: 0 12px; font-size: 12.5px; border-radius: 7px; }
+  .side-foot { display: flex; justify-content: space-between; align-items: center; }
+  .fsbtn { position: absolute; top: 10px; right: 10px; z-index: 3; width: 32px; height: 32px; border-radius: 8px;
+    background: rgba(0, 0, 0, .6); color: #fff; display: grid; place-items: center; opacity: 0; transition: opacity .15s; }
+  .fsbtn svg { width: 16px; height: 16px; }
+  .screen:hover .fsbtn, .fsbtn:focus { opacity: 1; }
+  body.fsmode .screen.fs { position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 50; aspect-ratio: auto; }
+  body.fsmode .screen.fs .fsbtn { display: none; }
+  #fsbar { display: none; position: fixed; top: 0; left: 0; right: 0; z-index: 60; padding: 14px 20px 30px; align-items: center;
+    gap: 12px; background: linear-gradient(rgba(0, 0, 0, .75), transparent); transition: opacity .25s; }
+  #fsbar .grow { flex: 1; }
+  #fsLabel { font-weight: 700; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+  #fsbar .hint { color: var(--sub); font-size: 12px; }
+  body.fsmode #fsbar { display: flex; }
+  body.fsmode .transport { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 60;
+    width: min(900px, calc(100% - 40px)); background: rgba(22, 24, 29, .9); transition: opacity .25s; }
+  body.fsmode.idle #fsbar, body.fsmode.idle .transport { opacity: 0; }
+  body.fsmode.idle { cursor: none; }
+  #toast { z-index: 70; position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%) translateY(20px); opacity: 0;
+    background: #262a33; border: 1px solid var(--line2); color: var(--text); padding: 11px 18px; border-radius: 10px;
+    font-size: 13.5px; box-shadow: 0 10px 30px rgba(0, 0, 0, .45); transition: opacity .2s, transform .2s; pointer-events: none; }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand"><span class="logo"><i></i><i></i><i></i></span>G-ColorTag</div>
+    <div class="hdr-right"><div id="upd" class="upd"></div>
+    <button id="addBtn" class="btn primary">+ 영상 추가</button></div>
+  </header>
+  <main>
+    <aside>
+      <div class="side-head"><b>영상 목록</b><span id="count" class="link"></span></div>
+      <ul id="list"></ul>
+      <div id="emptyList" class="empty">‘+ 영상 추가’를 눌러<br>MOV · MP4 영상을 넣으세요<br><br>여러 개를 한 번에 고를 수 있어요</div>
+      <div class="side-foot"><button id="clearBtn" class="link">목록 비우기</button>
+        <span class="link"><span id="ver"></span> · <button id="updCheck" class="link">업데이트 확인</button></span></div>
+    </aside>
+
+    <section id="stage">
+      <div id="ffBanner" class="banner">ffmpeg를 찾을 수 없어 미리보기와 저장을 할 수 없습니다. 앱을 다시 설치해 주세요.</div>
+      <div class="stage-head">
+        <div class="now" id="nowName">미리보기</div>
+        <div class="hint">두 화면은 픽셀 밝기가 같고 태그만 다릅니다. 맥에서는 플레이어가 태그에 따라 밝기를 다르게 보여줘요.</div>
+      </div>
+      <div id="warnLine" class="warnline"></div>
+
+      <div class="players">
+        <div class="panel" data-tag="std">
+          <button class="panel-head" role="radio" aria-checked="false">
+            <span class="radio"></span>
+            <span class="ptext"><div class="ptitle">일반 Rec709</div>
+              <div class="pdesc">일반 플레이어용 · 맥 퀵타임에서는 밝고 옅게 보일 수 있음</div></span>
+            <span class="code">1-1-1</span>
+          </button>
+          <div class="screen" data-tag="std">
+            <button class="fsbtn" title="전체화면으로 보기" aria-label="전체화면"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M1.5 5.5v-4h4M10.5 1.5h4v4M14.5 10.5v4h-4M5.5 14.5h-4v-4"/></svg></button>
+            <video data-deck="0" muted playsinline preload="auto" disablepictureinpicture></video>
+            <video data-deck="1" muted playsinline preload="auto" disablepictureinpicture></video>
+            <div class="ov idle show"><div class="spin"></div><div class="msg">영상을 추가하면 여기서 재생됩니다</div></div>
+          </div>
+        </div>
+        <div class="panel" data-tag="mac">
+          <button class="panel-head" role="radio" aria-checked="false">
+            <span class="radio"></span>
+            <span class="ptext"><div class="ptitle">맥 퀵타임에서 정확하게 보이는 Rec709</div>
+              <div class="pdesc">퀵타임에서 밝기가 들뜨는 문제를 해결하는 태그</div></span>
+            <span class="code">1-2-1</span>
+          </button>
+          <div class="screen" data-tag="mac">
+            <button class="fsbtn" title="전체화면으로 보기" aria-label="전체화면"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M1.5 5.5v-4h4M10.5 1.5h4v4M14.5 10.5v4h-4M5.5 14.5h-4v-4"/></svg></button>
+            <video data-deck="0" muted playsinline preload="auto" disablepictureinpicture></video>
+            <video data-deck="1" muted playsinline preload="auto" disablepictureinpicture></video>
+            <div class="ov idle show"><div class="spin"></div><div class="msg">영상을 추가하면 여기서 재생됩니다</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="transport">
+        <button id="playBtn" disabled aria-label="재생"><svg viewBox="0 0 14 14"><path id="playIcon" d="M3 1.5v11l9.5-5.5z" fill="currentColor"/></svg></button>
+        <span id="tcur" class="time">0:00</span>
+        <input id="seek" type="range" min="0" max="1" step="0.01" value="0" disabled>
+        <span id="tdur" class="time">0:00</span>
+        <span class="tnote">미리보기 · 소리 없음</span>
+      </div>
+
+      <div class="savebar">
+        <div><div class="choice-label">저장할 태그</div><div id="choiceText" class="none">위 두 화면 중 하나를 고르세요</div>
+          <div id="choiceNote" class="cnote"></div></div>
+        <button id="saveBtn" class="btn primary" disabled>선택한 태그로 저장</button>
+      </div>
+      <div class="note">원본은 그대로 두고, 같은 폴더에 ‘이름_1-2-1.mov’처럼 새 파일로 저장합니다. 픽셀은 그대로이고 태그만 바뀝니다.</div>
+
+      <div class="guide">
+        <div class="guide-head"><b>두 파일의 픽셀 밝기는 같아요</b>
+          <span>바뀌는 것은 태그뿐입니다. 맥 퀵타임 같은 플레이어가 태그에 따라 밝기를 다르게 보여주는 문제를 해결하기 위한 기능이에요.</span></div>
+        <div class="guide-cols">
+          <div class="gcol"><div class="gtitle"><span class="code">1-1-1</span> 일반 Rec709</div>
+            <ul><li>일반적인 재생·전달용</li>
+              <li>맥 퀵타임에서는 원래보다 밝고 옅게 보일 수 있어요</li></ul></div>
+          <div class="gcol"><div class="gtitle"><span class="code">1-2-1</span> 맥 퀵타임에서 정확하게 보이는 Rec709</div>
+            <ul><li>맥 퀵타임으로 볼 파일용</li>
+              <li>퀵타임에서도 밝기가 들뜨지 않아요 (리졸브 Rec.709-A와 같은 태그)</li></ul></div>
+        </div>
+        <div class="guide-foot">대부분의 다른 플레이어에서는 두 파일이 똑같이 보여요. 잘 모르겠다면 맥에서 위 두 화면을 재생해 비교해 보세요.</div>
+      </div>
+    </section>
+  </main>
+</div>
+<div id="fsbar"><div id="fsLabel"></div><button id="fsSwitch" class="btn sm">1-1-1 ↔ 1-2-1 전환</button>
+  <button id="fsPick" class="btn sm">이 태그 고르기</button><span class="hint">Tab 전환 · Space 재생 · Esc 나가기</span>
+  <span class="grow"></span><button id="fsExit" class="btn sm">✕ 나가기</button></div>
+<div id="toast"></div>
+
+<script>
+"use strict";
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => Array.from(document.querySelectorAll(s));
+const TOKEN = new URLSearchParams(location.search).get("t") || "";
+const NAMES = { std: "일반 Rec709", mac: "맥 퀵타임에서 정확하게 보이는 Rec709" };
+const CODES = { std: "1-1-1", mac: "1-2-1" };
+const NOTES = {  // 고른 태그에 맞춘 안내
+  std: ["일반 Rec709 태그로 저장합니다. 맥 퀵타임에서는 밝고 옅게 보일 수 있어요. 픽셀 밝기는 그대로예요.", ""],
+  mac: ["맥 퀵타임에서 정확한 밝기로 보이도록 태그만 바꿉니다. 픽셀 밝기는 그대로예요.", ""],
+};
+const STALE = new Error("stale");
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function api(path, body) {
+  const opt = { headers: { "X-Token": TOKEN } };
+  if (body !== undefined) {
+    opt.method = "POST";
+    opt.headers["Content-Type"] = "application/json";
+    opt.body = JSON.stringify(body);
+  }
+  const r = await fetch("/api/" + path, opt);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || "요청 실패 (" + r.status + ")");
+  return j;
+}
+
+let toastTimer = 0;
+function toast(msg) {
+  const t = $("#toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), 3200);
+}
+
+/* ------------------------------------------------------------ 상태 */
+let S = { files: [], saving: false, seg_len: 10, ffmpeg: true };
+let curId = null, choice = null, lastJSON = "", wasSaving = false;
+const fileById = (id) => S.files.find((f) => f.id === id);
+
+function apply(st) {
+  const js = JSON.stringify(st);
+  if (js === lastJSON) return;
+  lastJSON = js;
+  S = st;
+  if (curId && !fileById(curId)) { curId = null; player.unload(); }
+  if (!curId) { const first = S.files.find((f) => f.playable); if (first) selectFile(first.id); }
+  renderList();
+  renderSave();
+  renderStage();
+  renderUpdate();
+  if (wasSaving && !S.saving) summary();
+  wasSaving = S.saving;
+}
+
+async function poll() {
+  try { apply(await api("state")); } catch (e) { /* 다음 주기에 재시도 */ }
+  setTimeout(poll, S.saving ? 400 : 1000);
+}
+
+function tagBadge(tag, ok) {
+  if (tag === "1-2-1") return '<span class="badge mac">1-2-1 퀵타임</span>';
+  if (tag === "1-1-1") return '<span class="badge">1-1-1 일반</span>';
+  if (tag === "없음") return '<span class="badge none">태그 없음</span>';
+  return '<span class="badge ' + (ok ? "" : "other") + '">' + esc(tag) + "</span>";
+}
+
+function statusLine(f) {
+  if (f.status === "working") return '<span class="st working">저장 중 ' + (f.progress || 0) + "%</span>";
+  if (f.status === "done") return '<span class="st done" title="' + esc(f.result) + '">✓ ' + esc(f.result) + "</span>";
+  if (f.status) return '<span class="st ' + esc(f.status) + '" title="' + esc(f.result) + '">' + esc(f.result) + "</span>";
+  if (f.note) return '<span class="st warn" title="' + esc(f.note) + '">' + esc(f.note) + "</span>";
+  return "";
+}
+
+function renderList() {
+  const list = $("#list");
+  list.innerHTML = S.files.map((f) =>
+    '<li class="item' + (f.id === curId ? " cur" : "") + '" data-id="' + f.id + '">' +
+      '<div class="row1"><span class="name" title="' + esc(f.path) + '">' + esc(f.name) + "</span>" +
+      '<button class="x" data-rm="' + f.id + '" title="목록에서 빼기"' + (S.saving ? " disabled" : "") + ">×</button></div>" +
+      '<div class="row2">' + (f.playable ? tagBadge(f.tag, f.ok) : "") + statusLine(f) + "</div>" +
+      (f.has_out ? '<button class="reveal" data-rv="' + f.id + '">Finder에서 보기</button>' : "") +
+    "</li>").join("");
+  $("#emptyList").style.display = S.files.length ? "none" : "block";
+  $("#count").textContent = S.files.length ? S.files.length + "개" : "";
+  $("#clearBtn").disabled = !S.files.length || S.saving;
+  $("#addBtn").disabled = S.saving;
+}
+
+function renderSave() {
+  $$(".panel").forEach((p) => {
+    const on = p.dataset.tag === choice;
+    p.classList.toggle("sel", on);
+    p.querySelector(".panel-head").setAttribute("aria-checked", on ? "true" : "false");
+  });
+  const n = S.files.filter((f) => f.playable).length;
+  const btn = $("#saveBtn");
+  if (S.saving) {
+    const done = S.files.filter((f) => ["done", "skipped", "error"].includes(f.status)).length;
+    btn.textContent = "저장 중… " + done + " / " + n;
+    btn.disabled = true;
+  } else {
+    btn.textContent = n > 1 ? "선택한 태그로 저장 · 영상 " + n + "개" : "선택한 태그로 저장";
+    btn.disabled = !choice || !n || !S.ffmpeg;
+  }
+  const ct = $("#choiceText");
+  ct.classList.toggle("none", !choice);
+  ct.innerHTML = choice ? "<b>" + NAMES[choice] + '</b> &nbsp;<span class="code">' + CODES[choice] + "</span>"
+                        : "위 두 화면 중 하나를 고르세요";
+  const cn = $("#choiceNote");
+  cn.textContent = choice ? NOTES[choice][0] : "";
+  cn.className = "cnote" + (choice && NOTES[choice][1] ? " " + NOTES[choice][1] : "");
+}
+
+function renderStage() {
+  const f = fileById(curId);
+  $("#nowName").textContent = f ? f.name : "미리보기";
+  const w = $("#warnLine");
+  w.textContent = f && f.note ? "⚠ " + f.note : "";
+  w.classList.toggle("show", !!(f && f.note));
+  $("#ffBanner").classList.toggle("show", !S.ffmpeg);
+}
+
+function summary() {
+  const done = S.files.filter((f) => f.status === "done").length;
+  const skip = S.files.filter((f) => f.status === "skipped").length;
+  const err = S.files.filter((f) => f.status === "error").length;
+  toast("저장 완료 " + done + "개" + (skip ? " · 건너뜀 " + skip + "개" : "") + (err ? " · 실패 " + err + "개" : ""));
+}
+
+function selectFile(id) {
+  if (id === curId) return;
+  curId = id;
+  renderList();
+  renderStage();
+  const f = fileById(id);
+  if (f && f.playable) player.load(f);
+  else player.message(f ? f.note || "이 파일은 미리볼 수 없습니다" : "");
+}
+
+/* ------------------------------------------------------------ 플레이어
+   10초 구간 단위로 미리보기를 받아 재생. 화면마다 video 두 개(덱 A/B)를 번갈아 써서
+   다음 구간을 미리 준비해 두고 끊김 없이 넘긴다. 1-2-1 화면(mac)이 기준, 1-1-1 화면(std)이 따라간다. */
+const player = (() => {
+  const vid = (tag, i) => document.querySelector('.screen[data-tag="' + tag + '"] video[data-deck="' + i + '"]');
+  const decks = [0, 1].map((i) => ({ i, mac: vid("mac", i), std: vid("std", i), fid: null, seg: -1, start: 0, dur: 0, ready: false }));
+  const ovs = $$(".screen .ov");
+  const seek = $("#seek"), playBtn = $("#playBtn");
+  let file = null, duration = 0, active = 0, gen = 0, playing = false, dragging = false, prefetching = null, handing = false;
+  let wantPlay = false, loading = false;  // wantPlay: 사용자가 마지막으로 원한 상태(재생/정지)
+  let lastT = -1, lastStdT = -1, lastMove = 0, lastStdMove = 0, lastTick = 0, lastRecover = -1e9, recoveries = 0;
+  const SEG = () => S.seg_len || 10;
+  const lastSeg = () => Math.max(0, Math.ceil(duration / SEG() - 1e-6) - 1);
+  const segOf = (t) => Math.min(Math.floor(t / SEG() + 1e-9), lastSeg());
+  const all = () => decks.flatMap((d) => [d.mac, d.std]);
+
+  function overlay(on, msg, kind) {
+    ovs.forEach((o) => {
+      o.classList.toggle("show", !!on);
+      o.classList.toggle("err", kind === "err");
+      o.classList.toggle("idle", kind === "idle");
+      o.querySelector(".msg").textContent = msg || "";
+    });
+  }
+  function show(i) { decks.forEach((d) => { d.mac.classList.toggle("on", d.i === i); d.std.classList.toggle("on", d.i === i); }); }
+  function setIcon() {
+    $("#playIcon").setAttribute("d", playing ? "M2.5 1.5h3.2v11H2.5zM8.3 1.5h3.2v11H8.3z" : "M3 1.5v11l9.5-5.5z");
+    playBtn.setAttribute("aria-label", playing ? "일시정지" : "재생");
+  }
+  function fmt(t) {
+    t = Math.max(0, t || 0);
+    const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = Math.floor(t % 60);
+    return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(s).padStart(2, "0");
+  }
+  function showTime(t) {
+    if (duration - t < 0.1) t = duration;  // 마지막 프레임에서는 전체 길이로 표시
+    seek.value = t;
+    seek.style.setProperty("--p", (duration ? Math.min(100, (t / duration) * 100) : 0) + "%");
+    $("#tcur").textContent = fmt(t);
+  }
+  function pauseAll() { all().forEach((v) => v.pause()); }
+  function reset() {
+    all().forEach((v) => { v.pause(); v._tok = {}; v.removeAttribute("src"); v.load(); v.classList.remove("on"); });
+    decks.forEach((d) => Object.assign(d, { fid: null, seg: -1, ready: false }));
+  }
+
+  // 영상 요소에 주소를 넣고 offset 위치 프레임이 준비될 때까지 기다림
+  function prime(v, url, offset) {
+    const tok = {};
+    v._tok = tok;
+    return new Promise((resolve, reject) => {
+      let to = 0;
+      const done = (err) => {
+        clearTimeout(to);
+        v.removeEventListener("loadeddata", onData);
+        v.removeEventListener("seeked", onSeeked);
+        v.removeEventListener("error", onErr);
+        err ? reject(err) : resolve();
+      };
+      const mine = () => v._tok === tok;
+      const onErr = () => done(mine() ? new Error("이 미리보기는 재생할 수 없습니다") : STALE);
+      const onSeeked = () => done(mine() ? null : STALE);
+      const onData = () => {
+        if (!mine()) return done(STALE);
+        if (offset > 0.001) { v.addEventListener("seeked", onSeeked); v.currentTime = offset; } else done(null);
+      };
+      to = setTimeout(() => done(mine() ? new Error("미리보기를 불러오지 못했습니다") : STALE), 30000);
+      v.addEventListener("loadeddata", onData);
+      v.addEventListener("error", onErr);
+      v.pause();
+      v.src = url;
+      v.load();
+    });
+  }
+  function seekVid(v, t) {
+    return new Promise((resolve) => {
+      if (Math.abs(v.currentTime - t) < 0.001) return resolve();
+      const to = setTimeout(fin, 4000);
+      function fin() { clearTimeout(to); v.removeEventListener("seeked", fin); resolve(); }
+      v.addEventListener("seeked", fin);
+      v.currentTime = t;
+    });
+  }
+  async function getSeg(fid, seg, g) {
+    for (;;) {
+      const j = await api("segment?id=" + encodeURIComponent(fid) + "&seg=" + seg);
+      if (g !== gen) throw STALE;
+      if (j.state === "done") return j;
+      if (j.state === "error") throw new Error(j.error || "미리보기 실패");
+      await wait(250);
+    }
+  }
+  async function loadDeck(d, fid, seg, offset, g) {
+    Object.assign(d, { ready: false, seg: -1, fid: null });
+    const j = await getSeg(fid, seg, g);
+    await Promise.all([prime(d.mac, j.mac, offset), prime(d.std, j.std, offset)]);
+    if (g !== gen) throw STALE;
+    Object.assign(d, { fid, seg, start: j.start, dur: j.dur, ready: true });
+    return d;
+  }
+
+  // fresh: 지금 영상 요소를 쓰지 않고 다른 덱으로 새로 불러옴 (멈춤 복구용)
+  async function seekTo(t, autoplay, fresh) {
+    if (!file) return;
+    const g = ++gen;
+    prefetching = null;
+    wantPlay = !!autoplay;
+    loading = true;
+    t = Math.max(0, Math.min(t, Math.max(0, duration - 0.04)));
+    const seg = segOf(t), off = t - seg * SEG();
+    pauseAll();
+    let d = fresh ? null : decks.find((x) => x.ready && x.fid === file.id && x.seg === seg);
+    try {
+      if (d) {
+        await Promise.all([seekVid(d.mac, off), seekVid(d.std, off)]);
+        if (g !== gen) return;
+      } else {
+        d = decks[1 - active];
+        overlay(true, "미리보기 준비 중…");
+        await loadDeck(d, file.id, seg, off, g);
+      }
+    } catch (e) {
+      if (e !== STALE && g === gen) { loading = false; overlay(true, e.message, "err"); playing = wantPlay = false; setIcon(); }
+      return;
+    }
+    loading = false;
+    active = d.i;
+    show(active);
+    overlay(false);
+    showTime(t);
+    playBtn.disabled = false;
+    seek.disabled = false;
+    resetWatch();
+    if (wantPlay) play(); else { playing = false; setIcon(); }  // 불러오는 사이 누른 재생/정지를 따름
+  }
+
+  function play() {
+    wantPlay = true;
+    if (loading) { playing = true; setIcon(); return; }  // 준비가 끝나면 재생
+    const d = decks[active];
+    if (!file || !d.ready) return;
+    if (d.seg >= lastSeg() && d.mac.currentTime >= endOf(d) - 0.05) return seekTo(0, true);
+    playing = true;
+    setIcon();
+    resetWatch();
+    d.std.playbackRate = 1;
+    d.mac.play().catch(() => {});
+    d.std.play().catch(() => {});
+  }
+  function pause() {
+    wantPlay = false;
+    playing = false;
+    setIcon();
+    pauseAll();
+    const d = decks[active];  // 멈춘 화면은 두 쪽을 정확히 같은 프레임으로 (둘 다 같은 위치로 다시 찾아감)
+    if (d.ready && !loading) { const t = d.mac.currentTime; d.mac.currentTime = t; d.std.currentTime = t; }
+  }
+  function resetWatch() {
+    lastMove = lastStdMove = performance.now();
+    lastT = lastStdT = -1;
+  }
+  const endOf = (d) => Math.min(d.dur, isFinite(d.mac.duration) && d.mac.duration > 0 ? d.mac.duration : d.dur);
+
+  function prefetch(o, fid, seg) {
+    const g = gen;
+    prefetching = loadDeck(o, fid, seg, 0, g).catch(() => null).then((r) => { if (g === gen) prefetching = null; return r; });
+  }
+
+  async function handoff() {
+    if (handing) return;
+    handing = true;
+    const g = gen;
+    try {
+      const d = decks[active], next = d.seg + 1;
+      if (next > lastSeg()) { pause(); showTime(duration); return; }
+      let o = decks[1 - active];
+      const ok = () => o.ready && o.fid === d.fid && o.seg === next;
+      if (!ok() && prefetching) { overlay(true, "다음 구간 준비 중…"); await prefetching; }
+      if (g !== gen) return;  // 기다리는 사이 사용자가 다른 곳으로 이동함
+      if (!ok()) { await seekTo(next * SEG(), true); return; }
+      overlay(false);
+      if (!playing) return;
+      o.std.playbackRate = 1;
+      o.mac.play().catch(() => {});
+      o.std.play().catch(() => {});
+      active = o.i;
+      show(active);
+      resetWatch();
+      d.mac.pause();
+      d.std.pause();
+    } finally {
+      handing = false;
+    }
+  }
+
+  function tick(now) {
+    requestAnimationFrame(tick);
+    if (now - lastTick > 500) resetWatch();  // 창이 가려졌다가 돌아온 경우 등
+    lastTick = now;
+    const d = decks[active];
+    if (!file || !d.ready) return;
+    const t = d.start + d.mac.currentTime;
+    if (!dragging && !loading) showTime(Math.min(t, duration));
+    if (!playing || handing || loading) return;
+    if (d.mac.ended || d.mac.currentTime >= endOf(d) - 0.02) return void handoff();
+    // 저절로 멈춘 영상은 다시 재생 (구간 끝에 먼저 도달한 영상은 제외)
+    if (d.mac.paused) d.mac.play().catch(() => {});
+    if (d.std.paused && !d.std.ended) d.std.play().catch(() => {});
+    // 1-1-1 화면(std)을 기준인 1-2-1 화면(mac)에 맞춤
+    const drift = d.std.currentTime - d.mac.currentTime;
+    if (Math.abs(drift) > 0.25) { if (!d.std.seeking) d.std.currentTime = d.mac.currentTime; }
+    else d.std.playbackRate = Math.abs(drift) < 0.02 ? 1 : drift > 0 ? 0.96 : 1.04;
+    // 멈춤 감시: 2.5초 동안 위치가 그대로면 새 영상 요소로 다시 불러와 이어서 재생
+    if (d.mac.currentTime !== lastT && !d.mac.paused) { lastT = d.mac.currentTime; lastMove = now; }
+    if ((d.std.currentTime !== lastStdT && !d.std.paused) || d.std.ended) { lastStdT = d.std.currentTime; lastStdMove = now; }
+    if (now - Math.min(lastMove, lastStdMove) > 2500 && now - lastRecover > 5000) {
+      lastRecover = now;
+      recoveries++;
+      seekTo(t, true, true);
+      return;
+    }
+    const o = decks[1 - active], next = d.seg + 1;  // 다음 구간 미리 준비
+    if (next <= lastSeg() && !prefetching && !(o.ready && o.fid === d.fid && o.seg === next) && d.mac.currentTime > 0.3) {
+      prefetch(o, d.fid, next);
+    }
+  }
+  requestAnimationFrame(tick);
+
+  seek.addEventListener("input", () => {
+    dragging = true;
+    const t = +seek.value;
+    seek.style.setProperty("--p", (duration ? (t / duration) * 100 : 0) + "%");
+    $("#tcur").textContent = fmt(t);
+  });
+  seek.addEventListener("change", () => { dragging = false; seekTo(+seek.value, wantPlay); });
+  playBtn.addEventListener("click", () => (playing ? pause() : play()));
+  $$(".screen").forEach((s) => s.addEventListener("click", () => { if (!playBtn.disabled) playing ? pause() : play(); }));
+  document.addEventListener("keydown", (e) => {
+    if (e.code === "Space" && !e.repeat && (e.target === document.body || fsTag) && !playBtn.disabled) { e.preventDefault(); playing ? pause() : play(); }
+  });
+
+  return {
+    load(f) {
+      gen++;
+      playing = wantPlay = loading = false;
+      setIcon();
+      reset();
+      file = f;
+      duration = f.duration > 0 ? f.duration : SEG();
+      seek.max = duration;
+      $("#tdur").textContent = fmt(duration);
+      showTime(0);
+      playBtn.disabled = true;
+      seek.disabled = true;
+      seekTo(0, false);
+    },
+    unload() {
+      gen++;
+      playing = wantPlay = loading = false;
+      setIcon();
+      reset();
+      file = null;
+      duration = 0;
+      showTime(0);
+      $("#tdur").textContent = "0:00";
+      playBtn.disabled = true;
+      seek.disabled = true;
+      overlay(true, "영상을 추가하면 여기서 재생됩니다", "idle");
+    },
+    message(msg) { this.unload(); overlay(true, msg, "err"); },
+    debug: () => ({ active, playing, wantPlay, loading, recoveries, gen, file: file && file.id, duration,
+      decks: decks.map((d) => ({ seg: d.seg, ready: d.ready, on: d.mac.classList.contains("on"),
+        mac: { t: d.mac.currentTime, paused: d.mac.paused, rs: d.mac.readyState },
+        std: { t: d.std.currentTime, paused: d.std.paused, rs: d.std.readyState } })) }),
+  };
+})();
+
+/* ------------------------------------------------------------ 버튼 */
+$("#addBtn").addEventListener("click", async () => {
+  const b = $("#addBtn");
+  b.disabled = true;
+  try {
+    const st = await api("pick", {});
+    apply(st);
+    if (st.added && st.added.length) selectFile(st.added[0]);
+  } catch (e) { toast(e.message); }
+  finally { b.disabled = S.saving; }
+});
+$("#clearBtn").addEventListener("click", async () => {
+  try { apply(await api("clear", {})); } catch (e) { toast(e.message); }
+});
+$("#list").addEventListener("click", async (e) => {
+  const rm = e.target.closest("[data-rm]");
+  if (rm) { e.stopPropagation(); try { apply(await api("remove", { id: rm.dataset.rm })); } catch (err) { toast(err.message); } return; }
+  const rv = e.target.closest("[data-rv]");
+  if (rv) { e.stopPropagation(); api("reveal", { id: rv.dataset.rv }).catch(() => {}); return; }
+  const li = e.target.closest("li[data-id]");
+  if (li) selectFile(li.dataset.id);
+});
+$$(".panel-head").forEach((h) => h.addEventListener("click", () => { choice = h.closest(".panel").dataset.tag; renderSave(); }));
+$("#saveBtn").addEventListener("click", async () => {
+  if (!choice) return;
+  try { apply(await api("save", { tag: choice })); wasSaving = true; } catch (e) { toast(e.message); }
+});
+
+/* ------------------------------------------------------------ 전체화면 */
+let fsTag = null, idleTimer = 0;
+function enterFs(tag) {
+  fsTag = tag;
+  document.body.classList.add("fsmode");
+  $$(".screen").forEach((s) => s.classList.toggle("fs", s.dataset.tag === tag));
+  $("#fsLabel").innerHTML = esc(NAMES[tag]) + ' <span class="code">' + CODES[tag] + "</span>";
+  $("#fsPick").textContent = choice === tag ? "✓ 고른 태그" : "이 태그 고르기";
+  api("fullscreen", { on: true }).catch(() => {});
+  wake();
+}
+function exitFs() {
+  if (!fsTag) return;
+  fsTag = null;
+  document.body.classList.remove("fsmode", "idle");
+  $$(".screen").forEach((s) => s.classList.remove("fs"));
+  api("fullscreen", { on: false }).catch(() => {});
+}
+function wake() {  // 마우스를 움직이면 조작 막대 표시, 2.5초 뒤 숨김
+  document.body.classList.remove("idle");
+  clearTimeout(idleTimer);
+  if (fsTag) idleTimer = setTimeout(() => document.body.classList.add("idle"), 2500);
+}
+$$(".fsbtn").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); enterFs(b.closest(".screen").dataset.tag); }));
+$("#fsSwitch").addEventListener("click", () => enterFs(fsTag === "mac" ? "std" : "mac"));
+$("#fsExit").addEventListener("click", exitFs);
+$("#fsPick").addEventListener("click", () => { choice = fsTag; renderSave(); enterFs(fsTag); });
+document.addEventListener("mousemove", wake);
+document.addEventListener("keydown", (e) => {
+  if (!fsTag) return;
+  if (e.key === "Escape") { e.preventDefault(); exitFs(); }
+  else if (e.key === "Tab") { e.preventDefault(); enterFs(fsTag === "mac" ? "std" : "mac"); }
+  wake();
+});
+
+/* ------------------------------------------------------------ 업데이트 */
+let manualCheck = false;
+function renderUpdate() {
+  const u = S.update || {}, el = $("#upd");
+  let html = "";
+  if (u.status === "downloading") html = "새 버전 <b>" + esc(u.latest) + "</b> 받는 중 " + (u.progress || 0) + "%";
+  else if (u.status === "ready") html = "새 버전 <b>" + esc(u.latest) + '</b> 준비됨 <button id="updRestart" class="btn primary sm">지금 다시 시작</button>';
+  else if (u.status === "manual") html = "새 버전 <b>" + esc(u.latest) + "</b> 있음 · " + esc(u.error);
+  el.innerHTML = html;
+  el.style.display = html ? "flex" : "none";
+  el.title = u.notes || "";
+  $("#ver").textContent = "v" + (S.version || "");
+  if (manualCheck && u.status !== "checking") {
+    manualCheck = false;
+    toast(u.status === "uptodate" ? "최신 버전입니다 (v" + S.version + ")" :
+          u.status === "error" ? "업데이트 확인 실패: " + u.error : "새 버전 " + u.latest + "을 찾았습니다");
+  }
+}
+$("#updCheck").addEventListener("click", async () => {
+  try { manualCheck = true; apply(await api("update_check", {})); } catch (e) { manualCheck = false; toast(e.message); }
+});
+$("#upd").addEventListener("click", async (e) => {
+  if (!e.target.closest("#updRestart")) return;
+  try { await api("update_restart", {}); toast("새 버전으로 다시 시작합니다…"); } catch (err) { toast(err.message); }
+});
+
+window.GCT = { player, api, apply, selectFile, state: () => S, choice: () => choice, enterFs, exitFs, fs: () => fsTag };
+poll();
+</script>
+</body>
+</html>
