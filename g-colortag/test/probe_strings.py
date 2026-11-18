@@ -38,3 +38,12 @@ if fn:
             print("코드포인트", s, "→", fn(s))
         except Exception as e:
             print("코드포인트", s, "실패", e)
+
+# 정보 창 문구 전체 (어떤 상황 이름들이 있는지)
+d = plistlib.load(open(QT + "/Contents/Resources/PlayerDocumentInfo.loctable", "rb")).get("ko", {})
+for k in sorted(d):
+    if any(x in k for x in ("NCLC", "GAMMA", "TRANSFER", "COLOR", "MATRIX", "PRIMAR", "CODE")):
+        print("문구", k, "=", repr(d[k]))
+if fn:
+    for s in ("UseGamma", "IEC_sRGB", "SMPTE_240M_1995"):
+        print("코드포인트", s, "→", fn(s))
