@@ -30,7 +30,8 @@ echo "== 3) 앱 서버: 미리보기·저장"
 "$PY" -I -B "$RES/app.py" --serve > "$W/url.txt" 2> "$W/app.log" &
 SRV=$!
 trap 'kill $SRV 2>/dev/null || true' EXIT
-for i in $(seq 1 50); do [ -s "$W/url.txt" ] && break; sleep 0.2; done
+for i in $(seq 1 150); do [ -s "$W/url.txt" ] && break; sleep 0.2; done
+[ -s "$W/url.txt" ] || { echo "앱 서버가 30초 안에 시작되지 않음"; cat "$W/app.log"; exit 1; }
 "$PY" -I -B - "$(head -1 "$W/url.txt")" "$W/videos" "$RES" <<'EOF'
 import json, os, subprocess, sys, time, urllib.request
 url, V, RES = sys.argv[1:4]; sys.path.insert(0, RES); import colortag as ct

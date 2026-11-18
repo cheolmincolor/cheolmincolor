@@ -62,7 +62,10 @@ jobs:
       - name: 진단 - 퀵타임이 받는 색 정보 전체
         if: success() || failure()
         run: |
-          APP="$RUNNER_TEMP/tag/Applications/G-ColorTag.app"
+          V=$(sed -n 's/^APP_VERSION = "\(.*\)"/\1/p' app.py)
+          mkdir -p "$RUNNER_TEMP/dump/Applications"
+          tar -xzf "release/$V/G-ColorTag-$V-arm64.tar.gz" -C "$RUNNER_TEMP/dump/Applications"
+          APP="$RUNNER_TEMP/dump/Applications/G-ColorTag.app"
           "$APP/Contents/MacOS/G-ColorTag-python" -I -B test/mac_tag_dump.py "$APP" "$RUNNER_TEMP/native/out/dump"
       - name: 앱 미리보기가 퀵타임 플레이어와 같은 밝기인지 (실제 창 캡처)
         if: success() || failure()
