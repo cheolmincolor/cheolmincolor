@@ -123,6 +123,31 @@ def describe(path):
     return " ".join(out) or "영상 트랙 없음"
 
 
+def colr_boxes(path):
+    """영상 트랙 colr 아톰마다 (colr 시작 위치, [감싸는 박스 시작 위치들]) 목록."""
+    found = []
+    with open(path, "rb") as f:
+        f.seek(0, 2)
+        size = f.tell()
+        hd = [None]
+
+        def walk(s, e, parent, chain):
+            for t, b, end in _boxes(f, s, e):
+                start = b - 8
+                if t in CONTAINERS:
+                    walk(b, end, t, chain + [start])
+                elif t == "hdlr" and parent == "mdia":
+                    f.seek(b + 8)
+                    hd[0] = f.read(4).decode("latin-1")
+                elif t == "stsd" and hd[0] == "vide":
+                    for c, eb, ee in _boxes(f, b + 8, end):
+                        for k, kb, ke in _boxes(f, eb + 78, ee):
+                            if k == "colr":
+                                found.append((kb - 8, chain + [start, eb - 8]))
+        walk(0, size, "", [])
+    return found
+
+
 def tag_str(tag):
     return "-".join(map(str, tag)) if tag else "없음"
 

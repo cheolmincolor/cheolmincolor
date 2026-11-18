@@ -51,6 +51,32 @@ def colr_first(src, dst):
 
 
 colr_first(j("2_app_121.mov"), j("5_app_121_colrfirst.mov"))
+
+
+def to_nclx(src, dst, vals, full=0):
+    """nclc(18B) colr 를 nclx(19B)로 바꾸고 감싸는 박스 크기를 1씩 늘림 (moov 가 mdat 뒤일 때만 안전)."""
+    (c, chain), = ct.colr_boxes(src)
+    d = bytearray(open(src, "rb").read())
+    for a in chain:
+        d[a:a + 4] = struct.pack(">I", struct.unpack(">I", d[a:a + 4])[0] + 1)
+    d[c:c + 18] = struct.pack(">I4s4sHHHB", 19, b"colr", b"nclx", *vals, full << 7)
+    open(dst, "wb").write(bytes(d))
+
+
+def drop_colr(src, dst):
+    """colr 아톰 이름을 free 로 바꿔 없앰 (크기 그대로)."""
+    d = bytearray(open(src, "rb").read())
+    c = d.find(b"colrnclc")
+    d[c:c + 4] = b"free"
+    open(dst, "wb").write(bytes(d))
+
+
+to_nclx(j("2_app_121.mov"), j("6_nclx_121.mov"), (1, 2, 1))
+drop_colr(j("2_app_121.mov"), j("7_nocolr_head121.mov"))
+ff("-f", "lavfi", "-i", SRC.replace("yuv422p10le", "yuv420p"), "-c:v", "libx264", "-pix_fmt", "yuv420p",
+   "-color_primaries", "1", "-color_trc", "2", "-colorspace", "1", j("h_tmp.mov"))
+drop_colr(j("h_tmp.mov"), j("8_h264_vui121_nocolr.mov"))
+shutil.move(j("h_tmp.mov"), j("9_h264_colr121.mov"))
 os.remove(j("src.mov"))
 
 
