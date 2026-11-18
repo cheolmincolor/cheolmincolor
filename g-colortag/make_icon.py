@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 GRAYZONE. All rights reserved.
 """앱 아이콘(AppIcon.icns) 생성: 어두운 배경 + RGB 막대 + 감마 곡선. 사용: python3 make_icon.py 출력.icns"""
 import io
 import struct

@@ -1,4 +1,5 @@
 #!/bin/bash
+# Copyright (c) 2026 GRAYZONE. All rights reserved.
 # 실제 맥(GitHub Actions macOS)에서 앱 묶음을 풀어 확인:
 #   1) 앱 안의 파이썬이 표준 라이브러리·pywebview·PyObjC 를 불러오는지
 #   2) 앱 안의 ffmpeg 로 미리보기·저장이 되고, 저장한 파일 태그가 1-2-1·픽셀은 그대로인지
@@ -14,7 +15,7 @@ export PATH="$RES/bin:/usr/bin:/bin:/usr/sbin"
 echo "== 1) 앱 안의 파이썬"
 "$PY" -I -B -c "
 import sys, ssl, json; sys.path.insert(0, '$RES/site')
-import webview, objc, AppKit, WebKit
+import webview, objc, AppKit, WebKit, AVFoundation, CoreMedia, Quartz
 print('python', sys.version.split()[0], '| prefix', sys.prefix.replace('$APP', 'G-ColorTag.app'))
 print('pywebview OK | PyObjC', objc.__version__, '| WebKit OK')"
 

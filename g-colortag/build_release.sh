@@ -1,4 +1,5 @@
 #!/bin/bash
+# Copyright (c) 2026 GRAYZONE. All rights reserved.
 # 릴리스용 파일 만들기 → release/<버전>/
 #   G-ColorTag-<ver>-arm64.dmg / -x64.dmg      처음 설치용
 #   G-ColorTag-<ver>-arm64.tar.gz / -x64.tar.gz 자동 업데이트용 (.app 묶음)

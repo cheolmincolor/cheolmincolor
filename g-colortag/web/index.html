@@ -1,4 +1,5 @@
 <!doctype html>
+<!-- Copyright (c) 2026 GRAYZONE. All rights reserved. -->
 <html lang="ko">
 <head>
 <meta charset="utf-8">
@@ -163,6 +164,23 @@
     width: min(900px, calc(100% - 40px)); background: rgba(22, 24, 29, .9); transition: opacity .25s; }
   body.fsmode.idle #fsbar, body.fsmode.idle .transport { opacity: 0; }
   body.fsmode.idle { cursor: none; }
+  .brand .by { font-size: 11.5px; font-weight: 600; color: var(--sub); margin-left: 2px; letter-spacing: .3px; }
+  .copy { padding: 0 18px 12px; color: var(--mute); font-size: 11px; }
+  .modal { position: fixed; inset: 0; z-index: 80; display: none; align-items: center; justify-content: center; background: rgba(0, 0, 0, .55); }
+  .modal.show { display: flex; }
+  .modal-card { width: 380px; background: var(--panel2); border: 1px solid var(--line2); border-radius: 14px; padding: 22px 24px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, .5); }
+  .modal-card p { margin: 10px 0 0; color: var(--sub); font-size: 13px; }
+  .modal-card .about-copy { color: var(--text); font-weight: 700; margin-top: 14px; }
+  .modal-card .about-note { font-size: 12px; color: var(--mute); }
+  .about-ver { color: var(--sub); font-size: 12.5px; margin-top: 4px; }
+  .modal-card .btn { margin-top: 18px; }
+  /* 퀵타임 엔진 모드: 영상은 웹 화면 아래 AVFoundation 이 그림 → 영상 자리와 그 위쪽 배경을 투명하게 */
+  html.native, body.native, body.native main, body.native #stage, body.native .panel, body.native .screen { background: transparent; }
+  body.native .panel-head { background: var(--panel); }
+  body.native .screen video { display: none; }
+  body.native .ov { background: rgba(14, 15, 18, .55); }
+  body.native .ov.idle { background: var(--bg); }
   #toast { z-index: 70; position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%) translateY(20px); opacity: 0;
     background: #262a33; border: 1px solid var(--line2); color: var(--text); padding: 11px 18px; border-radius: 10px;
     font-size: 13.5px; box-shadow: 0 10px 30px rgba(0, 0, 0, .45); transition: opacity .2s, transform .2s; pointer-events: none; }
@@ -172,7 +190,7 @@
 <body>
 <div id="app">
   <header>
-    <div class="brand"><span class="logo"><i></i><i></i><i></i></span>G-ColorTag</div>
+    <div class="brand"><span class="logo"><i></i><i></i><i></i></span>G-ColorTag<span class="by">by GRAYZONE</span></div>
     <div class="hdr-right"><div id="upd" class="upd"></div>
     <button id="addBtn" class="btn primary">+ 영상 추가</button></div>
   </header>
@@ -182,7 +200,8 @@
       <ul id="list"></ul>
       <div id="emptyList" class="empty">‘+ 영상 추가’를 눌러<br>MOV · MP4 영상을 넣으세요<br><br>여러 개를 한 번에 고를 수 있어요</div>
       <div class="side-foot"><button id="clearBtn" class="link">목록 비우기</button>
-        <span class="link"><span id="ver"></span> · <button id="updCheck" class="link">업데이트 확인</button></span></div>
+        <span class="link"><button id="aboutBtn" class="link"><span id="ver"></span></button> · <button id="updCheck" class="link">업데이트 확인</button></span></div>
+      <div class="copy">© 2026 GRAYZONE. All rights reserved.</div>
     </aside>
 
     <section id="stage">
@@ -258,6 +277,17 @@
 <div id="fsbar"><div id="fsLabel"></div><button id="fsSwitch" class="btn sm">1-1-1 ↔ 1-2-1 전환</button>
   <button id="fsPick" class="btn sm">이 태그 고르기</button><span class="hint">Tab 전환 · Space 재생 · Esc 나가기</span>
   <span class="grow"></span><button id="fsExit" class="btn sm">✕ 나가기</button></div>
+<div id="about" class="modal" role="dialog" aria-modal="true" aria-labelledby="aboutTitle">
+  <div class="modal-card">
+    <div class="brand"><span class="logo"><i></i><i></i><i></i></span><span id="aboutTitle">G-ColorTag</span></div>
+    <div class="about-ver" id="aboutVer"></div>
+    <p>Rec709 색 태그(1-1-1 / 1-2-1) 확인·변환 도구</p>
+    <p class="about-copy">© 2026 GRAYZONE. All rights reserved.</p>
+    <p class="about-note">이 소프트웨어의 저작권은 GRAYZONE에 있습니다.<br>GRAYZONE의 허락 없이 복제·배포·수정할 수 없습니다.</p>
+    <p class="about-note">포함된 오픈소스: FFmpeg (LGPL/GPL), Python (PSF), pywebview (BSD), PyObjC (MIT)</p>
+    <button id="aboutClose" class="btn">닫기</button>
+  </div>
+</div>
 <div id="toast"></div>
 
 <script>
@@ -307,6 +337,14 @@ function apply(st) {
   if (js === lastJSON) return;
   lastJSON = js;
   S = st;
+  if (!player) {
+    if (S.native === "pending") { renderList(); renderSave(); renderStage(); renderUpdate(); return; }  // 퀵타임 엔진 준비 중
+    const native = S.native === "on";
+    document.documentElement.classList.toggle("native", native);
+    document.body.classList.toggle("native", native);
+    if (native) NV.start();
+    player = makePlayer(native);
+  }
   if (curId && !fileById(curId)) { curId = null; player.unload(); }
   if (!curId) { const first = S.files.find((f) => f.playable); if (first) selectFile(first.id); }
   renderList();
@@ -394,7 +432,7 @@ function summary() {
 }
 
 function selectFile(id) {
-  if (id === curId) return;
+  if (!player || id === curId) return;
   curId = id;
   renderList();
   renderStage();
@@ -406,8 +444,9 @@ function selectFile(id) {
 /* ------------------------------------------------------------ 플레이어
    10초 구간 단위로 미리보기를 받아 재생. 화면마다 video 두 개(덱 A/B)를 번갈아 써서
    다음 구간을 미리 준비해 두고 끊김 없이 넘긴다. 1-2-1 화면(mac)이 기준, 1-1-1 화면(std)이 따라간다. */
-const player = (() => {
-  const vid = (tag, i) => document.querySelector('.screen[data-tag="' + tag + '"] video[data-deck="' + i + '"]');
+function makePlayer(native) {
+  const vid = (tag, i) => native ? new NativeVideo(tag + i)
+    : document.querySelector('.screen[data-tag="' + tag + '"] video[data-deck="' + i + '"]');
   const decks = [0, 1].map((i) => ({ i, mac: vid("mac", i), std: vid("std", i), fid: null, seg: -1, start: 0, dur: 0, ready: false }));
   const ovs = $$(".screen .ov");
   const seek = $("#seek"), playBtn = $("#playBtn");
@@ -598,8 +637,23 @@ const player = (() => {
     }
   }
 
+  function syncRects() {  // 퀵타임 엔진 영상이 화면의 영상 자리를 그대로 따라오게
+    const fs = document.body.classList.contains("fsmode");
+    ["std", "mac"].forEach((tag) => {
+      const el = document.querySelector('.screen[data-tag="' + tag + '"]');
+      const r = el.getBoundingClientRect(), on = !fs || el.classList.contains("fs");
+      const box = on ? [r.left, r.top, r.width, r.height].map((v) => Math.round(v * 2) / 2) : [0, 0, 0, 0];
+      const key = box.join(",") + (fs ? "f" : "");
+      if (rects[tag] === key) return;
+      rects[tag] = key;
+      decks.forEach((d) => NV.cmd({ op: "rect", id: tag + d.i, r: box, round: !fs }));
+    });
+  }
+  const rects = {};
+
   function tick(now) {
     requestAnimationFrame(tick);
+    if (native) syncRects();
     if (now - lastTick > 500) resetWatch();  // 창이 가려졌다가 돌아온 경우 등
     lastTick = now;
     const d = decks[active];
@@ -678,7 +732,8 @@ const player = (() => {
         mac: { t: d.mac.currentTime, paused: d.mac.paused, rs: d.mac.readyState },
         std: { t: d.std.currentTime, paused: d.std.paused, rs: d.std.readyState } })) }),
   };
-})();
+}
+let player = null;
 
 /* ------------------------------------------------------------ 버튼 */
 $("#addBtn").addEventListener("click", async () => {
@@ -707,6 +762,118 @@ $("#saveBtn").addEventListener("click", async () => {
   if (!choice) return;
   try { apply(await api("save", { tag: choice })); wasSaving = true; } catch (e) { toast(e.message); }
 });
+
+/* ------------------------------------------------------------ 퀵타임 엔진(네이티브) 플레이어
+   video 요소와 같은 모양(currentTime·play·pause·seeked 이벤트…)으로 앱의 AVFoundation 플레이어를 감쌈.
+   그래서 구간 넘기기·두 화면 맞추기·멈춤 복구 같은 기존 재생 로직을 그대로 씀. */
+const NV = (() => {
+  const vids = {};
+  let queue = [], sending = false, seq = 0, running = false;
+  function cmd(c) {
+    c.s = ++seq;
+    queue.push(c);
+    if (!sending) Promise.resolve().then(flush);
+    return c.s;
+  }
+  async function flush() {
+    if (sending || !queue.length) return;
+    sending = true;
+    const cmds = queue;
+    queue = [];
+    try { await api("nv", { cmds }); } catch (e) { /* 다음 명령과 함께 계속 */ }
+    sending = false;
+    if (queue.length) flush();
+  }
+  async function loop() {
+    for (;;) {
+      try {
+        const j = await api("nv_state"), at = performance.now();
+        (j.events || []).forEach((ev) => vids[ev.id] && vids[ev.id]._event(ev));
+        Object.keys(j.players || {}).forEach((id) => vids[id] && vids[id]._update(j.players[id], at));
+      } catch (e) { /* 잠시 뒤 다시 */ }
+      await wait(30);
+    }
+  }
+  return { cmd, register: (v) => { vids[v.id] = v; }, start() { if (!running) { running = true; loop(); } } };
+})();
+
+class NativeVideo {
+  constructor(id) {
+    this.id = id; this._src = ""; this._g = 0; this._on = false; this._rate = 1; this._ls = {};
+    this._seekN = 0; this._needSn = 0; this._target = null; this._lastSeq = 0;
+    this.s = { t: 0, dur: NaN, paused: true, ended: false, ready: false };
+    this.at = performance.now();
+    const self = this;
+    this.classList = {
+      toggle(c, on) { if (c === "on" && !!on !== self._on) { self._on = !!on; self._cmd({ op: "show", on: self._on }); } },
+      remove(c) { this.toggle(c, false); },
+      contains(c) { return c === "on" && self._on; },
+    };
+    NV.register(this);
+    this._cmd({ op: "create" });
+  }
+  _cmd(c) { c.id = this.id; this._lastSeq = NV.cmd(c); }
+  addEventListener(t, f) { (this._ls[t] = this._ls[t] || new Set()).add(f); }
+  removeEventListener(t, f) { if (this._ls[t]) this._ls[t].delete(f); }
+  _emit(t) { [...(this._ls[t] || [])].forEach((f) => f({ type: t, target: this })); }
+  get src() { return this._src; }
+  set src(u) { this._src = u; }
+  removeAttribute(a) { if (a === "src") this._src = ""; }
+  load() {
+    this._g++;
+    this._target = null; this._needSn = 0;
+    this.s = { t: 0, dur: NaN, paused: true, ended: false, ready: false };
+    this.at = performance.now();
+    this._cmd({ op: "src", url: this._src || null, g: this._g });
+  }
+  get readyState() { return this.s.ready ? 4 : 0; }
+  get duration() { return this.s.dur; }
+  get paused() { return this.s.paused; }
+  get ended() { return this.s.ended && this._target === null; }
+  get seeking() { return this._target !== null; }
+  get currentTime() {
+    if (this._target !== null) return this._target;
+    let t = this.s.t + (this.s.paused ? 0 : ((performance.now() - this.at) / 1000) * this._rate);
+    return isFinite(this.s.dur) ? Math.min(t, this.s.dur) : t;
+  }
+  set currentTime(v) {
+    this._target = v; this.s.ended = false;
+    this._cmd({ op: "seek", t: v, n: ++this._seekN });
+  }
+  get playbackRate() { return this._rate; }
+  set playbackRate(r) {
+    if (r === this._rate) return;
+    this.s.t = this.currentTime; this.at = performance.now(); this._rate = r;
+    this._cmd({ op: "rate", rate: r });
+  }
+  play() {
+    if (this.s.paused) { this.s.paused = false; this.at = performance.now(); }
+    this._cmd({ op: "play", rate: this._rate });
+    return Promise.resolve();
+  }
+  pause() {
+    if (!this.s.paused) { this.s.t = this.currentTime; this.s.paused = true; this.at = performance.now(); }
+    this._cmd({ op: "pause" });
+  }
+  _event(ev) {
+    if (ev.g !== this._g) return;  // 예전 영상 소식
+    if (ev.type === "seeked") {
+      if (ev.n !== this._seekN) return;
+      this.s.t = this._target; this.at = performance.now(); this._needSn = ev.n; this._target = null;
+      this._emit("seeked");
+    } else this._emit(ev.type);
+  }
+  _update(sn, at) {
+    this.snap = sn;  // 마지막 보고 (점검용)
+    if (sn.g !== this._g) return;
+    this.s.ready = sn.ready;
+    this.s.dur = sn.dur == null ? NaN : sn.dur;
+    // 내가 보낸 명령·찾아가기가 반영된 보고만 시간·재생 상태에 씀 (아니면 화면 쪽 예측값 유지)
+    if (sn.seq >= this._lastSeq && (sn.sn || 0) >= this._needSn && this._target === null) {
+      this.s.t = sn.t; this.s.paused = sn.paused; this.s.ended = sn.ended; this.at = at;
+    }
+  }
+}
 
 /* ------------------------------------------------------------ 전체화면 */
 let fsTag = null, idleTimer = 0;
@@ -761,6 +928,12 @@ function renderUpdate() {
           u.status === "error" ? "업데이트 확인 실패: " + u.error : "새 버전 " + u.latest + "을 찾았습니다");
   }
 }
+$("#aboutBtn").addEventListener("click", () => {
+  $("#aboutVer").textContent = "버전 " + (S.version || "") + (S.native === "on" ? " · 미리보기: 퀵타임 엔진(AVFoundation)" : "");
+  $("#about").classList.add("show");
+});
+$("#aboutClose").addEventListener("click", () => $("#about").classList.remove("show"));
+$("#about").addEventListener("click", (e) => { if (e.target.id === "about") $("#about").classList.remove("show"); });
 $("#updCheck").addEventListener("click", async () => {
   try { manualCheck = true; apply(await api("update_check", {})); } catch (e) { manualCheck = false; toast(e.message); }
 });
@@ -769,7 +942,7 @@ $("#upd").addEventListener("click", async (e) => {
   try { await api("update_restart", {}); toast("새 버전으로 다시 시작합니다…"); } catch (err) { toast(err.message); }
 });
 
-window.GCT = { player, api, apply, selectFile, state: () => S, choice: () => choice, enterFs, exitFs, fs: () => fsTag };
+window.GCT = { get player() { return player; }, api, apply, selectFile, state: () => S, choice: () => choice, enterFs, exitFs, fs: () => fsTag };
 poll();
 </script>
 </body>

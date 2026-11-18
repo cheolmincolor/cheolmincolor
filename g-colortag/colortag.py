@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 GRAYZONE. All rights reserved.
 """Rec.709 색 태그(NCLC) 변환기 — 1-1-1 ↔ 1-2-1 (재인코딩 없음)
 
 태그 = 원색(primaries)-전달특성(transfer)-행렬(matrix)

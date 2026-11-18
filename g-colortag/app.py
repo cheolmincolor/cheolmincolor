@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 GRAYZONE. All rights reserved.
 """G-ColorTag — 영상의 Rec.709 색 태그를 고르는 맥용 앱.
 
   1-1-1 : 일반 Rec709
@@ -31,9 +32,11 @@ sys.path.insert(0, os.path.join(HERE, "site"))  # 앱에 포함된 pywebview / P
 sys.path.insert(0, HERE)
 import colortag as ct  # noqa: E402
 import updater  # noqa: E402
+import qtplayer  # noqa: E402
 
 APP_NAME = "G-ColorTag"
-APP_VERSION = "3.3.0"
+APP_VERSION = "3.4.0"
+COPYRIGHT = "© 2026 GRAYZONE. All rights reserved."
 TAGS = {"mac": (1, 2, 1), "std": (1, 1, 1)}
 SEG = 10.0          # 미리보기 구간 길이(초)
 PREVIEW_H = 720     # 미리보기 최대 세로 해상도
@@ -207,7 +210,8 @@ class Core:
                                 "playable": bool(f["codec"])})
             return {"files": files, "saving": self.saving, "save_target": self.save_target,
                     "seg_len": SEG, "ffmpeg": bool(shutil.which("ffmpeg")), "app": APP_NAME,
-                    "version": APP_VERSION, "update": self.updater.state()}
+                    "version": APP_VERSION, "update": self.updater.state(),
+                    "copyright": COPYRIGHT, "native": NV_STATE}
 
     # 저장
     def start_save(self, which):
@@ -276,6 +280,12 @@ class Core:
                 raise ApiError("미리볼 수 없는 영상")
             last = max(0, -(-f["duration"] // SEG) - 1) if f["duration"] else 0  # 마지막 구간 번호
             return self.previews.request(fid, int(min(max(0, seg), last)))
+        if name == "nv_state":
+            if NV is None:
+                raise ApiError("네이티브 플레이어 없음")
+            if q("peek"):  # 점검용: 이벤트를 꺼내지 않고 상태만
+                return {"players": dict(NV.cache), "events": []}
+            return NV.snapshot()
         if method != "POST":
             raise ApiError("POST 필요")
         if name == "pick":
@@ -293,6 +303,15 @@ class Core:
         if name == "save":
             self.start_save(data.get("tag"))
             return self.state()
+        if name == "nv":  # 퀵타임 엔진 플레이어 명령
+            if NV is None:
+                raise ApiError("네이티브 플레이어 없음")
+            cmds = data.get("cmds") or []
+            for c in cmds:
+                if c.get("op") == "src":
+                    c["path"] = media_path(c.get("url"))
+            NV.command(cmds)
+            return {"ok": True}
         if name == "update_check":
             threading.Thread(target=self.updater.check, args=(True,), daemon=True).start()
             time.sleep(0.2)
@@ -318,6 +337,28 @@ class Core:
 
 # ---------------------------------------------------------------- 파일 선택 창
 WINDOW = None
+NV = None            # 퀵타임 엔진(AVFoundation) 플레이어
+NV_STATE = "off"     # off | pending | on
+
+
+def media_path(url):
+    """화면이 쓰는 미리보기 주소(/media/<key>/<mac|std>) → 파일 경로."""
+    m = re.match(r"/media/([0-9a-f]+_\d+)/(mac|std)", str(url or ""))
+    return CORE.previews.path(m.group(1), m.group(2)) if m else None
+
+
+def init_native():
+    """창이 뜬 뒤 메인 스레드에서: 웹 화면 아래에 퀵타임 엔진 플레이어를 깐다."""
+    global NV, NV_STATE
+    try:
+        from webview.platforms.cocoa import BrowserView
+        wv = BrowserView.instances[WINDOW.uid].webview
+        NV = qtplayer.AVBackend(wv, media_path)
+        NV_STATE = "on"
+        log("native player on")
+    except Exception:
+        NV_STATE = "off"
+        log("native player off:", traceback.format_exc())
 
 
 def pick_dialog():
@@ -469,8 +510,26 @@ def run_window(url):
                 AppKit.NSAppearance.appearanceNamed_(AppKit.NSAppearanceNameDarkAqua))
         except Exception as e:
             log("dark appearance 실패:", e)
+    global NV_STATE
+    if sys.platform == "darwin":
+        NV_STATE = "pending"  # 창이 뜨면 켬. 화면은 그때까지 기다림
     WINDOW = webview.create_window(APP_NAME, url, width=1240, height=820, min_size=(1020, 700),
                                    background_color="#0e0f12", text_select=False)
+    if sys.platform == "darwin":
+        def on_loaded():
+            if NV_STATE == "pending":
+                try:
+                    from PyObjCTools import AppHelper
+                    AppHelper.callAfter(init_native)
+                except Exception:
+                    globals()["NV_STATE"] = "off"
+        WINDOW.events.loaded += on_loaded
+
+        def give_up():  # 15초 안에 못 켜면 웹 플레이어로 (화면이 멈추지 않게)
+            if NV_STATE == "pending":
+                globals()["NV_STATE"] = "off"
+                log("native player timeout")
+        threading.Timer(15, give_up).start()
     webview.start()
     return True
 
@@ -501,6 +560,10 @@ def main(argv):
     root = tempfile.mkdtemp(prefix="gcolortag-")
     try:
         srv, url = start_server(root, int(os.environ.get("GCT_PORT", "0")))
+        if os.environ.get("GCT_NATIVE_SIM") == "1":  # 테스트: 가짜 네이티브 플레이어
+            global NV, NV_STATE
+            NV = qtplayer.SimBackend(media_path, ct.read_duration)
+            NV_STATE = "on"
         if "--serve" in argv:
             print(url, flush=True)
             while True:

@@ -1,3 +1,4 @@
+# Copyright (c) 2026 GRAYZONE. All rights reserved.
 """G-ColorTag 자동 업데이트.
 
 GitHub 릴리스(태그 colortag-v*)에서 새 버전을 찾아 뒤에서 받아 두고,
