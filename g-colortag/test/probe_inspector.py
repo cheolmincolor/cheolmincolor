@@ -89,6 +89,16 @@ def headers(src, dst, trc):
 patch(j("1_apple_111.mov"), j("A_apple_inplace_121.mov"), (1, 2, 1))          # 애플 원본 colr 만 제자리 수정
 print("헤더 수정 프레임", headers(j("A_apple_inplace_121.mov"), j("B_apple_inplace_121_hdr2.mov"), 2))
 headers(j("1_apple_111.mov"), j("C_apple_hdr2_only.mov"), 2)
+def gama(src, dst, trc, g):
+    """감마 표시(gama 아톰)를 넣어 다시 씀 (스트림 복사)."""
+    ff("-i", src, "-c", "copy", "-color_primaries", "1", "-color_trc", str(trc), "-colorspace", "1",
+       "-movflags", "+write_colr+write_gama", "-mov_gamma", str(g), dst)
+
+
+gama(j("1_apple_111.mov"), j("G1_121_gama24.mov"), 2, 2.4)
+gama(j("1_apple_111.mov"), j("G2_121_gama22.mov"), 2, 2.2)
+gama(j("1_apple_111.mov"), j("G3_111_gama24.mov"), 1, 2.4)
+gama(j("1_apple_111.mov"), j("G4_121_gama196.mov"), 2, 1.961)
 to_nclx(j("2_app_121.mov"), j("6_nclx_121.mov"), (1, 2, 1))
 drop_colr(j("2_app_121.mov"), j("7_nocolr_head121.mov"))
 ff("-f", "lavfi", "-i", SRC.replace("yuv422p10le", "yuv420p"), "-c:v", "libx264", "-pix_fmt", "yuv420p",
@@ -155,7 +165,7 @@ def shot(number, path):
     Quartz.CGImageDestinationFinalize(d)
 
 
-for name in sorted(f for f in os.listdir(OUT) if f.endswith(".mov")):
+for name in sorted(f for f in os.listdir(OUT) if f.endswith(".mov") and f[0] in "12G"):
     print("■", name, ct.describe(j(name)), flush=True)
     subprocess.run(["open", "-a", "QuickTime Player", j(name)])
     time.sleep(4)
