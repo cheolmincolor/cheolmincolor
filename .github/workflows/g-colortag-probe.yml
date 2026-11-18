@@ -5,6 +5,7 @@ on:
   push:
     paths:
       - 'g-colortag/test/probe_qt.py'
+      - 'g-colortag/test/probe_strings.py'
       - '.github/workflows/g-colortag-probe.yml'
   workflow_dispatch:
 
@@ -22,7 +23,10 @@ jobs:
           python3 -m pip install --break-system-packages -q pyobjc-framework-Quartz pyobjc-framework-AVFoundation || python3 -m pip install -q pyobjc-framework-Quartz pyobjc-framework-AVFoundation
       - name: 화면 정보
         run: system_profiler SPDisplaysDataType | sed -n '1,40p'
+      - name: 퀵타임 문구 조건 찾기
+        run: python3 g-colortag/test/probe_strings.py
       - name: 퀵타임 실험
+        if: false
         run: python3 g-colortag/test/probe_qt.py "$RUNNER_TEMP/probe"
       - uses: actions/upload-artifact@v4
         if: always()
