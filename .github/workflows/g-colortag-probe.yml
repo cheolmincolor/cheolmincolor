@@ -7,6 +7,7 @@ on:
       - 'g-colortag/test/probe_qt.py'
       - 'g-colortag/test/probe_strings.py'
       - 'g-colortag/test/probe_inspector.py'
+      - 'g-colortag/test/probe_avf.py'
       - '.github/workflows/g-colortag-probe.yml'
   workflow_dispatch:
 
@@ -24,9 +25,11 @@ jobs:
           python3 -m pip install --break-system-packages -q pyobjc-framework-Quartz pyobjc-framework-AVFoundation pyobjc-framework-ApplicationServices || python3 -m pip install -q pyobjc-framework-Quartz pyobjc-framework-AVFoundation pyobjc-framework-ApplicationServices
       - name: 화면 정보
         run: system_profiler SPDisplaysDataType | sed -n '1,40p'
-      - name: 퀵타임 문구 조건 찾기
-        run: python3 g-colortag/test/probe_strings.py
+      - name: 애플 AVFoundation 으로 태그 바꿔 쓰기
+        if: success() || failure()
+        run: python3 g-colortag/test/probe_avf.py "$RUNNER_TEMP/probe"
       - name: 퀵타임 속성 창 캡처
+        if: success() || failure()
         run: python3 g-colortag/test/probe_inspector.py "$RUNNER_TEMP/probe"
       - name: 퀵타임 실험
         if: false
