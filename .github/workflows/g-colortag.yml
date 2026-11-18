@@ -60,6 +60,7 @@ jobs:
           APP="$RUNNER_TEMP/tag/Applications/G-ColorTag.app"
           "$APP/Contents/MacOS/G-ColorTag-python" -I -B test/mac_tag_check.py "$APP" "$RUNNER_TEMP/native/out/tags"
       - name: 앱 미리보기가 퀵타임 플레이어와 같은 밝기인지 (실제 창 캡처)
+        if: success() || failure()
         run: |
           V=$(sed -n 's/^APP_VERSION = "\(.*\)"/\1/p' app.py)
           mkdir -p "$RUNNER_TEMP/native/Applications"
