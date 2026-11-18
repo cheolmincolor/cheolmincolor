@@ -19,3 +19,5 @@ func dropCache(*os.File) {}
 func allocAligned(n int) []byte { return make([]byte, n) }
 
 func freeAligned([]byte) {}
+
+func diskKey(string) string { return "" }

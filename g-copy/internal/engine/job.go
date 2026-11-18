@@ -107,7 +107,9 @@ type Job struct {
 	filesCopied, filesSkipped, filesVerified, filesFailed, bytesCopied atomic.Int64
 	speedBits                                                          atomic.Uint64
 
-	copySlots, verifySlots *slots // see pipeline.go
+	lanes       []*slots // copy slots, one set per source disk (see pipeline.go)
+	srcLane     []int    // per source: its lane
+	verifySlots *slots
 
 	est        estimator    // used by speedLoop only
 	finishNano atomic.Int64 // estimated finish (unix nanoseconds), 0 = not yet known

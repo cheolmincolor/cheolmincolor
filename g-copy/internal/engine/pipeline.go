@@ -242,13 +242,31 @@ func srcDev(s int) string { return fmt.Sprintf("src%d", s) }
 
 // ── dispatch ───────────────────────────────────────────────────────────
 
-// copyAll hands the files to the pipeline, in order.
+// copyAll hands the files to the pipeline. Each source disk has its own
+// lane of copy slots, so two cards or drives are read at the same time;
+// within one disk, files go in order and big clips one after another.
 func (j *Job) copyAll() {
-	nd := len(j.dests)
 	var wg sync.WaitGroup
+	for l := range j.lanes {
+		wg.Add(1)
+		go func(l int) {
+			defer wg.Done()
+			j.dispatch(l, &wg)
+		}(l)
+	}
+	wg.Wait()
+}
+
+// dispatch starts the files of every source that reads from lane l.
+func (j *Job) dispatch(l int, wg *sync.WaitGroup) {
+	nd := len(j.dests)
+	lane := j.lanes[l]
 	for i := range j.files {
 		if j.ctx.Err() != nil {
-			break
+			return
+		}
+		if j.srcLane[j.files[i].src] != l {
+			continue
 		}
 		acts := j.acts[i*nd : (i+1)*nd]
 		active, blocked := false, false
@@ -266,10 +284,10 @@ func (j *Job) copyAll() {
 		}
 		weight := 1
 		if j.files[i].size >= bigFileSize {
-			weight = j.copySlots.cap
+			weight = lane.cap
 		}
-		if !j.copySlots.take(j.ctx, weight) {
-			break
+		if !lane.take(j.ctx, weight) {
+			return
 		}
 		wg.Add(1)
 		go func(i, weight int) {
@@ -277,7 +295,6 @@ func (j *Job) copyAll() {
 			j.processFile(i, weight)
 		}(i, weight)
 	}
-	wg.Wait()
 }
 
 // destWork is one file on its way to one destination.
@@ -328,16 +345,17 @@ func destWorkFor(a action, size int64) int64 {
 // ── one file ───────────────────────────────────────────────────────────
 
 // processFile takes one file through the pipeline. It is called holding
-// weight copy slots.
+// weight copy slots of its source's lane.
 func (j *Job) processFile(i, weight int) {
+	f := &j.files[i]
+	lane := j.lanes[j.srcLane[f.src]]
 	holding := true // copy slots
 	defer func() {
 		if holding {
-			j.copySlots.give(weight)
+			lane.give(weight)
 		}
 	}()
 
-	f := &j.files[i]
 	nd := len(j.dests)
 	acts := j.acts[i*nd : (i+1)*nd]
 	shown := j.showSrc(f.src, f.rel)
@@ -402,7 +420,7 @@ func (j *Job) processFile(i, weight int) {
 
 		if pass > 0 {
 			if !holding {
-				if !j.copySlots.take(j.ctx, weight) {
+				if !lane.take(j.ctx, weight) {
 					return
 				}
 				holding = true
@@ -431,7 +449,7 @@ func (j *Job) processFile(i, weight int) {
 			discard(pending)
 			return
 		}
-		j.copySlots.give(weight)
+		lane.give(weight)
 		holding = false
 
 		// 2. read every copy back from its disk and compare

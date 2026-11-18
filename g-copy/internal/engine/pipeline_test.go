@@ -314,3 +314,64 @@ func TestReadChunks(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+func TestDiskOf(t *testing.T) {
+	for from, want := range map[string]string{
+		"/dev/disk4s2":            "/dev/disk4",
+		"/dev/disk4s3":            "/dev/disk4",
+		"/dev/disk3s1s1":          "/dev/disk3",
+		"/dev/disk12s1":           "/dev/disk12",
+		"/dev/rdisk5":             "/dev/disk5",
+		"//me@NAS.local/Projects": "net:nas.local",
+		"//nas.local/Archive":     "net:nas.local",
+		"nas:/export/media":       "net:nas",
+		"map auto_home":           "map auto_home",
+		"/dev/sda1":               "/dev/sda1",
+	} {
+		if got := diskOf(from); got != want {
+			t.Errorf("diskOf(%q) = %q, want %q", from, got, want)
+		}
+	}
+}
+
+// Two sources on two disks are read at the same time; on one disk they
+// take turns. The result is the same either way.
+func TestTwoSourceDisks(t *testing.T) {
+	tmp := t.TempDir()
+	var srcs []string
+	for _, n := range []string{"CARD_A", "CARD_B"} {
+		s := filepath.Join(tmp, n)
+		writeFile(t, filepath.Join(s, "clip.mov"), randBytes(int64(len(n)), 20<<20), day)
+		for i := 0; i < 20; i++ {
+			writeFile(t, filepath.Join(s, "seq", fmt.Sprintf("f%02d.exr", i)), randBytes(int64(i), 30000), day)
+		}
+		srcs = append(srcs, s)
+	}
+	for _, separate := range []bool{false, true} {
+		dst := filepath.Join(tmp, fmt.Sprintf("NAS_%v", separate))
+		os.MkdirAll(dst, 0o755)
+		if separate {
+			testDiskKey = filepath.Base
+		}
+		j, err := start(Options{Sources: srcs, Destinations: []string{dst}}, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		j.Wait()
+		testDiskKey = nil
+		st := j.Snapshot()
+		want := 1
+		if separate {
+			want = 2
+		}
+		if len(j.lanes) != want || st.Status != StatusDone || st.FilesCopied != 42 {
+			t.Fatalf("separate %v: lanes %d status %s copied %d %+v", separate, len(j.lanes), st.Status, st.FilesCopied, st.Errors)
+		}
+		for _, s := range srcs {
+			sameTree(t, s, treeDigest(t, s, nil), treeDigest(t, filepath.Join(dst, filepath.Base(s)), isReportOrKept))
+		}
+		if st.Dests[0].WorkDone != st.Dests[0].WorkTotal || st.WorkDone != st.WorkTotal {
+			t.Errorf("progress %d/%d", st.WorkDone, st.WorkTotal)
+		}
+	}
+}

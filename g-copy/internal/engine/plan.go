@@ -15,6 +15,9 @@ import (
 	"time"
 )
 
+// testDiskKey, set by a test, decides which disk each source is on.
+var testDiskKey func(path string) string
+
 // srcFile is one regular file found in a source.
 type srcFile struct {
 	src     int    // index into Job.srcRoots
@@ -302,7 +305,25 @@ func (j *Job) compare() error {
 		}
 		dr.folds = probeFolding(dr.path)
 	}
-	j.copySlots, j.verifySlots = newSlots(workers), newSlots(2*workers)
+	// one lane per source disk; sources on the same disk share one, as
+	// reading two places of one hard disk at once makes it seek
+	j.srcLane = make([]int, len(j.srcRoots))
+	laneOf := map[string]int{}
+	for s, root := range j.srcRoots {
+		key := diskKey(root)
+		if testDiskKey != nil {
+			key = testDiskKey(root)
+		}
+		l, ok := laneOf[key]
+		if !ok { // "" (unknown) is one shared lane
+			l = len(j.lanes)
+			j.lanes = append(j.lanes, newSlots(workers))
+			laneOf[key] = l
+		}
+		j.srcLane[s] = l
+	}
+	// read-back: two big files per lane can be checked while the next copies
+	j.verifySlots = newSlots(workers * (1 + len(j.lanes)))
 
 	for d, dr := range j.dests {
 		baseExists := make([]bool, len(dr.bases))

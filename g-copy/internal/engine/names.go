@@ -110,3 +110,35 @@ func (j *Job) blockCollisions(d int) {
 		}
 	}
 }
+
+// diskOf turns what a volume is mounted from into a name for the physical
+// disk (or server) behind it, so sources on one disk can be told apart
+// from sources on two: "/dev/disk4s2" and "/dev/disk4s3" are partitions of
+// disk4 (APFS volumes of one container look the same), "//me@nas/share"
+// and "nas:/export" are the server nas.
+func diskOf(from string) string {
+	if rest, ok := strings.CutPrefix(from, "/dev/"); ok {
+		rest = strings.TrimPrefix(rest, "r")
+		if strings.HasPrefix(rest, "disk") {
+			k := 4
+			for k < len(rest) && rest[k] >= '0' && rest[k] <= '9' {
+				k++
+			}
+			return "/dev/" + rest[:k]
+		}
+		return from
+	}
+	if host, ok := strings.CutPrefix(from, "//"); ok { // SMB, AFP
+		if k := strings.IndexByte(host, '/'); k >= 0 {
+			host = host[:k]
+		}
+		if k := strings.LastIndexByte(host, '@'); k >= 0 {
+			host = host[k+1:]
+		}
+		return "net:" + strings.ToLower(host)
+	}
+	if k := strings.Index(from, ":/"); k > 0 { // NFS
+		return "net:" + strings.ToLower(from[:k])
+	}
+	return from
+}

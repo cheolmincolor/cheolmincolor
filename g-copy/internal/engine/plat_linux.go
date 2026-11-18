@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"fmt"
 	"os"
 
 	"golang.org/x/sys/unix"
@@ -45,3 +46,12 @@ func allocAligned(n int) []byte {
 }
 
 func freeAligned(b []byte) { _ = unix.Munmap(b) }
+
+// diskKey names the device that holds path ("" if unknown).
+func diskKey(path string) string {
+	var st unix.Stat_t
+	if unix.Stat(path, &st) != nil {
+		return ""
+	}
+	return fmt.Sprintf("dev:%d:%d", unix.Major(st.Dev), unix.Minor(st.Dev))
+}

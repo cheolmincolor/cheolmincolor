@@ -77,6 +77,8 @@ func benchRunN(t *testing.T, name string, nsrc int, files []int64, dests int, sr
 		os.MkdirAll(p, 0o755)
 		ds = append(ds, p)
 	}
+	testDiskKey = filepath.Base // every source its own disk
+	defer func() { testDiskKey = nil }()
 	m := &deviceModel{devs: map[string]*device{}, def: map[string]float64{"src": srcBW, "*": dstBW}}
 	testIOHook = m.hook
 	defer func() { testIOHook = nil }()

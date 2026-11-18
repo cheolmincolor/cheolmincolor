@@ -53,3 +53,12 @@ func isNetworkFS(path string) bool {
 	}
 	return false
 }
+
+// diskKey names the physical disk or server that holds path ("" if unknown).
+func diskKey(path string) string {
+	var st unix.Statfs_t
+	if unix.Statfs(path, &st) != nil {
+		return ""
+	}
+	return diskOf(unix.ByteSliceToString(st.Mntfromname[:]))
+}

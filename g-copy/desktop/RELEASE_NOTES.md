@@ -1,8 +1,2 @@
-- Faster: the next 4 MB of the source is read while the current one is written, and the next clip starts copying while the previous one is read back. About 1.5× faster for camera clips in our tests.
-- Fewer requests to the NAS per file (about 4.5 instead of 8), which helps image sequences on network shares. With a network destination, 8 small files are copied at a time instead of 4.
-- Same size but a different date (a NAS that does not keep dates, a copy made by another tool): the file is read back and compared. If it matches, only the date is corrected; it is no longer copied again and set aside.
-- A temporary problem (a read error, a dropped connection, a checksum mismatch) gets one more try after 2 seconds before the file is reported as failed.
-- If the app is killed or the Mac loses power during a backup, the next run recreates the missing checksum report (MHL) for the files that were already verified.
-- Two files whose names differ only in upper/lower case (or Unicode form) are reported instead of one silently replacing the other on the destination.
-- Large files are flushed all the way to the disk (F_FULLFSYNC) before they are read back.
-- New copies get the source's permissions as the system allows them (umask); files are no longer made world-writable.
+- Two or more sources on different disks are now read at the same time, each disk at its own pace. Into a fast server (10GbE, Thunderbolt DAS) this is about 1.5× faster with two disks in our tests. With a 1 Gb NAS the network is the limit, so it stays about the same.
+- Folders on the same disk (also different partitions or APFS volumes of one disk) and shares of the same server are still read one after another, so a hard disk does not have to jump back and forth.

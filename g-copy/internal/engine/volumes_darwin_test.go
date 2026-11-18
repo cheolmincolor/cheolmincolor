@@ -99,3 +99,17 @@ func TestFATDestinations(t *testing.T) {
 		sameTree(t, fs, treeDigest(t, src, nil), treeDigest(t, filepath.Join(dst, "A001"), isReportOrKept))
 	}
 }
+
+// Two disk images are two disks; two folders of the startup disk are one.
+func TestDiskKeysOnAMac(t *testing.T) {
+	a, b := macDisk(t, "APFS", "DA"), macDisk(t, "APFS", "DB")
+	ka, kb := diskKey(a), diskKey(b)
+	k1, k2 := diskKey(t.TempDir()), diskKey(os.Getenv("HOME"))
+	t.Logf("disk image A %q, B %q, temp %q, home %q", ka, kb, k1, k2)
+	if ka == "" || ka == kb {
+		t.Errorf("two disk images should be two disks: %q %q", ka, kb)
+	}
+	if k1 == "" || k1 != k2 {
+		t.Errorf("temp folder and home folder are on the startup disk: %q %q", k1, k2)
+	}
+}
