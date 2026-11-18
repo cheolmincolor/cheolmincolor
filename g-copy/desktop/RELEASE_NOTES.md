@@ -1,2 +1,3 @@
 - First release through automatic updates.
-- Updates now come from G-Copy's own update channel, so releases of other apps in this repository do not get in the way.
+- Updates come from G-Copy's own update channel, so releases of other apps in this repository do not get in the way.
+- Built with Go 1.24, which current macOS requires.

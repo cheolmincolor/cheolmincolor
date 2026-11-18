@@ -28,6 +28,13 @@ for target in $TARGETS; do
   # 1. the engine for this platform
   rm -rf engine && mkdir engine
   (cd .. && CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch go build -trimpath -ldflags "-s -w" -o "desktop/engine/gcopy-engine$ext" .)
+  if [ "$goos" = darwin ]; then
+    # Current macOS refuses programs without LC_UUID (Go 1.23 and older leave it out).
+    node -e '
+      const d = require("fs").readFileSync(process.argv[1]); let off = 32, ok = false;
+      for (let i = 0, n = d.readUInt32LE(16); i < n; i++) { if (d.readUInt32LE(off) === 0x1b) ok = true; off += d.readUInt32LE(off + 4); }
+      if (!ok) { console.error("   the engine has no LC_UUID: build with Go 1.24 or later"); process.exit(1); }' engine/gcopy-engine
+  fi
 
   # 2. the app: shell in app.asar, engine next to it in the resources folder
   npx electron-packager . G-Copy --platform="$os" --arch="$arch" --out="$OUT" --overwrite \

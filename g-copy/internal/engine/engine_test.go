@@ -315,8 +315,15 @@ func TestCorruptedCopyIsDetectedAndDiscarded(t *testing.T) {
 
 	// Flip one bit in the middle of one clip on one destination, after it
 	// was written and before it is read back: what a bad cable would do.
+	// The engine works with resolved paths: on macOS the temp folder
+	// /var/… is really /private/var/….
+	badReal, err := filepath.EvalSymlinks(bad)
+	if err != nil {
+		t.Fatal(err)
+	}
+	flipped := 0
 	flip := func(path string) {
-		if !strings.HasPrefix(path, bad) || !strings.Contains(path, "A001C001.mov") {
+		if !strings.HasPrefix(path, badReal) || !strings.Contains(path, "A001C001.mov") {
 			return
 		}
 		f, err := os.OpenFile(path, os.O_RDWR, 0)
@@ -329,8 +336,12 @@ func TestCorruptedCopyIsDetectedAndDiscarded(t *testing.T) {
 		f.ReadAt(one, 10<<20)
 		one[0] ^= 0x01
 		f.WriteAt(one, 10<<20)
+		flipped++
 	}
 	st := runJob(t, o, flip)
+	if flipped != 1 {
+		t.Fatalf("test setup: the damage hook ran %d times, want 1", flipped)
+	}
 	if st.Status != StatusFailed || st.FilesFailed != 1 || st.ErrorCount != 1 {
 		t.Fatalf("status %s failed %d errors %+v", st.Status, st.FilesFailed, st.Errors)
 	}
