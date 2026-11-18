@@ -4,9 +4,7 @@
 
 태그 = 원색(primaries)-전달특성(transfer)-행렬(matrix)
   1-1-1 : 일반 Rec709 (맥 퀵타임에서는 밝고 옅게 보일 수 있음)
-  1-2-1 : 맥 퀵타임에서 정확하게 보이는 Rec709 = 1-2-1 태그 + 감마 2.4 표시(gama 아톰, MOV 전용)
-          실제 맥(macOS 26) 측정: 1-2-1 만으로는 퀵타임 밝기가 1-1-1 과 같고, gama 2.4 가 있어야
-          감마 2.4 모니터와 같은 밝기로 보인다. 그래서 1-2-1 로 저장할 땐 항상 MOV 로 저장한다.
+  1-2-1 : 맥 퀵타임에서 정확하게 보이는 Rec709 (다빈치 리졸브의 Rec.709-A와 같은 태그)
   두 파일의 픽셀 밝기는 같다. 태그만 바꿔 플레이어 문제를 해결한다.
 
 사용법:
@@ -27,11 +25,6 @@ H264 = {"avc1", "avc3"}
 HEVC = {"hvc1", "hev1"}
 PRORES = {"apco", "apcs", "apcn", "apch", "ap4h", "ap4x"}
 CONTAINERS = {"moov", "trak", "mdia", "minf", "stbl"}
-MAC_TAG, MAC_GAMMA = (1, 2, 1), 2.4  # 맥 퀵타임용: 1-2-1 + gama 2.4
-
-
-def needs_gama(tag):
-    return tuple(tag) == MAC_TAG
 
 
 # ---------------- 읽기: colr 아톰 직접 파싱 ----------------
@@ -80,7 +73,7 @@ def read_tracks(path):
                         _sample_entry(f, codec, ebody, eend)
 
         def _sample_entry(f, codec, ebody, eend):
-            info = {"codec": codec, "colr": None, "tag": None, "offset": None, "gamma": None}
+            info = {"codec": codec, "colr": None, "tag": None, "offset": None}
             # 영상 샘플 엔트리 고정 필드 78바이트 뒤에 자식 박스들
             for typ, body, _ in _boxes(f, ebody + 78, eend):
                 if typ == "colr":
@@ -90,9 +83,6 @@ def read_tracks(path):
                         info["colr"] = kind
                         info["tag"] = struct.unpack(">HHH", f.read(6))
                         info["offset"] = body + 4
-                elif typ == "gama":  # 감마 표시 (16.16 고정소수)
-                    f.seek(body)
-                    info["gamma"] = round(struct.unpack(">I", f.read(4))[0] / 65536, 3)
             tracks.append(info)
 
         walk(0, size)
@@ -110,13 +100,8 @@ def convert(src, dst, tag, faststart=False, progress=None):
     tracks = read_tracks(src)
     if not tracks:
         raise ValueError("영상 트랙을 찾지 못했습니다 (MOV/MP4만 지원)")
-    gama = needs_gama(tag)
-    if gama and not dst.lower().endswith(".mov"):
-        raise ValueError("1-2-1(맥 퀵타임용)은 MOV 로만 저장할 수 있습니다")
     cmd = ["ffmpeg", "-v", "error", "-y", "-i", src, "-map", "0", "-c", "copy",
-           "-map_metadata", "0", "-movflags", "+write_colr+write_gama" if gama else "+write_colr"]
-    if gama:
-        cmd += ["-mov_gamma", str(MAC_GAMMA)]
+           "-map_metadata", "0", "-movflags", "+write_colr"]
     for i, tr in enumerate(tracks):
         c = tr["codec"]
         if c in H264:
@@ -132,8 +117,7 @@ def convert(src, dst, tag, faststart=False, progress=None):
         cmd += [f"-color_primaries:v:{i}", str(p), f"-color_trc:v:{i}", str(t), f"-colorspace:v:{i}", str(m),
                 f"-tag:v:{i}", c]  # hvc1 등 원래 FourCC 유지 (맥 호환)
     if faststart:
-        i = cmd.index("-movflags") + 1
-        cmd[i] += "+faststart"
+        cmd[cmd.index("+write_colr")] = "+write_colr+faststart"
     cmd.append(dst)
     run_ffmpeg(cmd, progress, read_duration(src) if progress else None)
     return cmd
@@ -187,11 +171,8 @@ def read_duration(path):
 
 
 def output_path(src, tag):
-    """1-2-1(맥 퀵타임용)은 감마 표시가 MOV 에만 들어가므로 항상 .mov"""
     """영상_1-2-1 → 영상_1-1-1 처럼 꼬리를 바꿔 달고, 원본·기존 파일과 겹치지 않는 이름."""
     base, ext = os.path.splitext(src)
-    if needs_gama(tag):
-        ext = ".mov"
     base = re.sub(r"_\d+-\d+-\d+$", "", base)
     dst, n = f"{base}_{tag_str(tag)}{ext}", 2
     while os.path.exists(dst) or os.path.abspath(dst) == os.path.abspath(src):

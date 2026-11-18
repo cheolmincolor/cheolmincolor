@@ -162,12 +162,16 @@ def test():
         diff_tags = max(abs(x - y) for x, y in zip(app_vals["std"], app_vals["mac"]))
         step(f"앱에서 1-1-1 과 1-2-1 의 최대 밝기 차이: {diff_tags:.1f}")
         RESULT.update(app=app_vals, quicktime=qt, tag_difference=diff_tags)
-        checks = [("앱에서 두 태그가 다르게 보임", diff_tags >= 3)]
+        # 기준: 앱 미리보기가 퀵타임 플레이어와 같게 보이는가 (두 태그의 차이는 퀵타임을 따라가므로 기록만)
+        step(f"참고: 두 태그 밝기 차이 {diff_tags:.1f} (퀵타임도 같은 값이면 정상)")
+        checks = []
         if len(qt) == 2:
             for tag in ("std", "mac"):
                 d = max(abs(x - y) for x, y in zip(app_vals[tag], qt[tag]))
                 RESULT[f"app_vs_qt_{tag}"] = d
                 checks.append((f"앱 {tag} ≈ 퀵타임 {tag} (최대 차이 {d:.1f})", d <= 4))
+        if not checks:
+            checks.append(("퀵타임 비교 캡처", False))
         RESULT["checks"] = checks
         RESULT["ok"] = all(c[1] for c in checks)
         for name, good in checks:
