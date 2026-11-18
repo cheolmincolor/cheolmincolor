@@ -71,6 +71,24 @@ def drop_colr(src, dst):
     open(dst, "wb").write(bytes(d))
 
 
+def headers(src, dst, trc):
+    """모든 ProRes 프레임 헤더의 전송 기능 바이트를 trc 로 (리먹스 없이 제자리)."""
+    d = bytearray(open(src, "rb").read())
+    i, n = 0, 0
+    while True:
+        i = d.find(b"icpf", i)
+        if i < 0:
+            break
+        d[i + 4 + 15] = trc
+        i += 4
+        n += 1
+    open(dst, "wb").write(bytes(d))
+    return n
+
+
+patch(j("1_apple_111.mov"), j("A_apple_inplace_121.mov"), (1, 2, 1))          # 애플 원본 colr 만 제자리 수정
+print("헤더 수정 프레임", headers(j("A_apple_inplace_121.mov"), j("B_apple_inplace_121_hdr2.mov"), 2))
+headers(j("1_apple_111.mov"), j("C_apple_hdr2_only.mov"), 2)
 to_nclx(j("2_app_121.mov"), j("6_nclx_121.mov"), (1, 2, 1))
 drop_colr(j("2_app_121.mov"), j("7_nocolr_head121.mov"))
 ff("-f", "lavfi", "-i", SRC.replace("yuv422p10le", "yuv420p"), "-c:v", "libx264", "-pix_fmt", "yuv420p",
