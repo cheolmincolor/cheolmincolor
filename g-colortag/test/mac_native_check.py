@@ -6,7 +6,7 @@
 3) 같은 미리보기 파일(1-1-1 / 1-2-1)을 퀵타임 플레이어로 열어 캡처해 막대 밝기를 잰다.
 4) 앱의 1-1-1 ≈ 퀵타임 1-1-1, 앱의 1-2-1 ≈ 퀵타임 1-2-1 이고, 두 태그가 실제로 다르게 보이는지 확인.
 
-사용: <앱>/Contents/MacOS/G-ColorTag-python -I -B test/mac_native_check.py <G-ColorTag.app> <출력 폴더>
+사용: <앱>/Contents/MacOS/G-Retag-python -I -B test/mac_native_check.py <G-Retag.app> <출력 폴더>
 """
 import json
 import os
@@ -26,6 +26,7 @@ import app  # noqa: E402
 
 BARS = [16, 71, 126, 181, 236]
 RESULT = {"ok": False, "steps": []}
+INTRO_CHECKS = []
 
 
 def step(msg):
@@ -119,6 +120,24 @@ def test():
         step(f"네이티브 플레이어: {app.NV_STATE}")
         if app.NV_STATE != "on":
             raise RuntimeError("퀵타임 엔진 플레이어가 켜지지 않음")
+        js = app.WINDOW.evaluate_js
+        # 로딩 화면(태그 안내): 준비되면 '시작하기'가 켜지고, 업데이트 확인 결과가 표시됨
+        for _ in range(60):
+            if js("!document.querySelector('#introStart').disabled && document.querySelector('#introSteps li[data-k=update]').className !== 'wait'"):
+                break
+            time.sleep(0.5)
+        from webview.platforms.cocoa import BrowserView as _BV
+        import Quartz as _Q  # noqa: F401
+        capture_window(_BV.instances[app.WINDOW.uid].window.windowNumber(), os.path.join(OUT, "app_intro.png"))
+        steps_txt = js("Array.from(document.querySelectorAll('#introSteps li')).map(l => l.className + ':' + l.textContent).join(' | ')")
+        step(f"로딩 화면: {steps_txt}")
+        INTRO_CHECKS.append(("로딩 화면: 태그 안내 + 플레이어 준비 + 업데이트 확인",
+                             bool(js("GCT.intro()")) and "준비됨" in steps_txt and "wait:" not in steps_txt))
+        js("GCT.closeIntro()")
+        time.sleep(0.5)
+        if js("GCT.updModal()"):
+            js("document.querySelector('#updLater').click()")
+        INTRO_CHECKS.append(("시작하기 → 로딩 화면 닫힘", not js("GCT.intro()")))
         vdir = tempfile.mkdtemp()
         movie = os.path.join(vdir, "bars.mov")
         make_video(movie)
@@ -166,7 +185,7 @@ def test():
         RESULT.update(app=app_vals, quicktime=qt, tag_difference=diff_tags)
         # 기준: 앱 미리보기가 퀵타임 플레이어와 같게 보이는가 (두 태그의 차이는 퀵타임을 따라가므로 기록만)
         step(f"참고: 두 태그 밝기 차이 {diff_tags:.1f} (퀵타임도 같은 값이면 정상)")
-        checks = []
+        checks = list(INTRO_CHECKS)
         if len(qt) == 2:
             for tag in ("std", "mac"):
                 d = max(abs(x - y) for x, y in zip(app_vals[tag], qt[tag]))
@@ -218,7 +237,7 @@ def test():
         app.WINDOW.destroy()
 
 
-root = tempfile.mkdtemp(prefix="gcolortag-")
+root = tempfile.mkdtemp(prefix="gretag-")
 srv, url = app.start_server(root)
 threading.Thread(target=test, daemon=True).start()
 app.run_window(url)

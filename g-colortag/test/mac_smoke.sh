@@ -3,20 +3,20 @@
 # 실제 맥(GitHub Actions macOS)에서 앱 묶음을 풀어 확인:
 #   1) 앱 안의 파이썬이 표준 라이브러리·pywebview·PyObjC 를 불러오는지
 #   2) 앱 안의 ffmpeg 로 미리보기·저장이 되고, 저장한 파일 태그가 1-2-1·픽셀은 그대로인지
-# 사용: bash test/mac_smoke.sh release/<버전>/G-ColorTag-<버전>-arm64.tar.gz
+# 사용: bash test/mac_smoke.sh release/<버전>/G-Retag-<버전>-arm64.tar.gz
 set -euo pipefail
 PKG=$(cd "$(dirname "$1")" && pwd)/$(basename "$1")
 W="${RUNNER_TEMP:-$(mktemp -d)}/gct-smoke"
 mkdir -p "$W/Applications" "$W/videos"
 tar -xzf "$PKG" -C "$W/Applications"
-APP="$W/Applications/G-ColorTag.app"; RES="$APP/Contents/Resources"; PY="$APP/Contents/MacOS/G-ColorTag-python"
+APP="$W/Applications/G-Retag.app"; RES="$APP/Contents/Resources"; PY="$APP/Contents/MacOS/G-Retag-python"
 export PATH="$RES/bin:/usr/bin:/bin:/usr/sbin"
 
 echo "== 1) 앱 안의 파이썬"
 "$PY" -I -B -c "
 import sys, ssl, json; sys.path.insert(0, '$RES/site')
 import webview, objc, AppKit, WebKit, AVFoundation, CoreMedia, Quartz
-print('python', sys.version.split()[0], '| prefix', sys.prefix.replace('$APP', 'G-ColorTag.app'))
+print('python', sys.version.split()[0], '| prefix', sys.prefix.replace('$APP', 'G-Retag.app'))
 print('pywebview OK | PyObjC', objc.__version__, '| WebKit OK')"
 
 echo "== 2) 앱 안의 ffmpeg"

@@ -1,7 +1,7 @@
-# G-ColorTag 맥 앱: 설치파일·업데이트 묶음을 만들고, 실제 맥에서 확인한 뒤 GitHub 릴리스로 올립니다.
+# G-Retag for QuickTime 맥 앱 (예전 이름 G-ColorTag): 설치파일·업데이트 묶음을 만들고, 실제 맥에서 확인한 뒤 GitHub 릴리스로 올립니다.
 # 앱은 이 릴리스(colortag-v버전)를 보고 자동 업데이트합니다.
 # app.py 의 APP_VERSION 을 올리고 CHANGELOG.md 맨 위에 바뀐 점을 적어 올리면 새 릴리스가 만들어집니다.
-name: G-ColorTag 맥 앱
+name: G-Retag 맥 앱
 
 on:
   push:
@@ -51,38 +51,45 @@ jobs:
       - name: 실제 맥에서 앱 확인 (Apple Silicon)
         run: |
           V=$(sed -n 's/^APP_VERSION = "\(.*\)"/\1/p' app.py)
-          bash test/mac_smoke.sh "release/$V/G-ColorTag-$V-arm64.tar.gz"
+          bash test/mac_smoke.sh "release/$V/G-Retag-$V-arm64.tar.gz"
       - name: 저장한 _1-2-1 파일을 퀵타임이 (1-2-1)로 읽는지 (애플 ProRes 포함)
         run: |
           V=$(sed -n 's/^APP_VERSION = "\(.*\)"/\1/p' app.py)
           mkdir -p "$RUNNER_TEMP/tag/Applications"
-          tar -xzf "release/$V/G-ColorTag-$V-arm64.tar.gz" -C "$RUNNER_TEMP/tag/Applications"
-          APP="$RUNNER_TEMP/tag/Applications/G-ColorTag.app"
-          "$APP/Contents/MacOS/G-ColorTag-python" -I -B test/mac_tag_check.py "$APP" "$RUNNER_TEMP/native/out/tags"
+          tar -xzf "release/$V/G-Retag-$V-arm64.tar.gz" -C "$RUNNER_TEMP/tag/Applications"
+          APP="$RUNNER_TEMP/tag/Applications/G-Retag.app"
+          "$APP/Contents/MacOS/G-Retag-python" -I -B test/mac_tag_check.py "$APP" "$RUNNER_TEMP/native/out/tags"
       - name: 최종 확인 - 앱 저장본을 퀵타임 '동영상 속성' 창으로 읽기
         if: success() || failure()
         run: |
           python3 -m pip install --break-system-packages -q pyobjc-framework-ApplicationServices || python3 -m pip install -q pyobjc-framework-ApplicationServices
           V=$(sed -n 's/^APP_VERSION = "\(.*\)"/\1/p' app.py)
           mkdir -p "$RUNNER_TEMP/insp/Applications"
-          tar -xzf "release/$V/G-ColorTag-$V-arm64.tar.gz" -C "$RUNNER_TEMP/insp/Applications"
-          python3 test/mac_inspector_check.py "$RUNNER_TEMP/insp/Applications/G-ColorTag.app" "$RUNNER_TEMP/native/out/inspector"
+          tar -xzf "release/$V/G-Retag-$V-arm64.tar.gz" -C "$RUNNER_TEMP/insp/Applications"
+          python3 test/mac_inspector_check.py "$RUNNER_TEMP/insp/Applications/G-Retag.app" "$RUNNER_TEMP/native/out/inspector"
       - name: 진단 - 퀵타임이 받는 색 정보 전체
         if: success() || failure()
         run: |
           V=$(sed -n 's/^APP_VERSION = "\(.*\)"/\1/p' app.py)
           mkdir -p "$RUNNER_TEMP/dump/Applications"
-          tar -xzf "release/$V/G-ColorTag-$V-arm64.tar.gz" -C "$RUNNER_TEMP/dump/Applications"
-          APP="$RUNNER_TEMP/dump/Applications/G-ColorTag.app"
-          "$APP/Contents/MacOS/G-ColorTag-python" -I -B test/mac_tag_dump.py "$APP" "$RUNNER_TEMP/native/out/dump"
-      - name: 앱 미리보기가 퀵타임 플레이어와 같은 밝기인지 (실제 창 캡처)
+          tar -xzf "release/$V/G-Retag-$V-arm64.tar.gz" -C "$RUNNER_TEMP/dump/Applications"
+          APP="$RUNNER_TEMP/dump/Applications/G-Retag.app"
+          "$APP/Contents/MacOS/G-Retag-python" -I -B test/mac_tag_dump.py "$APP" "$RUNNER_TEMP/native/out/dump"
+      - name: 예전 G-ColorTag 3.5.0 → 자동 업데이트 → G-Retag 로 이름 바꾸기
+        if: success() || failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V=$(sed -n 's/^APP_VERSION = "\(.*\)"/\1/p' app.py)
+          bash test/mac_migrate_check.sh "release/$V"
+      - name: 앱 미리보기가 퀵타임 플레이어와 같은 밝기인지 (실제 창 캡처, 로딩 화면 포함)
         if: success() || failure()
         run: |
           V=$(sed -n 's/^APP_VERSION = "\(.*\)"/\1/p' app.py)
           mkdir -p "$RUNNER_TEMP/native/Applications"
-          tar -xzf "release/$V/G-ColorTag-$V-arm64.tar.gz" -C "$RUNNER_TEMP/native/Applications"
-          APP="$RUNNER_TEMP/native/Applications/G-ColorTag.app"
-          "$APP/Contents/MacOS/G-ColorTag-python" -I -B test/mac_native_check.py "$APP" "$RUNNER_TEMP/native/out"
+          tar -xzf "release/$V/G-Retag-$V-arm64.tar.gz" -C "$RUNNER_TEMP/native/Applications"
+          APP="$RUNNER_TEMP/native/Applications/G-Retag.app"
+          "$APP/Contents/MacOS/G-Retag-python" -I -B test/mac_native_check.py "$APP" "$RUNNER_TEMP/native/out"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -110,4 +117,4 @@ jobs:
           TAG="colortag-v$V"; R="release/$V"
           if gh release view "$TAG" >/dev/null 2>&1; then echo "$TAG 은 이미 있습니다."; exit 0; fi
           gh release create "$TAG" "$R"/*.dmg "$R"/*.tar.gz "$R/colortag-latest.json" \
-            --target "$GITHUB_SHA" --title "G-ColorTag $V" --notes-file "$R/notes.md" --latest=false
+            --target "$GITHUB_SHA" --title "G-Retag for QuickTime $V" --notes-file "$R/notes.md" --latest=false

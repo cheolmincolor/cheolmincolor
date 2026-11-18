@@ -4,7 +4,7 @@
 1-2-1 저장본 → 전송 기능 '지정 안 됨'(Unspecified), 코드 포인트 '(1-2-1)'
 1-1-1 저장본 → 전송 기능 'ITU-R BT.709', 코드 포인트 '(1-1-1)'
 원본: 애플 ProRes 422(avconvert), ProRes 4444 12비트, H.264 MP4.
-사용: python3 mac_inspector_check.py <G-ColorTag.app> <출력 폴더>   (pyobjc ApplicationServices 필요)
+사용: python3 mac_inspector_check.py <G-Retag.app> <출력 폴더>   (pyobjc ApplicationServices 필요)
 """
 import os
 import shutil

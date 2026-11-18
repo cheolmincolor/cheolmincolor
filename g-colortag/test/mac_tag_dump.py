@@ -3,7 +3,7 @@
 
 - 포맷 설명 확장값 전체 (SampleDescriptionExtensionAtoms 안의 colr 원본 바이트 포함)
 - 컨테이너 colr 과 ProRes 프레임 헤더 값을 일부러 다르게 만든 파일로, 퀵타임이 어느 쪽을 읽는지 확인
-사용: <앱>/Contents/MacOS/G-ColorTag-python -I -B test/mac_tag_dump.py <G-ColorTag.app> <출력 폴더>
+사용: <앱>/Contents/MacOS/G-Retag-python -I -B test/mac_tag_dump.py <G-Retag.app> <출력 폴더>
 """
 import os
 import subprocess

@@ -1,13 +1,18 @@
 # Copyright (c) 2026 GRAYZONE. All rights reserved.
-"""G-ColorTag 자동 업데이트.
+"""G-Retag 자동 업데이트.
 
 GitHub 릴리스(태그 colortag-v*)에서 새 버전을 찾아 뒤에서 받아 두고,
 체크섬을 확인한 뒤 앱을 끌 때(또는 '지금 다시 시작'을 누를 때) 교체한다.
+앱이 켜지는 동안(로딩 화면) 바로 한 번 확인하고, 그 뒤로는 6시간마다 확인한다.
 
 릴리스에 올리는 파일 (build_release.sh 가 만듦)
-  colortag-latest.json          {"version", "notes", "files": {"arm64": {...}, "x64": {...}}}
-  G-ColorTag-<ver>-arm64.tar.gz  .app 묶음 (권한·링크 보존)
-  G-ColorTag-<ver>-x64.tar.gz
+  colortag-latest.json   {"version", "notes",
+                          "apps":  {"arm64": {...}, "x64": {...}},   ← 3.6.0 부터: G-Retag.app 묶음
+                          "files": {"arm64": {...}, "x64": {...}}}   ← 예전 G-ColorTag(3.5.0 이하)용
+  G-Retag-<ver>-<arch>.tar.gz          G-Retag.app 묶음 (권한·링크 보존)
+  G-Retag-<ver>-<arch>-legacy.tar.gz   같은 앱을 G-ColorTag.app 이름으로 묶은 것.
+                                       예전 앱의 업데이트 기능은 이 이름만 찾으므로 남겨 둠.
+                                       새 앱은 처음 켜질 때 스스로 G-Retag.app 으로 이름을 바꿈 (migrate.py).
 """
 import hashlib
 import json
@@ -24,7 +29,8 @@ REPO = "cheolmincolor/cheolmincolor"
 TAG_PREFIX = "colortag-v"
 MANIFEST = "colortag-latest.json"
 API = os.environ.get("GCT_UPDATE_API", f"https://api.github.com/repos/{REPO}/releases?per_page=30")
-FIRST_CHECK, INTERVAL = 8, 6 * 3600
+FIRST_CHECK, INTERVAL = 0, 6 * 3600   # 켜지는 동안 바로 확인
+APP_NAMES = ("G-Retag.app", "G-ColorTag.app")  # 업데이트 묶음 안의 앱 이름 (새 이름 먼저)
 
 
 def vtuple(v):
@@ -41,7 +47,7 @@ def arch():
 def curl(url, out=None):
     """시스템 curl 사용 (맥 인증서·프록시 설정을 그대로 씀)."""
     cmd = ["curl", "-fsSL", "--retry", "2", "--connect-timeout", "15",
-           "-H", "User-Agent: G-ColorTag", "-H", "Accept: application/vnd.github+json, */*", url]
+           "-H", "User-Agent: G-Retag", "-H", "Accept: application/vnd.github+json, */*", url]
     if out:
         return subprocess.Popen(cmd[:1] + ["-o", out] + cmd[1:], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     r = subprocess.run(cmd, capture_output=True, timeout=60)
@@ -63,7 +69,7 @@ class Updater:
         self.version, self.log = version, log
         app = os.path.abspath(os.path.join(resources_dir, "..", ".."))
         self.app_path = app if app.endswith(".app") else None
-        self.cache = os.path.expanduser(os.environ.get("GCT_UPDATE_CACHE", "~/Library/Caches/G-ColorTag/updates"))
+        self.cache = os.path.expanduser(os.environ.get("GCT_UPDATE_CACHE", "~/Library/Caches/G-Retag/updates"))
         self.lock = threading.Lock()
         self.prepared = None       # 준비된 새 .app 경로
         self.applied = False
@@ -92,7 +98,7 @@ class Updater:
     def start(self):
         def loop():
             time.sleep(FIRST_CHECK)
-            while True:
+            while True:  # 받는 중·준비됨이면 check() 가 그대로 둠
                 self.check()
                 time.sleep(INTERVAL)
         threading.Thread(target=loop, daemon=True).start()
@@ -128,7 +134,7 @@ class Updater:
         man = json.loads(curl(assets[MANIFEST]))
         if str(man.get("version")) != latest:
             raise RuntimeError("업데이트 정보의 버전이 맞지 않습니다")
-        info = (man.get("files") or {}).get(arch())
+        info = (man.get("apps") or {}).get(arch()) or (man.get("files") or {}).get(arch())
         if not info or info.get("name") not in assets:
             raise RuntimeError("이 맥에 맞는 업데이트 파일이 없습니다")
         self._set(latest=latest, notes=str(man.get("notes", ""))[:2000])
@@ -156,8 +162,8 @@ class Updater:
         x = os.path.join(d, "x")
         os.makedirs(x)
         r = subprocess.run(["tar", "-xzf", pkg, "-C", x], capture_output=True)
-        app = os.path.join(x, "G-ColorTag.app")
-        if r.returncode != 0 or not os.path.isdir(app):
+        app = next((os.path.join(x, n) for n in APP_NAMES if os.path.isdir(os.path.join(x, n))), None)
+        if r.returncode != 0 or not app:
             raise RuntimeError("업데이트 파일을 풀지 못했습니다")
         with open(os.path.join(app, "Contents", "Info.plist"), "rb") as f:
             if plistlib.load(f).get("CFBundleShortVersionString") != latest:

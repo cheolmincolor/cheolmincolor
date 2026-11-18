@@ -5,7 +5,7 @@
 색 확장값에서 나온다. 그 값을 직접 읽어 확인한다.
 원본은 애플 ProRes 인코더(avconvert)로 만든 ProRes 422 / 4444 와 ffmpeg ProRes 4444 12비트·H.264.
 
-사용: <앱>/Contents/MacOS/G-ColorTag-python -I -B test/mac_tag_check.py <G-ColorTag.app> <출력 폴더>
+사용: <앱>/Contents/MacOS/G-Retag-python -I -B test/mac_tag_check.py <G-Retag.app> <출력 폴더>
 """
 import os
 import subprocess

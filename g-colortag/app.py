@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # Copyright (c) 2026 GRAYZONE. All rights reserved.
-"""G-ColorTag — 영상의 Rec.709 색 태그를 고르는 맥용 앱.
+"""G-Retag for QuickTime — 영상의 Rec709 색 태그를 다시 붙이는 맥용 앱. (예전 이름 G-ColorTag)
 
-  1-1-1 : 일반 Rec709
-  1-2-1 : 맥 퀵타임에서 정확하게 보이는 Rec709 (다빈치 리졸브의 Rec.709-A와 같은 태그)
+  Rec709 1-1-1  General           : 일반 Rec709
+  Rec709 1-2-1  For Mac QuickTime : 맥 퀵타임에서 정확하게 보이는 Rec709 (1-2-1 + 감마 2.4 표시, MOV)
   두 파일의 픽셀 밝기는 같고, 플레이어(맥 퀵타임)에서 밝기가 다르게 보이는 문제를 해결하기 위한 것.
 
 화면은 HTML(web/index.html)이고, 맥에서는 WKWebView 창(pywebview)으로 띄운다.
@@ -34,8 +34,9 @@ import colortag as ct  # noqa: E402
 import updater  # noqa: E402
 import qtplayer  # noqa: E402
 
-APP_NAME = "G-ColorTag"
-APP_VERSION = "3.5.0"
+APP_NAME = "G-Retag"
+APP_SUBTITLE = "for QuickTime"
+APP_VERSION = "3.6.0"
 COPYRIGHT = "© 2026 GRAYZONE. All rights reserved."
 TAGS = {"mac": (1, 2, 1), "std": (1, 1, 1)}
 SEG = 10.0          # 미리보기 구간 길이(초)
@@ -43,6 +44,27 @@ PREVIEW_H = 720     # 미리보기 최대 세로 해상도
 MAX_PENDING = 4     # 대기 중인 미리보기 작업 최대 개수
 INDEX = os.path.join(HERE, "web", "index.html")
 VIDEO_EXT = (".mov", ".mp4", ".m4v")
+PREFS = os.path.expanduser(os.environ.get("GCT_PREFS", "~/Library/Application Support/G-Retag/prefs.json"))
+
+
+def load_prefs():
+    try:
+        with open(PREFS, encoding="utf-8") as f:
+            p = json.load(f)
+        return p if isinstance(p, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_prefs(p):
+    try:
+        os.makedirs(os.path.dirname(PREFS), exist_ok=True)
+        tmp = PREFS + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(p, f, ensure_ascii=False)
+        os.replace(tmp, PREFS)
+    except Exception as e:
+        log("prefs save failed:", e)
 
 
 def log(*a):
@@ -192,6 +214,7 @@ class Core:
         self.updater = updater.Updater(APP_VERSION, HERE, log)
         self.updater.start()
         self.fullscreen = False
+        self.prefs = load_prefs()
 
     # 목록
     def add_paths(self, paths):
@@ -249,10 +272,11 @@ class Core:
                              | {"tag": ct.tag_str(f["tag"]) if f["tag"] else "없음", "has_out": bool(f["out"]),
                                 "playable": bool(f["codec"])})
             return {"files": files, "saving": self.saving, "save_target": self.save_target,
-                    "seg_len": SEG, "ffmpeg": bool(shutil.which("ffmpeg")), "app": APP_NAME,
+                    "seg_len": SEG, "ffmpeg": bool(shutil.which("ffmpeg")), "app": APP_NAME, "subtitle": APP_SUBTITLE,
                     "version": APP_VERSION, "update": self.updater.state(),
                     "copyright": COPYRIGHT, "native": NV_STATE, "dnd": self.dnd,
-                    "added_seq": self.added_seq, "last_added": self.last_added}
+                    "added_seq": self.added_seq, "last_added": self.last_added,
+                    "skip_intro": bool(self.prefs.get("skip_intro"))}
 
     # 저장
     def start_save(self, which):
@@ -380,6 +404,16 @@ class Core:
                 raise ApiError("업데이트를 설치할 수 없습니다")
             threading.Timer(0.3, quit_app).start()
             return {"ok": True}
+        if name == "prefs":  # 로딩 화면 '다음부터 바로 시작'
+            if "skip_intro" in data:
+                self.prefs["skip_intro"] = bool(data["skip_intro"])
+                save_prefs(self.prefs)
+            return self.state()
+        if name == "update_page":  # 직접 내려받아야 할 때: 릴리스 페이지 열기
+            page = self.updater.state()["page"]
+            if sys.platform == "darwin":
+                subprocess.run(["open", page])
+            return {"ok": True, "page": page}
         if name == "fullscreen":  # 앱 창 자체를 전체화면으로 (창이 있을 때만)
             on = bool(data.get("on"))
             if WINDOW is not None and on != self.fullscreen:
@@ -570,7 +604,7 @@ def run_window(url):
     global NV_STATE
     if sys.platform == "darwin":
         NV_STATE = "pending"  # 창이 뜨면 켬. 화면은 그때까지 기다림
-    WINDOW = webview.create_window(APP_NAME, url, width=1240, height=820, min_size=(1020, 700),
+    WINDOW = webview.create_window(f"{APP_NAME} {APP_SUBTITLE}", url, width=1240, height=820, min_size=(1020, 700),
                                    background_color="#0e0f12", text_select=False)
     WINDOW.events.loaded += lambda: register_dnd() if not CORE.dnd else None
     if sys.platform == "darwin":
@@ -615,7 +649,7 @@ def run_browser_fallback(url):
 
 
 def main(argv):
-    root = tempfile.mkdtemp(prefix="gcolortag-")
+    root = tempfile.mkdtemp(prefix="gretag-")
     try:
         srv, url = start_server(root, int(os.environ.get("GCT_PORT", "0")))
         if os.environ.get("GCT_NATIVE_SIM") == "1":  # 테스트: 가짜 네이티브 플레이어

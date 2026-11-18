@@ -1,4 +1,4 @@
-G-ColorTag
+G-Retag for QuickTime (예전 이름 G-ColorTag)
 Copyright (c) 2026 GRAYZONE. All rights reserved.
 
 이 소프트웨어와 관련 문서의 저작권은 GRAYZONE에 있습니다.
