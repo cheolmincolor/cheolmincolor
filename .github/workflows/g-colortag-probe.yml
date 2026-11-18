@@ -1,0 +1,32 @@
+# 실험용: 퀵타임 플레이어가 색 태그 방식별로 밝기를 어떻게 보여주는지 실제 맥에서 잰다.
+name: G-ColorTag 퀵타임 태그 실험
+
+on:
+  push:
+    paths:
+      - 'g-colortag/test/probe_qt.py'
+      - '.github/workflows/g-colortag-probe.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 도구 설치
+        run: |
+          brew install ffmpeg
+          python3 -m pip install --break-system-packages -q pyobjc-framework-Quartz || python3 -m pip install -q pyobjc-framework-Quartz
+      - name: 화면 정보
+        run: system_profiler SPDisplaysDataType | sed -n '1,40p'
+      - name: 퀵타임 실험
+        run: python3 g-colortag/test/probe_qt.py "$RUNNER_TEMP/probe"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: g-colortag-probe
+          path: ${{ runner.temp }}/probe/
+          retention-days: 14

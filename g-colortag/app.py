@@ -53,6 +53,40 @@ class ApiError(Exception):
     pass
 
 
+def expand_paths(paths, limit=500):
+    """파일은 그대로, 폴더는 안의 MOV·MP4 를 찾아 넣음 (숨김 파일 제외)."""
+    out = []
+    for p in paths:
+        p = os.path.abspath(os.path.expanduser(str(p)))
+        if os.path.isdir(p):
+            for d, dirs, files in os.walk(p):
+                dirs[:] = sorted(x for x in dirs if not x.startswith("."))
+                out += [os.path.join(d, f) for f in sorted(files)
+                        if f.lower().endswith(VIDEO_EXT) and not f.startswith(".")]
+                if len(out) >= limit:
+                    break
+        else:
+            out.append(p)
+    return out[:limit]
+
+
+def on_drop(event):
+    """창에 끌어다 놓은 파일·폴더 (pywebview 가 실제 경로를 알려줌)."""
+    files = (event.get("dataTransfer") or {}).get("files") or []
+    paths = [f.get("pywebviewFullPath") for f in files if f.get("pywebviewFullPath")]
+    if paths:
+        CORE.add_paths(paths)
+
+
+def register_dnd():
+    try:
+        from webview.dom import DOMEventHandler
+        WINDOW.dom.document.events.drop += DOMEventHandler(on_drop, True, True)
+        CORE.dnd = True
+    except Exception:
+        log("drag and drop off:", traceback.format_exc())
+
+
 def check_709(tag):
     """Rec.709 계열인지. (변환해도 되는 영상인지)"""
     if tag is None:
@@ -153,6 +187,8 @@ class Core:
         self.saving, self.save_target = False, None
         self.previews = Previews(root, self.files)
         self.last_seen = 0.0
+        self.added_seq, self.last_added = 0, []
+        self.dnd = False
         self.updater = updater.Updater(APP_VERSION, HERE, log)
         self.updater.start()
         self.fullscreen = False
@@ -160,6 +196,7 @@ class Core:
     # 목록
     def add_paths(self, paths):
         added = []
+        paths = expand_paths(paths)
         with self.lock:
             known = {f["path"] for f in self.files.values()}
             for p in paths:
@@ -182,6 +219,9 @@ class Core:
                 self.order.append(f["id"])
                 known.add(p)
                 added.append(f["id"])
+            if added:
+                self.added_seq += 1
+                self.last_added = added
         return added
 
     def remove(self, fid):
@@ -211,7 +251,8 @@ class Core:
             return {"files": files, "saving": self.saving, "save_target": self.save_target,
                     "seg_len": SEG, "ffmpeg": bool(shutil.which("ffmpeg")), "app": APP_NAME,
                     "version": APP_VERSION, "update": self.updater.state(),
-                    "copyright": COPYRIGHT, "native": NV_STATE}
+                    "copyright": COPYRIGHT, "native": NV_STATE, "dnd": self.dnd,
+                    "added_seq": self.added_seq, "last_added": self.last_added}
 
     # 저장
     def start_save(self, which):
@@ -515,6 +556,7 @@ def run_window(url):
         NV_STATE = "pending"  # 창이 뜨면 켬. 화면은 그때까지 기다림
     WINDOW = webview.create_window(APP_NAME, url, width=1240, height=820, min_size=(1020, 700),
                                    background_color="#0e0f12", text_select=False)
+    WINDOW.events.loaded += lambda: register_dnd() if not CORE.dnd else None
     if sys.platform == "darwin":
         def on_loaded():
             if NV_STATE == "pending":

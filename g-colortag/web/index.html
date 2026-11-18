@@ -181,6 +181,11 @@
   body.native .screen video { display: none; }
   body.native .ov { background: rgba(14, 15, 18, .55); }
   body.native .ov.idle { background: var(--bg); }
+  #drop { position: fixed; inset: 0; z-index: 75; display: none; align-items: center; justify-content: center; flex-direction: column;
+    gap: 10px; background: rgba(14, 15, 18, .82); border: 3px dashed var(--accent); border-radius: 14px; margin: 10px;
+    pointer-events: none; font-size: 18px; font-weight: 700; }
+  #drop span { font-size: 13px; font-weight: 400; color: var(--sub); }
+  body.dragging #drop { display: flex; }
   #toast { z-index: 70; position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%) translateY(20px); opacity: 0;
     background: #262a33; border: 1px solid var(--line2); color: var(--text); padding: 11px 18px; border-radius: 10px;
     font-size: 13.5px; box-shadow: 0 10px 30px rgba(0, 0, 0, .45); transition: opacity .2s, transform .2s; pointer-events: none; }
@@ -198,7 +203,7 @@
     <aside>
       <div class="side-head"><b>영상 목록</b><span id="count" class="link"></span></div>
       <ul id="list"></ul>
-      <div id="emptyList" class="empty">‘+ 영상 추가’를 눌러<br>MOV · MP4 영상을 넣으세요<br><br>여러 개를 한 번에 고를 수 있어요</div>
+      <div id="emptyList" class="empty">영상을 이 창에 끌어다 놓거나<br>‘+ 영상 추가’를 누르세요<br><br>MOV · MP4 · 폴더째 넣을 수 있어요</div>
       <div class="side-foot"><button id="clearBtn" class="link">목록 비우기</button>
         <span class="link"><button id="aboutBtn" class="link"><span id="ver"></span></button> · <button id="updCheck" class="link">업데이트 확인</button></span></div>
       <div class="copy">© 2026 GRAYZONE. All rights reserved.</div>
@@ -288,6 +293,7 @@
     <button id="aboutClose" class="btn">닫기</button>
   </div>
 </div>
+<div id="drop">여기에 놓으면 목록에 추가됩니다<span>MOV · MP4 파일이나 폴더</span></div>
 <div id="toast"></div>
 
 <script>
@@ -329,7 +335,7 @@ function toast(msg) {
 
 /* ------------------------------------------------------------ 상태 */
 let S = { files: [], saving: false, seg_len: 10, ffmpeg: true };
-let curId = null, choice = null, lastJSON = "", wasSaving = false;
+let curId = null, choice = null, lastJSON = "", wasSaving = false, addedSeen = null;
 const fileById = (id) => S.files.find((f) => f.id === id);
 
 function apply(st) {
@@ -351,6 +357,14 @@ function apply(st) {
   renderSave();
   renderStage();
   renderUpdate();
+  if (S.added_seq && S.added_seq !== addedSeen) {  // 끌어다 놓기 등으로 새로 들어온 영상 → 첫 번째를 보여줌
+    if (addedSeen !== null && S.last_added && S.last_added.length) {
+      selectFile(S.last_added[0]);
+      toast("영상 " + S.last_added.length + "개를 추가했습니다");
+    }
+    addedSeen = S.added_seq;
+  }
+  if (addedSeen === null) addedSeen = S.added_seq || 0;
   if (wasSaving && !S.saving) summary();
   wasSaving = S.saving;
 }
@@ -908,6 +922,23 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") { e.preventDefault(); exitFs(); }
   else if (e.key === "Tab") { e.preventDefault(); enterFs(fsTag === "mac" ? "std" : "mac"); }
   wake();
+});
+
+/* ------------------------------------------------------------ 끌어다 놓기 */
+let dragDepth = 0;
+const hasFiles = (e) => e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files");
+document.addEventListener("dragenter", (e) => { if (!hasFiles(e)) return; dragDepth++; document.body.classList.add("dragging"); });
+document.addEventListener("dragleave", (e) => {
+  if (!hasFiles(e)) return;
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (!dragDepth) document.body.classList.remove("dragging");
+});
+document.addEventListener("dragover", (e) => { if (hasFiles(e)) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; } });
+document.addEventListener("drop", (e) => {
+  e.preventDefault();  // 파일이 창 안에서 열리지 않게
+  dragDepth = 0;
+  document.body.classList.remove("dragging");
+  if (!S.dnd) toast("이 실행 방식에서는 끌어다 놓기를 쓸 수 없어요. ‘+ 영상 추가’를 눌러 주세요");
 });
 
 /* ------------------------------------------------------------ 업데이트 */
