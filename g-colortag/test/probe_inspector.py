@@ -72,7 +72,12 @@ for name in sorted(f for f in os.listdir(OUT) if f.endswith(".mov")):
     if name of w contains "Inspector" or name of w contains "속성" then
       repeat with e in (entire contents of w)
         try
-          if class of e is static text then set out to out & (value of e as text) & " | "
+          set v to value of e
+          if v is not missing value and (v as text) is not "" then set out to out & (v as text) & " | "
+        end try
+        try
+          set d to description of e
+          if d is not missing value and d is not "" and d is not "text" and d is not "group" then set out to out & "{" & d & "} "
         end try
       end repeat
     end if
@@ -80,7 +85,9 @@ for name in sorted(f for f in os.listdir(OUT) if f.endswith(".mov")):
   return out
 end tell"""
     r = osa(script)
-    print("   속성 창:", (r.stdout.strip() or r.stderr.strip())[:1500], flush=True)
+    print("   속성 창:", (r.stdout.strip() or r.stderr.strip())[:2500], flush=True)
+    r2 = osa('tell application "System Events" to tell process "QuickTime Player" to get {name, class} of every UI element of every window')
+    print("   창 구성:", (r2.stdout.strip() or r2.stderr.strip())[:600], flush=True)
     for k, w in enumerate(windows()):
         shot(w["kCGWindowNumber"], j(f"inspector_{name[:-4]}_{k}.png"))
     subprocess.run(["killall", "QuickTime Player"], capture_output=True)
