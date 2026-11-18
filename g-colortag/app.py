@@ -35,7 +35,7 @@ import updater  # noqa: E402
 import qtplayer  # noqa: E402
 
 APP_NAME = "G-ColorTag"
-APP_VERSION = "3.4.0"
+APP_VERSION = "3.4.1"
 COPYRIGHT = "© 2026 GRAYZONE. All rights reserved."
 TAGS = {"mac": (1, 2, 1), "std": (1, 1, 1)}
 SEG = 10.0          # 미리보기 구간 길이(초)
@@ -290,9 +290,23 @@ class Core:
                 try:
                     out = ct.convert_file(f["path"], tag, progress=prog)
                     got = ct.tag_str(ct.read_tracks(out)[0]["tag"])
+                    log("save", os.path.basename(f["path"]), "→", os.path.basename(out),
+                        "| 원본:", ct.describe(f["path"]), "| 저장본:", ct.describe(out))
                     if got != want:
                         raise RuntimeError(f"확인 결과 태그가 {got} 입니다")
-                    f.update(status="done", result=os.path.basename(out), out=out, progress=100)
+                    qt = None
+                    if sys.platform == "darwin":  # 퀵타임과 같은 방식으로 다시 읽어 확인
+                        try:
+                            qt = qtplayer.quicktime_code(out)
+                        except Exception as e:
+                            log("quicktime check failed:", e)
+                    log("save check: 파일", got, "| 퀵타임 기준", qt)
+                    if qt and qt != want:
+                        f.update(status="error", out=out, progress=100,
+                                 result=f"퀵타임이 ({qt})로 읽음 — 기록 파일을 보내 주세요")
+                        continue
+                    note = f" · 퀵타임 ({qt}) 확인" if qt else ""
+                    f.update(status="done", result=os.path.basename(out) + note, out=out, progress=100)
                 except Exception as e:
                     msg = str(e).strip().splitlines()[-1] if str(e).strip() else "알 수 없는 오류"
                     f.update(status="error", result=msg[:120])

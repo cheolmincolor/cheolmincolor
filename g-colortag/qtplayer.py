@@ -16,6 +16,28 @@ import threading
 import time
 
 
+CODE = {"ITU_R_709_2": 1, "SMPTE_C": 6, "EBU_3213": 5, "P22": 5, "ITU_R_2020": 9, "DCI_P3": 11, "P3_D65": 12,
+        "SMPTE_240M_1995": 7, "ITU_R_601_4": 6, "IEC_sRGB": 13, "SMPTE_ST_2084_PQ": 16, "ITU_R_2100_HLG": 18,
+        "Linear": 8, "UseGamma": "γ"}
+
+
+def quicktime_code(path):
+    """퀵타임 '동영상 속성'의 코드 포인트를 같은 방식(AVFoundation)으로 읽음 → '1-2-1' 같은 문자열. 맥 전용."""
+    import AVFoundation as AV
+    import CoreMedia as CM
+    from Foundation import NSURL
+    asset = AV.AVURLAsset.URLAssetWithURL_options_(NSURL.fileURLWithPath_(path), None)
+    tracks = asset.tracksWithMediaType_(AV.AVMediaTypeVideo)
+    if not tracks:
+        return None
+    e = CM.CMFormatDescriptionGetExtensions(tracks[0].formatDescriptions()[0]) or {}
+    vals = []
+    for k in ("CVImageBufferColorPrimaries", "CVImageBufferTransferFunction", "CVImageBufferYCbCrMatrix"):
+        v = e.get(k)
+        vals.append(str(CODE.get(str(v), v)) if v is not None else "2")  # 없으면 '지정 안 됨'(2)
+    return "-".join(vals)
+
+
 class _Base:
     def __init__(self, resolve):
         self.resolve = resolve          # 미디어 주소 → 파일 경로

@@ -50,12 +50,13 @@ api("save", {"tag": "mac"})
 while api("state")["saving"]: time.sleep(0.3)
 for f in api("state")["files"]:
     assert f["status"] == "done", f
-    out = os.path.join(V, f["result"])
+    out = os.path.join(V, f["result"].split(" · ")[0])
     tag = ct.tag_str(ct.read_tracks(out)[0]["tag"])
     md5 = lambda p: subprocess.run(["ffmpeg", "-v", "error", "-i", p, "-map", "0:v", "-f", "md5", "-"], capture_output=True, text=True).stdout
     same = md5(out) == md5(f["path"])
     print(f"  저장 {f['result']}: 태그 {tag} | 픽셀 원본과 동일 {same}")
     assert tag == "1-2-1" and same
+    assert "퀵타임 (1-2-1) 확인" in f["result"], f["result"]
 print("서버 테스트 통과")
 EOF
 grep -i "traceback\|server error\|preview error\|save error" "$W/app.log" && { echo "앱 기록에 오류가 있습니다"; exit 1; } || true

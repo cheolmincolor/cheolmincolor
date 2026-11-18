@@ -100,7 +100,10 @@ for s in srcs:
         bad += 1
         continue
     got, extra = inspector(out)
-    good = got == WANT
+    import qtplayer
+    qs, qo = qtplayer.quicktime_code(s), qtplayer.quicktime_code(out)
+    print(f"   앱의 퀵타임 기준 확인: 원본 ({qs}) → 저장본 ({qo})")
+    good = got == WANT and qo == "1-2-1" and qs == "1-1-1"
     bad += not good
     print(f"   {'✅' if good else '❌'} 저장본 속성 {got} {extra} | 아톰 {atoms(out)}")
 print("결과:", "모두 (1-2-1) ✅" if not bad else f"{bad}개 실패 ❌")

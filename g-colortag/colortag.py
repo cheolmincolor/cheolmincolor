@@ -89,6 +89,40 @@ def read_tracks(path):
     return tracks
 
 
+def describe(path):
+    """진단용: 영상 샘플 설명 안의 아톰과 colr 값 (예: 'ap4h[fiel, colr:nclc:1-2-1, pasp]')."""
+    out = []
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, 2)
+            size = f.tell()
+            hd = [None]
+
+            def walk(s, e, parent=""):
+                for t, b, end in _boxes(f, s, e):
+                    if t in CONTAINERS:
+                        walk(b, end, t)
+                    elif t == "hdlr" and parent == "mdia":
+                        f.seek(b + 8)
+                        hd[0] = f.read(4).decode("latin-1")
+                    elif t == "stsd" and hd[0] == "vide":
+                        for c, eb, ee in _boxes(f, b + 8, end):
+                            kids = []
+                            for k, kb, ke in _boxes(f, eb + 78, ee):
+                                if k == "colr":
+                                    f.seek(kb)
+                                    kind = f.read(4).decode("latin-1")
+                                    vals = "-".join(str(v) for v in struct.unpack(">HHH", f.read(6))) if kind in ("nclc", "nclx") else f"{ke - kb}B"
+                                    kids.append(f"colr:{kind}:{vals}")
+                                else:
+                                    kids.append(k)
+                            out.append(f"{c}[{', '.join(kids)}]")
+            walk(0, size)
+    except (OSError, struct.error) as e:
+        out.append(f"읽기 실패 {e}")
+    return " ".join(out) or "영상 트랙 없음"
+
+
 def tag_str(tag):
     return "-".join(map(str, tag)) if tag else "없음"
 
