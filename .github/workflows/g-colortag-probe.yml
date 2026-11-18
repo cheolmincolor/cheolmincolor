@@ -21,7 +21,7 @@ jobs:
       - name: 도구 설치
         run: |
           brew install ffmpeg
-          python3 -m pip install --break-system-packages -q pyobjc-framework-Quartz pyobjc-framework-AVFoundation || python3 -m pip install -q pyobjc-framework-Quartz pyobjc-framework-AVFoundation
+          python3 -m pip install --break-system-packages -q pyobjc-framework-Quartz pyobjc-framework-AVFoundation pyobjc-framework-ApplicationServices || python3 -m pip install -q pyobjc-framework-Quartz pyobjc-framework-AVFoundation pyobjc-framework-ApplicationServices
       - name: 화면 정보
         run: system_profiler SPDisplaysDataType | sed -n '1,40p'
       - name: 퀵타임 문구 조건 찾기

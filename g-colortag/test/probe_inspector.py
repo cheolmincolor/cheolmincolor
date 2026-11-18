@@ -36,7 +36,52 @@ subprocess.run(["avconvert", "-s", j("src.mov"), "-o", j("1_apple_111.mov"), "-p
 shutil.move(ct.convert_file(j("1_apple_111.mov"), (1, 2, 1)), j("2_app_121.mov"))
 patch(j("2_app_121.mov"), j("3_patched_131.mov"), (1, 3, 1))
 patch(j("2_app_121.mov"), j("4_patched_101.mov"), (1, 0, 1))
+
+
+def colr_first(src, dst):
+    """샘플 설명 안에서 fiel 과 colr 의 순서를 바꿈 (colr 를 맨 앞으로)."""
+    d = bytearray(open(src, "rb").read())
+    c = d.find(b"colrnclc") - 4
+    f = d.rfind(b"fiel", 0, c) - 4
+    fsz = struct.unpack(">I", d[f:f + 4])[0]
+    csz = struct.unpack(">I", d[c:c + 4])[0]
+    assert f + fsz == c, "fiel 바로 뒤에 colr 가 아님"
+    d[f:c + csz] = d[c:c + csz] + d[f:f + fsz]
+    open(dst, "wb").write(bytes(d))
+
+
+colr_first(j("2_app_121.mov"), j("5_app_121_colrfirst.mov"))
 os.remove(j("src.mov"))
+
+
+def ax_text():
+    """접근성 API 로 퀵타임의 모든 창 글자를 읽음."""
+    try:
+        import AppKit
+        import ApplicationServices as AS
+        app = [a for a in AppKit.NSWorkspace.sharedWorkspace().runningApplications()
+               if a.bundleIdentifier() == "com.apple.QuickTimePlayerX"][0]
+        root = AS.AXUIElementCreateApplication(app.processIdentifier())
+        out = []
+
+        def get(el, attr):
+            err, v = AS.AXUIElementCopyAttributeValue(el, attr, None)
+            return v if err == 0 else None
+
+        def walk(el, depth=0):
+            if depth > 30 or len(out) > 400:
+                return
+            for attr in ("AXValue", "AXTitle"):
+                v = get(el, attr)
+                if isinstance(v, str) and v.strip():
+                    out.append(v.strip())
+            for ch in get(el, "AXChildren") or []:
+                walk(ch, depth + 1)
+        for w in get(root, "AXWindows") or []:
+            walk(w)
+        return " | ".join(out)
+    except Exception as e:
+        return f"AX 실패 {e}"
 
 
 def osa(script):
@@ -84,8 +129,7 @@ for name in sorted(f for f in os.listdir(OUT) if f.endswith(".mov")):
   end repeat
   return out
 end tell"""
-    r = osa(script)
-    print("   속성 창:", (r.stdout.strip() or r.stderr.strip())[:2500], flush=True)
+    print("   속성 창:", ax_text()[:2500], flush=True)
     r2 = osa('tell application "System Events" to tell process "QuickTime Player" to get {name, class} of every UI element of every window')
     print("   창 구성:", (r2.stdout.strip() or r2.stderr.strip())[:600], flush=True)
     for k, w in enumerate(windows()):
