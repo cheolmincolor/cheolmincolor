@@ -125,6 +125,11 @@ func TestReportIsRecoveredAfterACrash(t *testing.T) {
 // Two names that only differ in case, onto a volume that ignores case.
 func TestNamesThatCollideOnTheDestination(t *testing.T) {
 	tmp := t.TempDir()
+	if probeFolding(tmp).caseless {
+		// a Mac disk cannot hold both names; volumes_darwin_test.go covers
+		// this with a case-sensitive disk image
+		t.Skip("the temporary folder ignores case")
+	}
 	src, dst := filepath.Join(tmp, "A001"), filepath.Join(tmp, "NAS")
 	writeFile(t, filepath.Join(src, "Clip.mov"), []byte("one"), day)
 	writeFile(t, filepath.Join(src, "clip.mov"), []byte("two!"), day)
