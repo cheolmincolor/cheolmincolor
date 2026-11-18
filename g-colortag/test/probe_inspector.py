@@ -59,9 +59,8 @@ def ax_text():
     try:
         import AppKit
         import ApplicationServices as AS
-        app = [a for a in AppKit.NSWorkspace.sharedWorkspace().runningApplications()
-               if a.bundleIdentifier() == "com.apple.QuickTimePlayerX"][0]
-        root = AS.AXUIElementCreateApplication(app.processIdentifier())
+        pid = int(subprocess.run(["pgrep", "-x", "QuickTime Player"], capture_output=True, text=True).stdout.split()[0])
+        root = AS.AXUIElementCreateApplication(pid)
         out = []
 
         def get(el, attr):
