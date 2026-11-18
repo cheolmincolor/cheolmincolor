@@ -62,13 +62,25 @@ for name in sorted(f for f in os.listdir(OUT) if f.endswith(".mov")):
     subprocess.run(["open", "-a", "QuickTime Player", j(name)])
     time.sleep(4)
     osa('tell application "QuickTime Player" to activate')
-    r = osa('tell application "System Events" to keystroke "i" using command down')
-    if r.returncode:
-        print("   속성 창 열기 실패:", r.stderr.strip()[:200])
+    has = osa('tell application "System Events" to tell process "QuickTime Player" to get name of every window').stdout
+    if "Inspector" not in has and "속성" not in has:
+        osa('tell application "System Events" to keystroke "i" using command down')
     time.sleep(3)
-    # 접근성 권한이 있으면 속성 창의 글자도 읽음
-    r = osa('tell application "System Events" to tell process "QuickTime Player" to get value of every static text of every window')
-    print("   창 글자:", (r.stdout.strip() or r.stderr.strip())[:900])
+    script = """tell application "System Events" to tell process "QuickTime Player"
+  set out to ""
+  repeat with w in windows
+    if name of w contains "Inspector" or name of w contains "속성" then
+      repeat with e in (entire contents of w)
+        try
+          if class of e is static text then set out to out & (value of e as text) & " | "
+        end try
+      end repeat
+    end if
+  end repeat
+  return out
+end tell"""
+    r = osa(script)
+    print("   속성 창:", (r.stdout.strip() or r.stderr.strip())[:1500], flush=True)
     for k, w in enumerate(windows()):
         shot(w["kCGWindowNumber"], j(f"inspector_{name[:-4]}_{k}.png"))
     subprocess.run(["killall", "QuickTime Player"], capture_output=True)
