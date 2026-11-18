@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -34,6 +35,9 @@ func (m *deviceModel) hook(dev string, n int) {
 	d := m.devs[dev]
 	if d == nil {
 		bw := m.def[dev]
+		if bw == 0 && strings.HasPrefix(dev, "src") {
+			bw = m.def["src"]
+		}
 		if bw == 0 {
 			bw = m.def["*"]
 		}
@@ -49,10 +53,23 @@ func (m *deviceModel) hook(dev string, n int) {
 }
 
 func benchRun(t *testing.T, name string, files []int64, dests int, srcBW, dstBW float64) time.Duration {
+	return benchRunN(t, name, 1, files, dests, srcBW, dstBW)
+}
+
+// benchRunN backs up nsrc source disks, each holding files.
+func benchRunN(t *testing.T, name string, nsrc int, files []int64, dests int, srcBW, dstBW float64) time.Duration {
 	tmp := t.TempDir()
-	src := filepath.Join(tmp, "A001")
-	for i, sz := range files {
-		writeFile(t, filepath.Join(src, fmt.Sprintf("f%04d.mov", i)), randBytes(int64(i), int(sz)), day)
+	var srcs []string
+	for s := 0; s < nsrc; s++ {
+		src := filepath.Join(tmp, fmt.Sprintf("A%03d", s+1))
+		for i, sz := range files {
+			writeFile(t, filepath.Join(src, fmt.Sprintf("f%04d.mov", i)), randBytes(int64(s*1000+i), int(sz)), day)
+		}
+		srcs = append(srcs, src)
+	}
+	files = append([]int64(nil), files...)
+	for s := 1; s < nsrc; s++ {
+		files = append(files, files[:len(files)/s]...)
 	}
 	var ds []string
 	for d := 0; d < dests; d++ {
@@ -64,7 +81,7 @@ func benchRun(t *testing.T, name string, files []int64, dests int, srcBW, dstBW 
 	testIOHook = m.hook
 	defer func() { testIOHook = nil }()
 	t0 := time.Now()
-	st := runJob(t, Options{Sources: []string{src}, Destinations: ds, Subfolder: true}, nil)
+	st := runJob(t, Options{Sources: srcs, Destinations: ds, Subfolder: true}, nil)
 	el := time.Since(t0)
 	if st.Status != StatusDone {
 		t.Fatalf("%s: %s %+v", name, st.Status, st.Errors)
@@ -75,8 +92,8 @@ func benchRun(t *testing.T, name string, files []int64, dests int, srcBW, dstBW 
 	}
 	busy := ""
 	for k, d := range m.devs {
-		if k == "src" {
-			k = "card"
+		if strings.HasPrefix(k, "src") {
+			k = "disk" + k[3:]
 		} else {
 			k = filepath.Base(k)
 		}
@@ -101,4 +118,8 @@ func TestBenchCopySpeed(t *testing.T) {
 	benchRun(t, "clips -> NAS + DAS", big, 2, 600e6, 600e6)
 	benchRun(t, "image sequence -> 1 NAS", small, 1, 600e6, 600e6)
 	benchRun(t, "clips, fast card -> slow NAS", big, 1, 1500e6, 300e6)
+	// two disks into one server
+	three := big[:3]
+	benchRunN(t, "2 disks (300) -> fast NAS (1000)", 2, three, 1, 300e6, 1000e6)
+	benchRunN(t, "2 disks (300) -> 1GbE NAS (110)", 2, three, 1, 300e6, 110e6)
 }

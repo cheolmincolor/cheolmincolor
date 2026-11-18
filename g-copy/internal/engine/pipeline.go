@@ -237,6 +237,9 @@ func hashFile(ctx context.Context, path, algo, dev string, progress func(int64))
 	return h.Sum(nil), total, nil
 }
 
+// srcDev names source s for the test I/O hook.
+func srcDev(s int) string { return fmt.Sprintf("src%d", s) }
+
 // ── dispatch ───────────────────────────────────────────────────────────
 
 // copyAll hands the files to the pipeline, in order.
@@ -590,7 +593,7 @@ func (j *Job) copyPass(f *srcFile, works []*destWork, add func(int64)) []byte {
 
 	h := newHasher(j.opts.Algo)
 	var total int64
-	srcErr := readChunks(j.ctx, src, "src", func(chunk []byte) bool {
+	srcErr := readChunks(j.ctx, src, srcDev(f.src), func(chunk []byte) bool {
 		anyAlive := false
 		for _, w := range works {
 			anyAlive = anyAlive || w.alive()
