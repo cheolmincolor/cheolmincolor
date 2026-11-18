@@ -34,7 +34,7 @@ for target in $TARGETS; do
     --asar --extra-resource=engine --icon=build/icon \
     --app-bundle-id=app.gcopy.desktop --app-version="$VERSION" \
     --app-category-type=public.app-category.utilities --extend-info=build/mac-info.plist \
-    --ignore='^/(dist|engine|build|package\.sh|README\.md)($|/)' --quiet
+    --ignore='^/(dist|engine|build|package\.sh|make-release\.mjs|RELEASE_NOTES\.md|README\.md)($|/)' --quiet
   rm -rf engine
 
   # 3. zip it

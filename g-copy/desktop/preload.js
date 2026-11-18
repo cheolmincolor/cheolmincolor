@@ -28,4 +28,11 @@ contextBridge.exposeInMainWorld('gcopyNative', {
   // Start G-Copy at login (so schedules run after a restart).
   getLoginItem: () => ipcRenderer.invoke('login-item'),
   setLoginItem: (on) => ipcRenderer.invoke('login-item', !!on),
+
+  // Updates: the current state, check now, restart into a downloaded update,
+  // and a callback for changes ({status, version, progress, notes, message}).
+  getUpdate: () => ipcRenderer.invoke('update', 'get'),
+  checkUpdate: () => ipcRenderer.invoke('update', 'check'),
+  installUpdate: () => ipcRenderer.invoke('update', 'install'),
+  onUpdate: (fn) => { ipcRenderer.on('update', (_e, state) => fn(state)); },
 });

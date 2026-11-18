@@ -1,0 +1,65 @@
+# Builds G-Copy for Mac and publishes it as a GitHub release, which the
+# installed apps pick up through their automatic update check.
+#
+# To release: set the version in g-copy/desktop/package.json, write the
+# notes in g-copy/desktop/RELEASE_NOTES.md, commit, then push a tag:
+#
+#   git tag g-copy-v0.7.0 && git push origin g-copy-v0.7.0
+#
+# Needs one repository secret, GCOPY_UPDATE_KEY: the private signing key
+# (the whole PEM text) that matches g-copy/desktop/update-key.pem.
+
+name: G-Copy release
+
+on:
+  push:
+    tags: ['g-copy-v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: g-copy/desktop
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: g-copy/go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check that the tag matches the app version
+        run: |
+          v=$(node -p "require('./package.json').version")
+          [ "${GITHUB_REF_NAME}" = "g-copy-v$v" ] || { echo "tag ${GITHUB_REF_NAME} does not match version $v"; exit 1; }
+
+      - name: Test
+        working-directory: g-copy
+        run: go test ./...
+
+      - name: Build the Mac apps
+        run: |
+          npm ci
+          OUT=dist bash package.sh
+
+      - name: Write and sign the update manifest
+        env:
+          GCOPY_UPDATE_KEY: ${{ secrets.GCOPY_UPDATE_KEY }}
+        run: |
+          notes=""; [ -f RELEASE_NOTES.md ] && notes=RELEASE_NOTES.md
+          node make-release.mjs dist "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}" $notes
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes=""; [ -f RELEASE_NOTES.md ] && notes="--notes-file RELEASE_NOTES.md"
+          gh release create "${GITHUB_REF_NAME}" --title "G-Copy ${GITHUB_REF_NAME#g-copy-v}" $notes --latest \
+            dist/G-Copy-*-mac-*.zip dist/latest.json dist/latest.json.sig

@@ -10,6 +10,8 @@
 const { app, BrowserWindow, Menu, Notification, Tray, dialog, ipcMain, nativeImage, powerSaveBlocker, shell } = require('electron');
 const { spawn } = require('node:child_process');
 const path = require('node:path');
+const { Updater } = require('./updater');
+const pkg = require('./package.json');
 
 let engine = null;        // child process
 let engineOrigin = '';    // e.g. http://127.0.0.1:51234
@@ -24,6 +26,9 @@ let scheduleText = '';    // "Next: …", for the menu bar
 let tray = null;
 let awake = -1;           // power save blocker id while a backup runs
 let toldAboutBackground = false;
+let updater = null;
+let relaunchAfterUpdate = false; // "Restart to Update" was clicked
+let swapStarted = false;
 
 function enginePath() {
   if (process.env.GCOPY_ENGINE) return process.env.GCOPY_ENGINE;
@@ -165,11 +170,51 @@ function updateTray() {
 
 function buildMenu() {
   const isMac = process.platform === 'darwin';
+  const updates = [
+    { label: 'Check for Updates…', enabled: !!updater, click: () => checkForUpdates() },
+    { label: 'Check for Updates Automatically', type: 'checkbox', checked: !updater || updater.prefs.auto, enabled: !!updater, click: (item) => updater && updater.setAuto(item.checked) },
+  ];
   Menu.setApplicationMenu(Menu.buildFromTemplate([
-    ...(isMac ? [{ role: 'appMenu' }] : []),
+    ...(isMac ? [{
+      label: app.name,
+      submenu: [{ role: 'about' }, { type: 'separator' }, ...updates, { type: 'separator' },
+        { role: 'services' }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }],
+    }] : []),
     { role: 'editMenu' },   // copy and paste in the path field need this on macOS
     { role: 'windowMenu' },
+    ...(isMac ? [] : [{ label: 'Help', submenu: updates }]),
   ]));
+}
+
+// ── updates ──────────────────────────────────────────────────────────────
+
+function sendUpdate(state) {
+  if (win && !win.isDestroyed()) win.webContents.send('update', state);
+}
+
+async function checkForUpdates() {
+  if (!updater) return;
+  const s = await updater.check(true);
+  const box = (o) => (win ? dialog.showMessageBox(win, o) : dialog.showMessageBox(o));
+  if (s.status === 'uptodate') box({ type: 'info', message: 'G-Copy is up to date', detail: 'Version ' + app.getVersion() + ' is the latest.' });
+  else if (s.status === 'error' || s.status === 'unavailable') box({ type: 'warning', message: 'Could not check for updates', detail: s.message });
+  else if (s.status === 'ready') showWindow(); // the window shows the update and its notes
+}
+
+function startUpdater() {
+  try {
+    updater = new Updater({
+      feed: process.env.GCOPY_UPDATE_FEED || pkg.updateFeed,
+      publicKeyPath: path.join(__dirname, 'update-key.pem'),
+      onChange: sendUpdate,
+      log: (m) => console.log('[update] ' + m),
+    });
+  } catch (e) {
+    console.log('[update] disabled: ' + e.message);
+    return;
+  }
+  buildMenu();
+  updater.start();
 }
 
 // Only pages served by our own engine may call into the shell.
@@ -213,6 +258,19 @@ ipcMain.handle('login-item', (event, value) => {
   return app.getLoginItemSettings().openAtLogin;
 });
 
+ipcMain.handle('update', async (event, action) => {
+  if (!trusted(event) || !updater) return { status: 'unavailable', message: 'Updates are not available in this build.' };
+  if (action === 'check') return updater.check(true);
+  if (action === 'install') {
+    if (busy) return { ...updater.state, message: 'Wait until the backup has finished.' };
+    if (!updater.ready) return updater.state;
+    relaunchAfterUpdate = true;
+    setTimeout(() => app.quit(), 50);
+    return { ...updater.state, status: 'installing' };
+  }
+  return updater.state;
+});
+
 ipcMain.on('notify', (event, title, body) => {
   if (!trusted(event) || !win || win.isFocused()) return;
   if (Notification.isSupported()) {
@@ -236,6 +294,7 @@ if (!app.requestSingleInstanceLock()) {
     updateTray();
     try {
       createWindow(await startEngine());
+      startUpdater();
     } catch (e) {
       dialog.showErrorBox('G-Copy could not start', e.message);
       shuttingDown = true;
@@ -254,9 +313,13 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.on('will-quit', (e) => {
-    if (!engine || engine.exitCode !== null) return;
-    e.preventDefault(); // wait for the engine to clean up, then quit for real
-    shuttingDown = true;
-    stopEngine().finally(() => app.quit());
+    if (engine && engine.exitCode === null) {
+      e.preventDefault(); // wait for the engine to clean up, then quit for real
+      shuttingDown = true;
+      stopEngine().finally(() => app.quit());
+      return;
+    }
+    // A downloaded update is put in place as G-Copy quits.
+    if (updater && updater.ready && !swapStarted) swapStarted = updater.install(relaunchAfterUpdate);
   });
 }

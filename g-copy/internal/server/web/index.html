@@ -34,6 +34,7 @@
     <span class="tagline">Copy · Verify · Incremental backup</span>
   </div>
   <div class="top-actions">
+    <button class="btn update-pill" id="update-pill" type="button" hidden><span class="dot" aria-hidden="true"></span><span id="update-pill-text">Update ready</span></button>
     <button class="btn ghost" id="btn-schedules" type="button"><svg class="ico"><use href="#i-cal"/></svg>Schedules<span class="next-run" id="next-run"></span></button>
     <button class="btn ghost" id="btn-history" type="button"><svg class="ico"><use href="#i-clock"/></svg>History</button>
   </div>
@@ -244,6 +245,23 @@
     <span class="grow"></span>
     <button class="btn ghost" data-close type="button">Cancel</button>
     <button class="btn primary" id="se-save" type="submit" form="se-form">Save</button>
+  </div>
+</dialog>
+
+<dialog id="update-dlg" aria-labelledby="up-title">
+  <div class="dlg-head">
+    <h3 id="up-title">Update</h3>
+    <button class="iconbtn" data-close type="button" aria-label="Close"><svg class="ico"><use href="#i-x"/></svg></button>
+  </div>
+  <div class="up-body">
+    <p class="up-sub" id="up-sub"></p>
+    <div class="up-notes" id="up-notes"></div>
+    <p class="formerr" id="up-err" role="alert" hidden></p>
+  </div>
+  <div class="dlg-foot">
+    <span class="grow up-hint" id="up-hint">It is also installed the next time you quit G-Copy.</span>
+    <button class="btn ghost" data-close type="button">Later</button>
+    <button class="btn primary" id="up-install" type="button">Restart to Update</button>
   </div>
 </dialog>
 

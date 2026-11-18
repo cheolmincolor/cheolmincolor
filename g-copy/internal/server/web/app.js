@@ -1155,6 +1155,58 @@ $('se-form').addEventListener('submit', async (e) => {
   renderSchedules();
 });
 
+// ── updates (desktop app only) ─────────────────────────────────────────
+
+const updates = { state: null };
+
+function renderUpdate(st) {
+  updates.state = st;
+  const pill = $('update-pill');
+  if (st.status === 'ready') {
+    pill.hidden = false;
+    pill.classList.remove('loading');
+    $('update-pill-text').textContent = 'Update ' + st.version + ' ready';
+  } else if (st.status === 'downloading') {
+    pill.hidden = false;
+    pill.classList.add('loading');
+    $('update-pill-text').textContent = 'Downloading ' + st.version + (st.progress ? ' · ' + Math.floor(st.progress * 100) + '%' : '');
+  } else {
+    pill.hidden = true;
+  }
+  if ($('update-dlg').open) renderUpdateDialog();
+}
+
+function renderUpdateDialog() {
+  const st = updates.state || {};
+  const busy = state.mode === 'running' || state.mode === 'confirm' || (bannerJob && !FINISHED.includes(bannerJob.status));
+  $('up-title').textContent = st.status === 'ready' ? 'G-Copy ' + st.version + ' is ready' : 'Downloading G-Copy ' + (st.version || '');
+  $('up-sub').textContent = st.status === 'ready'
+    ? 'You have ' + st.current + '. Restarting takes a few seconds; your schedules and settings are kept.'
+    : 'The update is being downloaded and checked' + (st.progress ? ' (' + Math.floor(st.progress * 100) + '%)' : '') + '.';
+  $('up-notes').textContent = st.notes || '';
+  const btn = $('up-install');
+  btn.disabled = st.status !== 'ready' || busy;
+  btn.title = busy ? 'Wait until the backup has finished' : '';
+  $('up-hint').textContent = busy ? 'A backup is running — it will be installed after you quit G-Copy.' : 'It is also installed the next time you quit G-Copy.';
+}
+
+if (native && native.getUpdate) {
+  $('update-pill').addEventListener('click', () => { $('up-err').hidden = true; renderUpdateDialog(); $('update-dlg').showModal(); });
+  $('up-install').addEventListener('click', async () => {
+    $('up-install').disabled = true;
+    const r = await native.installUpdate();
+    if (r.status !== 'installing') {
+      $('up-err').textContent = r.message || 'The update could not be installed.';
+      $('up-err').hidden = false;
+      renderUpdateDialog();
+    } else {
+      $('up-install').textContent = 'Restarting…';
+    }
+  });
+  native.onUpdate(renderUpdate);
+  native.getUpdate().then(renderUpdate);
+}
+
 // ── start-up ────────────────────────────────────────────────────────────
 
 // refreshDests re-reads free space and drops destinations that are no

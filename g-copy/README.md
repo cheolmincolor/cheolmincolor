@@ -157,6 +157,48 @@ go build -o gcopy .
 
 예약에서 동기화를 켜 둔 경우, 확인할 사람이 없으므로 묻지 않고 `_G-Copy_Removed`로 옮깁니다. 단, 원본이 비어 있거나 한 대상에서 25%가 넘는 파일을 정리해야 하면 실수일 가능성이 커서 옮기지 않고 기록에 남깁니다. 직접 실행하면 목록을 보고 정할 수 있습니다.
 
+## 자동 업데이트
+
+G-Copy는 켜진 뒤 15초 후, 그리고 6시간마다 새 버전이 있는지 확인합니다.
+
+1. 새 버전이 있으면 백그라운드에서 받습니다. 헤더에 **Update 0.7.1 ready**가 뜹니다.
+2. 누르면 변경 내용이 보이고, **Restart to Update**를 누르면 몇 초 안에 새 버전으로 다시 열립니다.
+3. 그냥 두어도 G-Copy를 종료할 때 설치됩니다. 백업 중에는 재시작하지 않습니다.
+
+메뉴의 **G-Copy > Check for Updates…**로 바로 확인할 수 있고, **Check for Updates Automatically**로 자동 확인을 끌 수 있습니다.
+
+안전장치:
+
+| 상황 | 동작 |
+|---|---|
+| 업데이트 정보가 서명 후 바뀜 | 받지 않습니다. 앱 안의 공개키로 서명을 확인합니다 |
+| 받은 파일이 체크섬과 다름 | 버리고 설치하지 않습니다 |
+| 같은 버전이나 낮은 버전 | 설치하지 않습니다 |
+| 교체 중 문제 | 이전 버전을 되돌려 놓습니다 |
+| 응용 프로그램 폴더가 아닌 곳(다운로드 폴더, 디스크 이미지)에서 실행 | 업데이트하지 않고 응용 프로그램 폴더로 옮기라고 안내합니다 |
+
+앱이 직접 받은 파일에는 "인터넷에서 받은 파일" 표시가 붙지 않아서, 업데이트된 앱은 경고 없이 열립니다. 처음 설치할 때만 경고가 뜹니다.
+
+### 새 버전 배포하기
+
+업데이트는 이 저장소의 GitHub Releases에서 받습니다.
+
+처음 한 번: 저장소 **Settings > Secrets and variables > Actions**에 `GCOPY_UPDATE_KEY` 이름으로 서명용 비밀키(PEM 전체)를 넣습니다. 이 키는 `desktop/update-key.pem`(공개키)와 짝이 맞아야 하고, 잃어버리면 이후 버전을 자동으로 배포할 수 없으니 따로 보관하세요.
+
+배포할 때마다:
+
+```sh
+# 1. desktop/package.json의 version과 internal/engine/types.go의 Version을 올립니다
+# 2. desktop/RELEASE_NOTES.md에 변경 내용을 씁니다
+git commit -am "G-Copy 0.7.1"
+git tag g-copy-v0.7.1
+git push origin g-copy-v0.7.1
+```
+
+태그를 올리면 GitHub Actions(`.github/workflows/g-copy-release.yml`)가 Mac에서 테스트, 빌드, 서명, 릴리스까지 합니다. 설치된 G-Copy들은 다음 확인 때 새 버전을 받습니다.
+
+직접 만들려면 `bash package.sh` 뒤에 `GCOPY_UPDATE_KEY_FILE=비밀키.pem node make-release.mjs dist https://github.com/<저장소>/releases/download/<태그>`로 `latest.json`과 서명을 만들고, zip들과 함께 릴리스에 올립니다.
+
 ## 리포트 (MHL)
 
 복사하거나 재검증한 파일은 대상 폴더에 `원본이름_날짜_시각.mhl`로 기록됩니다. MHL 1.1 형식이고, xxHash64는 `xxhash64be` 값으로 적습니다. 아무것도 복사하지 않은 실행은 리포트를 만들지 않습니다.
@@ -169,7 +211,7 @@ go build -o gcopy .
 
 - 양방향 동기화 (대상에서 바뀐 것을 원본에 반영)
 - 잠자는 Mac을 깨워서 실행하기: 놓친 예약은 깨어난 뒤에 실행합니다
-- 설치 프로그램(dmg)과 Apple 공증: 지금은 zip을 풀어 실행합니다
+- 설치 프로그램(dmg)과 Apple 공증: 처음 설치는 zip을 풀어 실행합니다 (이후 업데이트는 자동)
 - Windows용 앱: 만들지 않습니다
 - 검증은 "원본에서 읽은 내용"과 "대상에 기록된 내용"을 비교합니다. 원본을 두 번 읽어 비교하지는 않습니다
 
