@@ -304,26 +304,19 @@ func TestIncrementalAndReplacedFilesAreKept(t *testing.T) {
 	noPartials(t, dst)
 }
 
-func TestCorruptedCopyIsDetectedAndDiscarded(t *testing.T) {
-	tmp := t.TempDir()
-	src := filepath.Join(tmp, "A001")
-	good, bad := filepath.Join(tmp, "GOOD"), filepath.Join(tmp, "BAD")
-	makeSource(t, src)
-	os.MkdirAll(good, 0o755)
-	os.MkdirAll(bad, 0o755)
-	o := Options{Sources: []string{src}, Destinations: []string{good, bad}, Subfolder: true}
-
-	// Flip one bit in the middle of one clip on one destination, after it
-	// was written and before it is read back: what a bad cable would do.
+// damageHook flips one bit in the middle of A001C001.mov on one
+// destination, after it was written and before it is read back: what a
+// bad cable would do. It does so at most times times.
+func damageHook(t *testing.T, dest string, times int) (func(string), *int) {
 	// The engine works with resolved paths: on macOS the temp folder
 	// /var/… is really /private/var/….
-	badReal, err := filepath.EvalSymlinks(bad)
+	real, err := filepath.EvalSymlinks(dest)
 	if err != nil {
 		t.Fatal(err)
 	}
 	flipped := 0
-	flip := func(path string) {
-		if !strings.HasPrefix(path, badReal) || !strings.Contains(path, "A001C001.mov") {
+	return func(path string) {
+		if !strings.HasPrefix(path, real) || !strings.Contains(path, "A001C001.mov") || flipped == times {
 			return
 		}
 		f, err := os.OpenFile(path, os.O_RDWR, 0)
@@ -337,13 +330,26 @@ func TestCorruptedCopyIsDetectedAndDiscarded(t *testing.T) {
 		one[0] ^= 0x01
 		f.WriteAt(one, 10<<20)
 		flipped++
+	}, &flipped
+}
+
+func TestCorruptedCopyIsDetectedAndDiscarded(t *testing.T) {
+	tmp := t.TempDir()
+	src := filepath.Join(tmp, "A001")
+	good, bad := filepath.Join(tmp, "GOOD"), filepath.Join(tmp, "BAD")
+	makeSource(t, src)
+	os.MkdirAll(good, 0o755)
+	os.MkdirAll(bad, 0o755)
+	o := Options{Sources: []string{src}, Destinations: []string{good, bad}, Subfolder: true}
+
+	// Damaged on every try: the file is retried once, then reported.
+	hook, flipped := damageHook(t, bad, -1)
+	st := runJob(t, o, hook)
+	if *flipped != 2 {
+		t.Fatalf("test setup: the damage hook ran %d times, want 2 (first try and second try)", *flipped)
 	}
-	st := runJob(t, o, flip)
-	if flipped != 1 {
-		t.Fatalf("test setup: the damage hook ran %d times, want 1", flipped)
-	}
-	if st.Status != StatusFailed || st.FilesFailed != 1 || st.ErrorCount != 1 {
-		t.Fatalf("status %s failed %d errors %+v", st.Status, st.FilesFailed, st.Errors)
+	if st.Status != StatusFailed || st.FilesFailed != 1 || st.ErrorCount != 1 || st.Retried != 1 {
+		t.Fatalf("status %s failed %d retried %d errors %+v", st.Status, st.FilesFailed, st.Retried, st.Errors)
 	}
 	e := st.Errors[0]
 	if !strings.Contains(e.Message, "Checksum mismatch") || e.Dest != bad || e.Path != "A001/CLIPS/A001C001.mov" {
@@ -371,6 +377,26 @@ func TestCorruptedCopyIsDetectedAndDiscarded(t *testing.T) {
 		t.Fatalf("repair run: status %s copied %d dests %+v", st.Status, st.FilesCopied, st.Dests)
 	}
 	sameTree(t, "repaired destination", want, treeDigest(t, filepath.Join(bad, "A001"), isReportOrKept))
+}
+
+// A one-off glitch (a loose cable for a moment) costs a second try, not a
+// failed backup.
+func TestOneOffDamageIsFixedBySecondTry(t *testing.T) {
+	tmp := t.TempDir()
+	src, dst := filepath.Join(tmp, "A001"), filepath.Join(tmp, "NAS")
+	makeSource(t, src)
+	os.MkdirAll(dst, 0o755)
+	hook, flipped := damageHook(t, dst, 1)
+	st := runJob(t, Options{Sources: []string{src}, Destinations: []string{dst}, Subfolder: true}, hook)
+	if *flipped != 1 || st.Status != StatusDone || st.Retried != 1 || st.FilesCopied != 45 || st.ErrorCount != 0 {
+		t.Fatalf("flipped %d status %s retried %d copied %d errors %+v", *flipped, st.Status, st.Retried, st.FilesCopied, st.Errors)
+	}
+	sameTree(t, "destination", treeDigest(t, src, isSrcJunk), treeDigest(t, filepath.Join(dst, "A001"), isReportOrKept))
+	r := readMHL(t, findOne(t, filepath.Join(dst, "A001", "*.mhl")))
+	if len(r.Hashes) != 45 {
+		t.Errorf("report lists %d files, want 45", len(r.Hashes))
+	}
+	noPartials(t, dst)
 }
 
 func TestReverifyFindsSilentDamage(t *testing.T) {
@@ -897,3 +923,5 @@ func TestMissingDiskIsRecognised(t *testing.T) {
 		t.Errorf("a real mistake must not look like a missing disk: %v", err)
 	}
 }
+
+func init() { retryDelay = 20 * time.Millisecond }

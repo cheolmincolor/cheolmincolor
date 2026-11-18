@@ -34,8 +34,8 @@ function icon(name) {
 
 const nf = new Intl.NumberFormat('en-US');
 const num = (n) => nf.format(n || 0);
-// plural(3, 'file') → "3 files"
-const plural = (n, word) => num(n) + ' ' + word + (n === 1 ? '' : 's');
+// plural(3, 'file') → "3 files"; plural(2, 'copy', 'copies') → "2 copies"
+const plural = (n, word, many) => num(n) + ' ' + (n === 1 ? word : many || word + 's');
 
 function fmtBytes(n) {
   n = Number(n) || 0;
@@ -328,6 +328,7 @@ function destExtra(job, i) {
   if (d.copied > 0 && d.reverified > 0) out.push(h('span', {}, num(d.reverified) + ' re-verified'));
   if (d.skipped > 0) out.push(h('span', {}, num(d.skipped) + ' skipped'));
   if (d.replaced > 0) out.push(h('span', {}, num(d.replaced) + ' replaced'));
+  if (d.datesFixed > 0) out.push(h('span', {}, num(d.datesFixed) + ' dates fixed'));
   if (d.failed > 0) out.push(h('span', { class: 'bad' }, num(d.failed) + ' failed'));
   if (d.stopped) out.push(h('span', { class: 'bad' }, 'Stopped'));
   if (d.removed > 0) out.push(h('span', {}, num(d.removed) + ' cleaned up'));
@@ -457,6 +458,8 @@ function renderResult(job) {
   if (job.mirror === 'approved' && removed > 0) notes.push(h('li', {}, 'Sync: ' + plural(removed, 'file') + ' no longer in the source were moved (not deleted) to each destination\'s _G-Copy_Removed folder.'));
   if (job.mirror === 'declined') notes.push(h('li', {}, 'Sync: ' + plural(listed, 'file') + ' no longer in the source were left where they are.'));
   if (job.options.label) notes.unshift(h('li', {}, 'Scheduled run: ' + job.options.label));
+  if (job.datesFixed > 0) notes.push(h('li', {}, plural(job.datesFixed, 'file') + ' had the same size but a different date on the destination. Their content was read back and matches the source, so only the date was corrected — nothing was copied again.'));
+  if (job.retried > 0) notes.push(h('li', {}, plural(job.retried, 'copy', 'copies') + ' needed a second try after a temporary problem (a read error or a checksum mismatch). Every file listed as copied was verified on its final try.'));
   if (job.mirror === 'nothing') notes.push(h('li', {}, 'Sync: the destinations had nothing that is not in the source.'));
   const left = [];
   if (job.excluded > 0) left.push(plural(job.excluded, 'system file') + ' such as .DS_Store');

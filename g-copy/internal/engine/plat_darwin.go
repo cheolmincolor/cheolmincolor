@@ -12,11 +12,6 @@ func noCache(f *os.File) {
 	_, _ = unix.FcntlInt(f.Fd(), unix.F_NOCACHE, 1)
 }
 
-// syncLight flushes f to the device. The full drive-cache flush
-// (F_FULLFSYNC, which os.File.Sync uses on macOS) is done once per
-// destination at the end of a run, when the report is written.
-func syncLight(f *os.File) error { return unix.Fsync(int(f.Fd())) }
-
 func dropCache(*os.File) {}
 
 func allocAligned(n int) []byte {
@@ -28,3 +23,33 @@ func allocAligned(n int) []byte {
 }
 
 func freeAligned(b []byte) { _ = unix.Munmap(b) }
+
+// flushFile pushes f to the device before it is read back. For large
+// files it also asks the drive to empty its own write cache onto the
+// media (F_FULLFSYNC), so the verification reads what is really stored.
+// Volumes that cannot do that (most network shares) get a normal flush.
+func flushFile(f *os.File, full bool) error {
+	if full {
+		if _, err := unix.FcntlInt(f.Fd(), unix.F_FULLFSYNC, 0); err == nil {
+			return nil
+		}
+	}
+	return unix.Fsync(int(f.Fd()))
+}
+
+// renameNoReplace renames, failing with EEXIST if to already exists.
+func renameNoReplace(from, to string) error {
+	return unix.RenamexNp(from, to, unix.RENAME_EXCL)
+}
+
+func isNetworkFS(path string) bool {
+	var st unix.Statfs_t
+	if unix.Statfs(path, &st) != nil {
+		return false
+	}
+	switch unix.ByteSliceToString(st.Fstypename[:]) {
+	case "smbfs", "nfs", "afpfs", "webdav", "cifs":
+		return true
+	}
+	return false
+}

@@ -10,12 +10,14 @@ const (
 
 	chunkSize       = 4 << 20  // read/write unit
 	bigFileSize     = 16 << 20 // files this size or larger are copied one at a time
-	fileWorkers     = 4        // small files handled in parallel
+	fileWorkers     = 4        // small files copied in parallel
+	netFileWorkers  = 8        // the same with a network share: hides its latency
 	statWorkers     = 16
 	mtimeTolerance  = 2 * time.Second // FAT/exFAT/SMB round modification times
 	maxErrors       = 200
 	deadAfterFails  = 10 // consecutive failed files before a destination is given up
 	partialSuffix   = ".gcopy-partial"
+	journalSuffix   = ".gcopy-journal"
 	ReplacedDirName = "_G-Copy_Replaced"
 	RemovedDirName  = "_G-Copy_Removed"
 
@@ -88,9 +90,11 @@ type DestState struct {
 	Skipped       int64    `json:"skipped"`
 	Reverified    int64    `json:"reverified"`
 	Replaced      int64    `json:"replaced"`
+	DatesFixed    int64    `json:"datesFixed"` // same content, only the date was corrected
 	Failed        int64    `json:"failed"`
 	Bytes         int64    `json:"bytes"`
 	Stopped       bool     `json:"stopped"`
+	Network       bool     `json:"network"`  // a network share
 	ToRemove      int64    `json:"toRemove"` // sync: files found that the source no longer has
 	ToRemoveBytes int64    `json:"toRemoveBytes"`
 	RemoveList    []string `json:"removeList"` // their names (at most maxRemoveList)
@@ -125,6 +129,8 @@ type State struct {
 	FilesSkipped  int64       `json:"filesSkipped"`
 	FilesVerified int64       `json:"filesVerified"`
 	FilesFailed   int64       `json:"filesFailed"`
+	DatesFixed    int64       `json:"datesFixed"` // files whose content matched and only the date was corrected
+	Retried       int64       `json:"retried"`    // second tries after a temporary error
 	BytesCopied   int64       `json:"bytesCopied"`
 	ErrorCount    int64       `json:"errorCount"`
 	Errors        []FileError `json:"errors"`

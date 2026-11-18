@@ -6,7 +6,13 @@ import "os"
 
 func noCache(*os.File) {}
 
-func syncLight(f *os.File) error { return f.Sync() }
+func flushFile(f *os.File, _ bool) error { return f.Sync() }
+
+func renameNoReplace(from, to string) error { return errNoExclRename }
+
+func isNetworkFS(string) bool { return false }
+
+var procUmask os.FileMode = 0o022
 
 func dropCache(*os.File) {}
 

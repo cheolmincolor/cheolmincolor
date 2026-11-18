@@ -33,9 +33,12 @@ const (
 	actReplace                // there, but size or date differs
 	actReverify               // up to date, re-hash requested
 	actBlocked                // cannot be written (reported as an error)
+	actCheck                  // same size, different date: compare the content
 )
 
-func (a action) active() bool { return a == actCopy || a == actReplace || a == actReverify }
+func (a action) active() bool {
+	return a == actCopy || a == actReplace || a == actReverify || a == actCheck
+}
 
 var junkNames = map[string]bool{
 	".DS_Store":                 true,
@@ -56,7 +59,8 @@ func IsJunk(name string) bool {
 	return junkNames[name] ||
 		strings.HasPrefix(name, "._") ||
 		strings.HasPrefix(name, ".Trash-") ||
-		strings.HasSuffix(name, partialSuffix)
+		strings.HasSuffix(name, partialSuffix) ||
+		strings.HasSuffix(name, journalSuffix)
 }
 
 // tempName is the name a file carries while it is copied and verified.
@@ -197,7 +201,7 @@ func (j *Job) prepare() error {
 				return fmt.Errorf("The same destination is selected twice: %s", d)
 			}
 		}
-		dr := &destRun{path: p, shown: d, entries: make([][]mhlEntry, len(j.srcRoots))}
+		dr := &destRun{path: p, shown: d, entries: make([][]mhlEntry, len(j.srcRoots)), network: isNetworkFS(p)}
 		for s := range j.srcRoots {
 			base := p
 			if o.Subfolder {
@@ -291,6 +295,15 @@ func (j *Job) compare() error {
 	nd := len(j.dests)
 	j.acts = make([]action, len(j.files)*nd)
 
+	workers := fileWorkers
+	for _, dr := range j.dests {
+		if dr.network {
+			workers = netFileWorkers
+		}
+		dr.folds = probeFolding(dr.path)
+	}
+	j.copySlots, j.verifySlots = newSlots(workers), newSlots(2*workers)
+
 	for d, dr := range j.dests {
 		baseExists := make([]bool, len(dr.bases))
 		for s, b := range dr.bases {
@@ -321,6 +334,7 @@ func (j *Job) compare() error {
 		if err := j.ctx.Err(); err != nil {
 			return err
 		}
+		j.blockCollisions(d)
 	}
 
 	var total int64
@@ -333,7 +347,7 @@ func (j *Job) compare() error {
 				dr.need += f.size
 				dr.workTotal.Add(2 * f.size) // written, then read back
 				active++
-			case actReverify:
+			case actReverify, actCheck:
 				dr.workTotal.Add(f.size) // read back only
 				active++
 			case actNone:
@@ -380,13 +394,20 @@ func (j *Job) decide(dr *destRun, f *srcFile) action {
 	if diff < 0 {
 		diff = -diff
 	}
-	if fi.Size() == f.size && diff <= mtimeTolerance {
+	switch {
+	case fi.Size() != f.size:
+		return actReplace
+	case diff <= mtimeTolerance:
 		if j.opts.Reverify {
 			return actReverify
 		}
 		return actNone
+	default:
+		// Same size, other date: often the same file whose date was not
+		// kept (some NAS and exFAT volumes, a copy made by another tool).
+		// Compare the content before copying it all again.
+		return actCheck
 	}
-	return actReplace
 }
 
 // showSrc is the path shown to the user for a source file.

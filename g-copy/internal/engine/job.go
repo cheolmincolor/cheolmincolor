@@ -1,13 +1,10 @@
 package engine
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
-	"fmt"
-	"io"
 	"math"
 	"os"
 	"path/filepath"
@@ -31,8 +28,14 @@ type destRun struct {
 	need  int64
 
 	copied, skipped, reverified, replaced, failed, bytes atomic.Int64
+	datesFixed                                           atomic.Int64
 	consecFails                                          atomic.Int32
 	dead                                                 atomic.Bool
+
+	dirs         sync.Map    // folders known to exist on this destination
+	noExclRename atomic.Bool // the volume cannot rename-unless-exists
+	network      bool        // a network share (SMB, NFS, AFP, WebDAV)
+	folds        nameFolding // how the volume compares names
 
 	// sync mode, filled in before copying
 	extras      []extraFile
@@ -44,9 +47,25 @@ type destRun struct {
 	workTotal, workDone atomic.Int64
 	removed             atomic.Int64
 
-	mu      sync.Mutex
-	entries [][]mhlEntry // per source
-	reports []string
+	mu       sync.Mutex
+	entries  [][]mhlEntry // per source
+	journals []*journal   // per source, opened with the first entry
+	reports  []string
+}
+
+// testIOHook, when set by a test, is called after every chunk of real I/O
+// with the device it touched ("src" or a destination's path) and the byte
+// count. The speed benchmarks use it to model card readers and NAS units.
+var testIOHook func(dev string, n int)
+
+// testNoReports, when set by a test, ends runs the way a crash would:
+// without writing their reports.
+var testNoReports bool
+
+func ioDone(dev string, n int) {
+	if testIOHook != nil {
+		testIOHook(dev, n)
+	}
 }
 
 // Job is one backup run.
@@ -81,11 +100,14 @@ type Job struct {
 	current map[int]string
 
 	errCount, scanFiles, scanBytes, excluded, special                  atomic.Int64
+	retried, datesFixed                                                atomic.Int64
 	workTotal, workDone                                                atomic.Int64
 	ioDone                                                             atomic.Int64 // bytes really read: the basis for speed
 	srcErrs                                                            atomic.Int64 // problems reading the source itself
 	filesCopied, filesSkipped, filesVerified, filesFailed, bytesCopied atomic.Int64
 	speedBits                                                          atomic.Uint64
+
+	copySlots, verifySlots *slots // see pipeline.go
 
 	est        estimator    // used by speedLoop only
 	finishNano atomic.Int64 // estimated finish (unix nanoseconds), 0 = not yet known
@@ -211,14 +233,18 @@ func (j *Job) run() {
 			return
 		}
 	}
+	j.recoverJournals()
 	j.copyStart.Store(time.Now().UnixNano())
 	j.setStatus(StatusCopying)
+	stopJournals := make(chan struct{})
+	go j.journalLoop(stopJournals)
 	j.makeEmptyDirs()
 	j.copyAll()
 	if removeAfter && j.ctx.Err() == nil {
 		j.removeExtras() // after copying, so a cancelled run leaves the destination as it was
 	}
 	j.copyEnd.Store(time.Now().UnixNano())
+	close(stopJournals)
 	j.writeReports()
 
 	switch {
@@ -285,408 +311,6 @@ func (j *Job) makeEmptyDirs() {
 	}
 }
 
-// copyAll hands files to workers. Small files (image sequences) run several
-// at a time; a large file takes every slot, so big clips are read strictly
-// one after another, which is what spinning disks and single network
-// streams handle best.
-func (j *Job) copyAll() {
-	nd := len(j.dests)
-	slots := make(chan struct{}, fileWorkers)
-	var wg sync.WaitGroup
-
-dispatch:
-	for i := range j.files {
-		if j.ctx.Err() != nil {
-			break
-		}
-		acts := j.acts[i*nd : (i+1)*nd]
-		active, blocked := false, false
-		for _, a := range acts {
-			active = active || a.active()
-			blocked = blocked || a == actBlocked
-		}
-		if !active {
-			if blocked {
-				j.filesFailed.Add(1)
-			} else {
-				j.filesSkipped.Add(1)
-			}
-			continue
-		}
-		weight := 1
-		if j.files[i].size >= bigFileSize {
-			weight = fileWorkers
-		}
-		for got := 0; got < weight; got++ {
-			select {
-			case slots <- struct{}{}:
-			case <-j.ctx.Done():
-				for ; got > 0; got-- {
-					<-slots
-				}
-				break dispatch
-			}
-		}
-		wg.Add(1)
-		go func(i, weight int) {
-			defer wg.Done()
-			defer func() {
-				for k := 0; k < weight; k++ {
-					<-slots
-				}
-			}()
-			j.processFile(i)
-		}(i, weight)
-	}
-	wg.Wait()
-}
-
-// destWork is one file on its way to one destination.
-type destWork struct {
-	d     int
-	act   action
-	final string
-	tmp   string
-	f     *os.File
-	err   error
-	done  atomic.Int64 // progress counted for this destination
-}
-
-// progress counts n bytes of work for this destination.
-func (w *destWork) progress(dr *destRun, n int64) {
-	w.done.Add(n)
-	dr.workDone.Add(n)
-}
-
-func (w *destWork) alive() bool { return w.err == nil }
-
-// processFile copies one file to every destination that needs it, reads
-// each copy back, and only then gives the copy its real name.
-//
-// The source is read once. Each chunk is hashed and written to all
-// destinations at the same time.
-func (j *Job) processFile(i int) {
-	f := &j.files[i]
-	nd := len(j.dests)
-	acts := j.acts[i*nd : (i+1)*nd]
-	shown := j.showSrc(f.src, f.rel)
-	srcPath := filepath.Join(j.srcRoots[f.src], f.rel)
-
-	// Progress bookkeeping: whatever happens, this file accounts for exactly
-	// the amount of work that was planned for it.
-	planned := f.size
-	var added atomic.Int64
-	add := func(n int64) {
-		added.Add(n)
-		j.workDone.Add(n)
-		j.ioDone.Add(n)
-	}
-	defer func() { j.workDone.Add(planned - added.Load()) }()
-
-	// The same for each destination's own progress.
-	type destPlan struct {
-		d    int
-		plan int64
-		w    *destWork // nil if the destination was already given up
-	}
-	var plans []destPlan
-	defer func() {
-		for _, p := range plans {
-			var done int64
-			if p.w != nil {
-				done = p.w.done.Load()
-			}
-			j.dests[p.d].workDone.Add(p.plan - done)
-		}
-	}()
-
-	failed := false
-	var works []*destWork
-	for d, a := range acts {
-		if a == actBlocked {
-			failed = true
-		}
-		if !a.active() {
-			continue
-		}
-		planned += f.size
-		plan := f.size
-		if a != actReverify {
-			plan = 2 * f.size
-		}
-		dr := j.dests[d]
-		if dr.dead.Load() {
-			dr.failed.Add(1)
-			failed = true
-			plans = append(plans, destPlan{d: d, plan: plan})
-			continue
-		}
-		w := &destWork{d: d, act: a, final: filepath.Join(dr.bases[f.src], f.rel)}
-		works = append(works, w)
-		plans = append(plans, destPlan{d: d, plan: plan, w: w})
-	}
-	if len(works) == 0 {
-		j.filesFailed.Add(1)
-		return
-	}
-
-	j.mu.Lock()
-	j.current[i] = shown
-	j.mu.Unlock()
-	defer func() {
-		j.mu.Lock()
-		delete(j.current, i)
-		j.mu.Unlock()
-	}()
-
-	discard := func() {
-		for _, w := range works {
-			if w.f != nil {
-				w.f.Close()
-				w.f = nil
-			}
-			if w.tmp != "" {
-				os.Remove(w.tmp)
-				w.tmp = ""
-			}
-		}
-	}
-	failAll := func(msg string) {
-		for _, w := range works {
-			if w.alive() {
-				w.err = errors.New(msg)
-			}
-		}
-	}
-
-	// ── 1. read the source once; hash it and write every copy ──────────
-	var srcSum []byte
-	src, err := os.Open(srcPath)
-	if err != nil {
-		failAll("Cannot open the source file: " + osMsg(err))
-	} else {
-		noCache(src)
-		for _, w := range works {
-			if w.act == actReverify {
-				continue
-			}
-			dir := filepath.Dir(w.final)
-			if err := os.MkdirAll(dir, 0o755); err != nil {
-				w.err = fmt.Errorf("Cannot create folder: %w", err)
-				continue
-			}
-			tmp := filepath.Join(dir, tempName(filepath.Base(w.final)))
-			tf, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
-			if err != nil {
-				w.err = fmt.Errorf("Cannot create the file on the destination: %w", err)
-				continue
-			}
-			noCache(tf)
-			w.tmp, w.f = tmp, tf
-		}
-
-		h := newHasher(j.opts.Algo)
-		buf := getBuf()
-		var total int64
-		var srcErr error
-		for {
-			if j.ctx.Err() != nil {
-				break
-			}
-			anyAlive := false
-			for _, w := range works {
-				anyAlive = anyAlive || w.alive()
-			}
-			if !anyAlive {
-				break
-			}
-			n, rerr := io.ReadFull(src, buf)
-			if n > 0 {
-				chunk := buf[:n]
-				var wg sync.WaitGroup
-				for _, w := range works {
-					if w.f == nil || !w.alive() {
-						continue
-					}
-					wg.Add(1)
-					go func(w *destWork) {
-						defer wg.Done()
-						if _, err := w.f.Write(chunk); err != nil {
-							w.err = fmt.Errorf("Write error: %w", err)
-						}
-					}(w)
-				}
-				h.Write(chunk) // hashing overlaps the writes
-				wg.Wait()
-				total += int64(n)
-				add(int64(n))
-				for _, w := range works {
-					if w.f != nil && w.alive() {
-						j.dests[w.d].bytes.Add(int64(n))
-						w.progress(j.dests[w.d], int64(n))
-					}
-				}
-			}
-			if rerr == io.EOF || rerr == io.ErrUnexpectedEOF {
-				break
-			}
-			if rerr != nil {
-				srcErr = rerr
-				break
-			}
-		}
-		putBuf(buf)
-		src.Close()
-
-		if j.ctx.Err() != nil {
-			discard()
-			return
-		}
-		for _, w := range works {
-			if w.f == nil {
-				continue
-			}
-			if w.alive() {
-				if err := syncLight(w.f); err != nil && !syncUnsupported(err) {
-					w.err = fmt.Errorf("Cannot flush to disk: %w", err)
-				}
-				dropCache(w.f)
-			}
-			if err := w.f.Close(); err != nil && w.alive() {
-				w.err = fmt.Errorf("Cannot flush to disk: %w", err)
-			}
-			w.f = nil
-		}
-
-		if srcErr != nil {
-			failAll("Source read error: " + osMsg(srcErr))
-		} else if st, err := os.Stat(srcPath); err != nil || total != f.size || st.Size() != f.size || !st.ModTime().Equal(f.modTime) {
-			failAll("The source file changed while it was being copied — run again")
-		} else {
-			srcSum = h.Sum(nil)
-		}
-	}
-
-	if j.afterWrite != nil {
-		for _, w := range works {
-			if w.tmp != "" && w.alive() {
-				j.afterWrite(w.tmp)
-			}
-		}
-	}
-
-	// ── 2. read every copy back from its disk and compare ──────────────
-	var vg sync.WaitGroup
-	for _, w := range works {
-		if !w.alive() {
-			continue
-		}
-		vg.Add(1)
-		go func(w *destWork) {
-			defer vg.Done()
-			path := w.tmp
-			if w.act == actReverify {
-				path = w.final
-			}
-			sum, n, err := hashFile(j.ctx, path, j.opts.Algo, func(n int64) {
-				add(n)
-				w.progress(j.dests[w.d], n)
-			})
-			switch {
-			case err != nil:
-				w.err = fmt.Errorf("Verification read error: %w", err)
-			case n != f.size || !bytes.Equal(sum, srcSum):
-				if w.act == actReverify {
-					w.err = fmt.Errorf("The existing copy differs from the source (same size and date) — source %x, destination %x", srcSum, sum)
-				} else {
-					w.err = fmt.Errorf("Checksum mismatch — the copy was discarded (source %x, destination %x)", srcSum, sum)
-				}
-			}
-		}(w)
-	}
-	vg.Wait()
-	if j.ctx.Err() != nil {
-		discard()
-		return
-	}
-
-	// ── 3. commit verified copies; report the rest ─────────────────────
-	now := time.Now()
-	copied, verified := false, false
-	for _, w := range works {
-		dr := j.dests[w.d]
-		if w.alive() && w.act != actReverify {
-			w.err = j.commit(dr, w, f)
-		}
-		if w.err != nil {
-			if w.tmp != "" {
-				os.Remove(w.tmp)
-				w.tmp = ""
-			}
-			failed = true
-			j.destFailed(dr, shown, w.err)
-			continue
-		}
-		dr.consecFails.Store(0)
-		switch w.act {
-		case actCopy:
-			dr.copied.Add(1)
-			copied = true
-		case actReplace:
-			dr.copied.Add(1)
-			dr.replaced.Add(1)
-			copied = true
-		case actReverify:
-			dr.reverified.Add(1)
-			verified = true
-		}
-		rel, _ := filepath.Rel(dr.bases[f.src], w.final)
-		dr.mu.Lock()
-		dr.entries[f.src] = append(dr.entries[f.src], mhlEntry{
-			rel: filepath.ToSlash(rel), size: f.size, modTime: f.modTime, sum: srcSum, hashedAt: now,
-		})
-		dr.mu.Unlock()
-	}
-	switch {
-	case failed:
-		j.filesFailed.Add(1)
-	case copied:
-		j.filesCopied.Add(1)
-		j.bytesCopied.Add(f.size)
-	case verified:
-		j.filesVerified.Add(1)
-	}
-}
-
-// commit gives a verified temporary file its real name. A file that is
-// already there is never overwritten: it is moved aside first.
-func (j *Job) commit(dr *destRun, w *destWork, f *srcFile) error {
-	if _, err := os.Lstat(w.final); err == nil {
-		rel, rerr := filepath.Rel(dr.path, w.final)
-		if rerr != nil {
-			return fmt.Errorf("Cannot set the previous version aside: %w", rerr)
-		}
-		keep := filepath.Join(dr.path, ReplacedDirName, j.stamp, rel)
-		if err := os.MkdirAll(filepath.Dir(keep), 0o755); err != nil {
-			return fmt.Errorf("Cannot set the previous version aside: %w", err)
-		}
-		if err := os.Rename(w.final, keep); err != nil {
-			return fmt.Errorf("Cannot set the previous version aside: %w", err)
-		}
-	}
-	if err := os.Rename(w.tmp, w.final); err != nil {
-		return fmt.Errorf("Cannot give the file its final name: %w", err)
-	}
-	w.tmp = ""
-	// The date is what the next run compares. The copy itself is verified
-	// either way, so a volume that refuses dates is a warning, not a failure.
-	if err := os.Chtimes(w.final, f.modTime, f.modTime); err != nil {
-		j.warnOnce("chtimes:"+dr.path, dr.shown+": this volume does not keep modification dates. Copies are verified, but the next run will copy these files again.")
-	}
-	_ = os.Chmod(w.final, f.mode.Perm()) // best effort; many NAS/exFAT volumes ignore it
-	return nil
-}
-
 func (j *Job) destFailed(dr *destRun, shown string, err error) {
 	dr.failed.Add(1)
 	j.addError(shown, dr.shown, cleanMsg(err))
@@ -714,6 +338,15 @@ func cleanMsg(err error) string {
 // writeReports stores one hash list per destination and source, covering
 // the files this run copied or re-verified.
 func (j *Job) writeReports() {
+	if testNoReports {
+		// a test simulating a crash: the run ends without its reports
+		for _, dr := range j.dests {
+			for _, jr := range dr.journals {
+				jr.close()
+			}
+		}
+		return
+	}
 	finished := time.Now()
 	for _, dr := range j.dests {
 		for s, entries := range dr.entries {
@@ -721,10 +354,14 @@ func (j *Job) writeReports() {
 				continue
 			}
 			path := mhlName(dr.bases[s], j.srcNames[s], j.started)
+			jr := dr.journals[s]
 			if err := writeMHL(path, j.opts.Algo, j.started, finished, entries); err != nil {
+				// the journal stays: the next run turns it into the report
+				jr.close()
 				j.addError(filepath.Base(path), dr.shown, "Cannot write the report (MHL): "+osMsg(err))
 				continue
 			}
+			jr.discard()
 			dr.reports = append(dr.reports, path)
 		}
 	}
@@ -802,6 +439,7 @@ func (j *Job) Snapshot() State {
 	st.FilesCopied, st.FilesSkipped = j.filesCopied.Load(), j.filesSkipped.Load()
 	st.FilesVerified, st.FilesFailed = j.filesVerified.Load(), j.filesFailed.Load()
 	st.BytesCopied, st.ErrorCount = j.bytesCopied.Load(), j.errCount.Load()
+	st.Retried, st.DatesFixed = j.retried.Load(), j.datesFixed.Load()
 	if !finished {
 		st.Speed = math.Float64frombits(j.speedBits.Load())
 		fn := j.finishNano.Load()
@@ -827,6 +465,7 @@ func (j *Job) Snapshot() State {
 		ds := DestState{
 			Path: dr.shown, Copied: dr.copied.Load(), Reverified: dr.reverified.Load(),
 			Replaced: dr.replaced.Load(), Failed: dr.failed.Load(), Bytes: dr.bytes.Load(),
+			DatesFixed: dr.datesFixed.Load(), Network: dr.network,
 			Stopped: dr.dead.Load(), Reports: []string{}, Folders: append([]string{}, dr.bases...),
 		}
 		ds.RemoveList = []string{}

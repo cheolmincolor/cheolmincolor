@@ -55,12 +55,7 @@ jobs:
 
       - name: Engine tests (real Mac disk)
         working-directory: g-copy
-        run: go test -count=1 ./...
-
-      # TEMPORARY (copy review): print what the Mac-only probes observed.
-      - name: Copy review probes
-        working-directory: g-copy
-        run: go test -count=1 -run Probe -v ./internal/engine/ | grep -E 'PROBE|^(---|ok|FAIL)'
+        run: go test -count=1 -race ./...
 
       - name: Build the Mac apps
         run: |

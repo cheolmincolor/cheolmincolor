@@ -8,7 +8,27 @@ import (
 
 func noCache(*os.File) {}
 
-func syncLight(f *os.File) error { return f.Sync() }
+func flushFile(f *os.File, _ bool) error { return f.Sync() }
+
+// renameNoReplace renames, failing with EEXIST if to already exists.
+func renameNoReplace(from, to string) error {
+	return unix.Renameat2(unix.AT_FDCWD, from, unix.AT_FDCWD, to, unix.RENAME_NOREPLACE)
+}
+
+func isNetworkFS(path string) bool {
+	var st unix.Statfs_t
+	if unix.Statfs(path, &st) != nil {
+		return false
+	}
+	switch uint32(st.Type) {
+	case 0x6969, // NFS
+		0xfe534d42, // SMB2/3
+		0xff534d42, // CIFS
+		0x517b:     // SMB1
+		return true
+	}
+	return false
+}
 
 // dropCache asks the kernel to forget cached pages of f (they must already
 // be synced), so the verification pass reads the data back from the device.
