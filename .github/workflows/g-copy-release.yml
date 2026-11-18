@@ -1,33 +1,37 @@
-# Builds G-Copy for Mac and publishes it as a GitHub release, which the
-# installed apps pick up through their automatic update check.
+# G-Copy: build and test on a real Mac on every push, and publish a release
+# whenever the version in g-copy/desktop/package.json has not been released
+# yet. Installed apps then pick it up through their automatic update check.
 #
-# To release: set the version in g-copy/desktop/package.json, write the
-# notes in g-copy/desktop/RELEASE_NOTES.md and commit. Then either
-#
-#   - on github.com: Releases > Draft a new release > tag "g-copy-v0.7.0"
-#     ("Create new tag on publish", target = the branch with that commit)
-#     > Publish. This job then attaches the apps to that release; or
-#   - in a terminal: git tag g-copy-v0.7.0 && git push origin g-copy-v0.7.0
-#     This job then creates the release.
+# To release: raise the version in g-copy/desktop/package.json and
+# g-copy/internal/engine/types.go, describe the changes in
+# g-copy/desktop/RELEASE_NOTES.md, commit and push. Nothing else.
 #
 # Needs one repository secret, GCOPY_UPDATE_KEY: the private signing key
 # (the whole PEM text) that matches g-copy/desktop/update-key.pem.
 
-name: G-Copy release
+name: G-Copy
 
 on:
   push:
-    tags: ['g-copy-v*']
+    paths:
+      - 'g-copy/**'
+      - '.github/workflows/g-copy-release.yml'
+  workflow_dispatch:
 
-permissions:
-  contents: write
+concurrency:
+  group: g-copy-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: g-copy/desktop
 
 jobs:
-  release:
-    runs-on: macos-latest   # macos-14 was not given a runner here
-    defaults:
-      run:
-        working-directory: g-copy/desktop
+  mac:
+    name: Build and test on a Mac
+    runs-on: macos-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -42,52 +46,104 @@ jobs:
         with:
           node-version: 22
 
-      - name: Check that the tag matches the app version
+      - name: Versions agree
         run: |
           v=$(node -p "require('./package.json').version")
-          [ "${GITHUB_REF_NAME}" = "g-copy-v$v" ] || { echo "tag ${GITHUB_REF_NAME} does not match version $v"; exit 1; }
+          e=$(sed -n 's/^[[:space:]]*Version = "\(.*\)"/\1/p' ../internal/engine/types.go)
+          echo "app $v, engine $e"
+          [ "$v" = "$e" ] || { echo "package.json says $v but types.go says $e"; exit 1; }
 
-      - name: Test
+      - name: Engine tests (real Mac disk)
         working-directory: g-copy
-        run: go test ./...
+        run: go test -count=1 ./...
 
       - name: Build the Mac apps
         run: |
           npm ci
           OUT=dist bash package.sh
 
-      - name: Write and sign the update manifest
-        env:
-          GCOPY_UPDATE_KEY: ${{ secrets.GCOPY_UPDATE_KEY }}
+      - name: The built apps start on this Mac
         run: |
-          notes=""; [ -f RELEASE_NOTES.md ] && notes=RELEASE_NOTES.md
-          node make-release.mjs dist "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}" $notes
+          for arch in arm64 x64; do
+            codesign --verify --deep --strict "dist/G-Copy-darwin-$arch/G-Copy.app"
+            echo "$arch: signature ok"
+          done
+          # the engine of the build for this Mac must start and answer
+          eng="dist/G-Copy-darwin-arm64/G-Copy.app/Contents/Resources/engine/gcopy-engine"
+          export GCOPY_CONFIG_DIR="$RUNNER_TEMP/gcopy-cfg"
+          "$eng" -no-open -port 47900 > "$RUNNER_TEMP/engine.log" 2>&1 &
+          pid=$!
+          for i in $(seq 1 50); do grep -q 'token=' "$RUNNER_TEMP/engine.log" && break; sleep 0.2; done
+          url=$(grep -o 'http://127.0.0.1:[0-9]*/?token=[0-9a-f]*' "$RUNNER_TEMP/engine.log" || true)
+          [ -n "$url" ] || { echo "the engine did not start:"; cat "$RUNNER_TEMP/engine.log"; exit 1; }
+          code=$(curl -s -o /dev/null -w '%{http_code}' -L -c "$RUNNER_TEMP/jar" "$url")
+          kill "$pid"
+          echo "engine answered $code"
+          [ "$code" = 200 ]
 
-      - name: Publish the release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: g-copy-mac
+          path: g-copy/desktop/dist/G-Copy-*-mac-*.zip
+          retention-days: 14
+
+  release:
+    name: Publish the release
+    needs: mac
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: g-copy-mac
+          path: g-copy/desktop/dist
+
+      - name: Is this version new?
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          files="dist/G-Copy-*-mac-*.zip dist/latest.json dist/latest.json.sig"
-          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
-            # made on github.com: attach the apps, keep it marked as the latest
-            gh release upload "${GITHUB_REF_NAME}" $files --clobber
-            gh release edit "${GITHUB_REF_NAME}" --draft=false
-            if [ -f RELEASE_NOTES.md ] && [ -z "$(gh release view "${GITHUB_REF_NAME}" --json body -q .body)" ]; then
-              gh release edit "${GITHUB_REF_NAME}" --notes-file RELEASE_NOTES.md
-            fi
-          else
-            notes=""; [ -f RELEASE_NOTES.md ] && notes="--notes-file RELEASE_NOTES.md"
-            gh release create "${GITHUB_REF_NAME}" --title "G-Copy ${GITHUB_REF_NAME#g-copy-v}" $notes $files
+          v=$(node -p "require('./package.json').version")
+          echo "VERSION=$v" >> "$GITHUB_ENV"
+          echo "TAG=g-copy-v$v" >> "$GITHUB_ENV"
+          if gh release view "g-copy-v$v" --json assets -q '.assets[].name' 2>/dev/null | grep -qx latest.json; then
+            echo "G-Copy $v is already released; nothing to do."
+            echo "SKIP=1" >> "$GITHUB_ENV"
           fi
 
-      # The installed apps read latest.json from one fixed place, so other
-      # projects' releases in this repository never get in the way.
+      - name: Write and sign the update manifest
+        if: env.SKIP != '1'
+        env:
+          GCOPY_UPDATE_KEY: ${{ secrets.GCOPY_UPDATE_KEY }}
+        run: node make-release.mjs dist "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}" RELEASE_NOTES.md
+
+      - name: Publish
+        if: env.SKIP != '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          files="dist/G-Copy-$VERSION-mac-arm64.zip dist/G-Copy-$VERSION-mac-x64.zip dist/latest.json dist/latest.json.sig"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            # made earlier by hand, without the apps: complete it
+            gh release upload "$TAG" $files --clobber
+          else
+            # --latest=false: the other apps in this repository keep their "latest"
+            gh release create "$TAG" $files --target "$GITHUB_SHA" \
+              --title "G-Copy $VERSION" --notes-file RELEASE_NOTES.md --latest=false
+          fi
+
+      # The installed apps read latest.json from this one fixed place.
       - name: Update the G-Copy update channel
+        if: env.SKIP != '1'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           if ! gh release view g-copy-updates >/dev/null 2>&1; then
-            gh release create g-copy-updates --target "${GITHUB_SHA}" --prerelease \
+            gh release create g-copy-updates --target "$GITHUB_SHA" --prerelease --latest=false \
               --title "G-Copy update channel" --notes "Read by G-Copy's automatic updates. Do not delete."
           fi
           gh release upload g-copy-updates dist/latest.json dist/latest.json.sig --clobber
+          echo "Released G-Copy $VERSION"

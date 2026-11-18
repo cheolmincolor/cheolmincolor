@@ -187,10 +187,11 @@ G-Copy는 켜진 뒤 15초 후, 그리고 6시간마다 새 버전이 있는지 
 
 배포할 때마다:
 
-1. `desktop/package.json`의 `version`과 `internal/engine/types.go`의 `Version`을 올리고, `desktop/RELEASE_NOTES.md`에 변경 내용을 써서 커밋·푸시합니다.
-2. GitHub에서 **Releases > Draft a new release**를 열고, 태그에 `g-copy-v0.7.1`을 입력(**Create new tag on publish**), Target은 그 커밋이 있는 브랜치로 고른 뒤 **Publish release**를 누릅니다. 터미널에서 `git tag g-copy-v0.7.1 && git push origin g-copy-v0.7.1`로 해도 됩니다.
+1. `desktop/package.json`의 `version`과 `internal/engine/types.go`의 `Version`을 같은 번호로 올립니다.
+2. `desktop/RELEASE_NOTES.md`에 변경 내용을 씁니다.
+3. 커밋하고 푸시합니다. 끝입니다.
 
-태그가 생기면 GitHub Actions(`.github/workflows/g-copy-release.yml`)가 Mac에서 테스트, 빌드, 서명, 릴리스까지 합니다. 설치된 G-Copy들은 다음 확인 때 새 버전을 받습니다.
+G-Copy 코드를 푸시할 때마다 GitHub Actions(`.github/workflows/g-copy-release.yml`)가 실제 Mac에서 테스트·빌드하고, 빌드된 엔진이 그 Mac에서 켜지는지까지 확인합니다. 버전 번호가 아직 릴리스되지 않은 번호면 서명한 뒤 릴리스(`g-copy-v버전`)를 만들고 업데이트 채널을 갱신합니다. 이미 릴리스된 번호면 테스트만 하고 넘어갑니다. 다른 앱의 "최신 릴리스" 표시는 바꾸지 않습니다.
 
 직접 만들려면 `bash package.sh` 뒤에 `GCOPY_UPDATE_KEY_FILE=비밀키.pem node make-release.mjs dist https://github.com/<저장소>/releases/download/<태그>`로 `latest.json`과 서명을 만들고, zip들과 함께 릴리스에 올립니다.
 
