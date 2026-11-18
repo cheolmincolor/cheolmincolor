@@ -18,11 +18,14 @@ import time
 
 CODE = {"ITU_R_709_2": 1, "SMPTE_C": 6, "EBU_3213": 5, "P22": 5, "ITU_R_2020": 9, "DCI_P3": 11, "P3_D65": 12,
         "SMPTE_240M_1995": 7, "ITU_R_601_4": 6, "IEC_sRGB": 13, "SMPTE_ST_2084_PQ": 16, "ITU_R_2100_HLG": 18,
-        "Linear": 8, "UseGamma": "γ"}
+        "Linear": 8, "UseGamma": 2}  # 감마 표시(gama)가 있으면 퀵타임은 전송 기능을 '지정 안 됨'(2)으로 표시
 
 
 def quicktime_code(path):
-    """퀵타임 '동영상 속성'의 코드 포인트를 같은 방식(AVFoundation)으로 읽음 → '1-2-1' 같은 문자열. 맥 전용."""
+    """퀵타임 '동영상 속성'의 코드 포인트를 같은 규칙으로 → '1-2-1' 같은 문자열. 맥 전용.
+
+    실제 퀵타임 속성 창 확인 결과(macOS 26): 값이 없으면 '태그가 달리지 않음',
+    감마 표시(UseGamma)면 '지정 안 됨'(2). 없는 값은 'untagged' 로 돌려줘 1-2-1 과 구분한다."""
     import AVFoundation as AV
     import CoreMedia as CM
     from Foundation import NSURL
@@ -34,7 +37,7 @@ def quicktime_code(path):
     vals = []
     for k in ("CVImageBufferColorPrimaries", "CVImageBufferTransferFunction", "CVImageBufferYCbCrMatrix"):
         v = e.get(k)
-        vals.append(str(CODE.get(str(v), v)) if v is not None else "2")  # 없으면 '지정 안 됨'(2)
+        vals.append(str(CODE.get(str(v), v)) if v is not None else "untagged")
     return "-".join(vals)
 
 

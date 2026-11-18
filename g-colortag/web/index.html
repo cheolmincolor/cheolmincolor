@@ -264,7 +264,7 @@
           <div id="choiceNote" class="cnote"></div></div>
         <button id="saveBtn" class="btn primary" disabled>선택한 태그로 저장</button>
       </div>
-      <div class="note">원본은 그대로 두고, 같은 폴더에 ‘이름_1-2-1.mov’처럼 새 파일로 저장합니다. 픽셀은 그대로이고 태그만 바뀝니다.</div>
+      <div class="note">원본은 그대로 두고, 같은 폴더에 ‘이름_1-2-1.mov’처럼 새 파일로 저장합니다. 픽셀은 그대로이고 태그만 바뀝니다. 1-2-1 은 MOV 로 저장됩니다.</div>
 
       <div class="guide">
         <div class="guide-head"><b>두 파일의 픽셀 밝기는 같아요</b>
@@ -275,7 +275,7 @@
               <li>맥 퀵타임에서는 원래보다 밝고 옅게 보일 수 있어요</li></ul></div>
           <div class="gcol"><div class="gtitle"><span class="code">1-2-1</span> 맥 퀵타임에서 정확하게 보이는 Rec709</div>
             <ul><li>맥 퀵타임으로 볼 파일용</li>
-              <li>퀵타임에서도 밝기가 들뜨지 않아요 (리졸브 Rec.709-A와 같은 태그)</li></ul></div>
+              <li>퀵타임에서 감마 2.4 모니터와 같은 밝기 (1-2-1 + 감마 2.4 표시, MOV 로 저장)</li></ul></div>
         </div>
         <div class="guide-foot">대부분의 다른 플레이어에서는 두 파일이 똑같이 보여요. 잘 모르겠다면 맥에서 위 두 화면을 재생해 비교해 보세요.</div>
       </div>
@@ -377,8 +377,9 @@ async function poll() {
   setTimeout(poll, S.saving ? 400 : 1000);
 }
 
-function tagBadge(tag, ok) {
-  if (tag === "1-2-1") return '<span class="badge mac">1-2-1 퀵타임</span>';
+function tagBadge(tag, ok, f) {
+  if (tag === "1-2-1") return f.gamma === 2.4 ? '<span class="badge mac">1-2-1 퀵타임</span>'
+                                               : '<span class="badge" title="감마 표시가 없어 퀵타임에서는 1-1-1 과 같게 보입니다">1-2-1 감마 표시 없음</span>';
   if (tag === "1-1-1") return '<span class="badge">1-1-1 일반</span>';
   if (tag === "없음") return '<span class="badge none">태그 없음</span>';
   return '<span class="badge ' + (ok ? "" : "other") + '">' + esc(tag) + "</span>";
@@ -398,7 +399,7 @@ function renderList() {
     '<li class="item' + (f.id === curId ? " cur" : "") + '" data-id="' + f.id + '">' +
       '<div class="row1"><span class="name" title="' + esc(f.path) + '">' + esc(f.name) + "</span>" +
       '<button class="x" data-rm="' + f.id + '" title="목록에서 빼기"' + (S.saving ? " disabled" : "") + ">×</button></div>" +
-      '<div class="row2">' + (f.playable ? tagBadge(f.tag, f.ok) : "") + statusLine(f) + "</div>" +
+      '<div class="row2">' + (f.playable ? tagBadge(f.tag, f.ok, f) : "") + statusLine(f) + "</div>" +
       (f.has_out ? '<button class="reveal" data-rv="' + f.id + '">Finder에서 보기</button>' : "") +
     "</li>").join("");
   $("#emptyList").style.display = S.files.length ? "none" : "block";

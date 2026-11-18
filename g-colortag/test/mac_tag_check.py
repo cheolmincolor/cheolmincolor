@@ -23,7 +23,7 @@ from Foundation import NSURL  # noqa: E402
 import colortag as ct  # noqa: E402
 
 SRC = "nullsrc=s=1280x720:d=2:r=24,geq=lum='16+55*floor(X/256)':cb=128:cr=128,format=yuv420p"
-WANT = ("ITU_R_709_2", None, "ITU_R_709_2")  # (1-2-1): 전송 기능 지정 안 됨
+WANT = ("ITU_R_709_2", "UseGamma", "ITU_R_709_2")  # (1-2-1): 퀵타임 속성 창에 전송 기능 '지정 안 됨'
 
 
 def inspector(path):
@@ -103,7 +103,7 @@ for s in srcs:
     import qtplayer
     qs, qo = qtplayer.quicktime_code(s), qtplayer.quicktime_code(out)
     print(f"   앱의 퀵타임 기준 확인: 원본 ({qs}) → 저장본 ({qo})")
-    good = got == WANT and qo == "1-2-1" and qs == "1-1-1"
+    good = got == WANT and qo == "1-2-1" and qs == "1-1-1" and abs(float(extra["gamma"] or 0) - 2.4) < 0.01
     bad += not good
     print(f"   {'✅' if good else '❌'} 저장본 속성 {got} {extra} | 아톰 {atoms(out)}")
 print("결과:", "모두 (1-2-1) ✅" if not bad else f"{bad}개 실패 ❌")

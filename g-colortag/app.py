@@ -35,7 +35,7 @@ import updater  # noqa: E402
 import qtplayer  # noqa: E402
 
 APP_NAME = "G-ColorTag"
-APP_VERSION = "3.4.1"
+APP_VERSION = "3.5.0"
 COPYRIGHT = "© 2026 GRAYZONE. All rights reserved."
 TAGS = {"mac": (1, 2, 1), "std": (1, 1, 1)}
 SEG = 10.0          # 미리보기 구간 길이(초)
@@ -165,7 +165,7 @@ class Previews:
             raise RuntimeError("목록에서 빠진 영상입니다")
         start = job["seg"] * SEG
         dur = SEG if not f["duration"] else max(0.05, min(SEG, f["duration"] - start))
-        ext = ".mp4" if f["path"].lower().endswith((".mp4", ".m4v")) else ".mov"
+        ext = ".mov"  # 1-2-1 미리보기에 감마 표시(gama)를 넣으려면 MOV 여야 함
         std = os.path.join(self.root, f"{key}_std{ext}")
         mac = os.path.join(self.root, f"{key}_mac{ext}")
         cmd = ["ffmpeg", "-v", "error", "-y", "-ss", f"{start:.3f}", "-i", f["path"], "-t", f"{dur:.3f}",
@@ -203,14 +203,14 @@ class Core:
                 p = os.path.abspath(os.path.expanduser(str(p)))
                 if p in known or not os.path.isfile(p):
                     continue
-                f = {"id": uuid.uuid4().hex[:10], "path": p, "name": os.path.basename(p), "codec": "", "tag": None,
+                f = {"id": uuid.uuid4().hex[:10], "path": p, "gamma": None, "name": os.path.basename(p), "codec": "", "tag": None,
                      "duration": 0.0, "ok": False, "note": "", "status": "", "result": "", "out": None, "progress": 0}
                 try:
                     tr = ct.read_tracks(p)
                 except Exception:
                     tr = []
                 if tr:
-                    f["codec"], f["tag"] = tr[0]["codec"], tr[0]["tag"]
+                    f["codec"], f["tag"], f["gamma"] = tr[0]["codec"], tr[0]["tag"], tr[0]["gamma"]
                     f["duration"] = ct.read_duration(p)
                     f["ok"], f["note"] = check_709(f["tag"])
                 else:
@@ -244,7 +244,7 @@ class Core:
             files = []
             for fid in self.order:
                 f = self.files[fid]
-                files.append({k: f[k] for k in ("id", "path", "name", "codec", "duration", "ok", "note",
+                files.append({k: f[k] for k in ("id", "path", "name", "codec", "duration", "ok", "note", "gamma",
                                                  "status", "result", "progress")}
                              | {"tag": ct.tag_str(f["tag"]) if f["tag"] else "없음", "has_out": bool(f["out"]),
                                 "playable": bool(f["codec"])})
@@ -280,7 +280,8 @@ class Core:
                 if not f["ok"]:
                     f.update(status="skipped", result="제외: Rec.709 영상 아님")
                     continue
-                if f["tag"] == tag:
+                done_already = f["tag"] == tag and (not ct.needs_gama(tag) or f.get("gamma") == ct.MAC_GAMMA)
+                if done_already:
                     f.update(status="skipped", result=f"이미 {want} 입니다")
                     continue
                 f.update(status="working", result="저장 중…", progress=0)
@@ -302,8 +303,9 @@ class Core:
                             log("quicktime check failed:", e)
                     log("save check: 파일", got, "| 퀵타임 기준", qt)
                     if qt and qt != want:
+                        shown = "태그가 달리지 않음" if "untagged" in qt else f"({qt})"
                         f.update(status="error", out=out, progress=100,
-                                 result=f"퀵타임이 ({qt})로 읽음 — 기록 파일을 보내 주세요")
+                                 result=f"퀵타임에서 {shown}으로 보임 — 기록 파일을 보내 주세요")
                         continue
                     note = f" · 퀵타임 ({qt}) 확인" if qt else ""
                     f.update(status="done", result=os.path.basename(out) + note, out=out, progress=100)

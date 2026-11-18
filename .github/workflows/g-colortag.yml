@@ -59,6 +59,14 @@ jobs:
           tar -xzf "release/$V/G-ColorTag-$V-arm64.tar.gz" -C "$RUNNER_TEMP/tag/Applications"
           APP="$RUNNER_TEMP/tag/Applications/G-ColorTag.app"
           "$APP/Contents/MacOS/G-ColorTag-python" -I -B test/mac_tag_check.py "$APP" "$RUNNER_TEMP/native/out/tags"
+      - name: 최종 확인 - 앱 저장본을 퀵타임 '동영상 속성' 창으로 읽기
+        if: success() || failure()
+        run: |
+          python3 -m pip install --break-system-packages -q pyobjc-framework-ApplicationServices || python3 -m pip install -q pyobjc-framework-ApplicationServices
+          V=$(sed -n 's/^APP_VERSION = "\(.*\)"/\1/p' app.py)
+          mkdir -p "$RUNNER_TEMP/insp/Applications"
+          tar -xzf "release/$V/G-ColorTag-$V-arm64.tar.gz" -C "$RUNNER_TEMP/insp/Applications"
+          python3 test/mac_inspector_check.py "$RUNNER_TEMP/insp/Applications/G-ColorTag.app" "$RUNNER_TEMP/native/out/inspector"
       - name: 진단 - 퀵타임이 받는 색 정보 전체
         if: success() || failure()
         run: |
