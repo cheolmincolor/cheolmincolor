@@ -240,7 +240,7 @@ GitHub의 [릴리스 페이지](https://github.com/cheolmincolor/cheolmincolor/r
 Node.js 22 이상이 필요합니다.
 
 ```sh
-cd grayzone-ledger
+cd g-account
 npm ci
 npm start                  # 앱 실행
 npm test                   # 테스트 (Linux 에서 Electron 테스트까지: xvfb-run -a npm test)
@@ -248,7 +248,7 @@ bash package.sh            # dist/ 에 zip. Mac 용은 macOS 에서만 (서명 �
 npm run icons              # build/icon.svg 로 아이콘 다시 만들기
 ```
 
-GitHub에 올리면 Actions가 테스트하고 Mac·Windows용 zip을 만듭니다(`.github/workflows/grayzone-ledger.yml`).
+GitHub에 올리면 Actions가 테스트하고 Mac·Windows용 zip을 만듭니다(`.github/workflows/g-account.yml`).
 
 **새 버전 내기**: `package.json`의 `version`을 올리고 `CHANGELOG.md` 맨 위에 그 버전의 바뀐 점을 적어 올리면,
 Actions가 테스트·빌드 뒤 릴리스 `ledger-v버전`을 만들고 zip 3개와 `latest.json`(크기·SHA-256·바뀐 점)을 올립니다.

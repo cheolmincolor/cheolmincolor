@@ -5,8 +5,8 @@ name: G-Account
 on:
   push:
     paths:
-      - 'grayzone-ledger/**'
-      - '.github/workflows/grayzone-ledger.yml'
+      - 'g-account/**'
+      - '.github/workflows/g-account.yml'
   workflow_dispatch:
 
 permissions:
@@ -14,12 +14,12 @@ permissions:
 
 # 같은 브랜치에 새로 올리면 이전 실행은 멈춥니다.
 concurrency:
-  group: grayzone-ledger-${{ github.ref }}
+  group: g-account-${{ github.ref }}
   cancel-in-progress: true
 
 defaults:
   run:
-    working-directory: grayzone-ledger
+    working-directory: g-account
 
 jobs:
   test-and-windows:
@@ -40,7 +40,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: G-Account-windows
-          path: grayzone-ledger/dist/*.zip
+          path: g-account/dist/*.zip
           retention-days: 30
 
   mac:
@@ -63,7 +63,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: G-Account-mac
-          path: grayzone-ledger/dist/*.zip
+          path: g-account/dist/*.zip
           retention-days: 30
 
   # package.json 의 버전이 올라가 있으면 GitHub 릴리스(ledger-v버전)를 만들고 zip 과 latest.json 을 올린 뒤,
@@ -82,7 +82,7 @@ jobs:
           node-version: 22
       - uses: actions/download-artifact@v4
         with:
-          path: grayzone-ledger/dist
+          path: g-account/dist
           merge-multiple: true
       - name: 릴리스 올리기
         env:
