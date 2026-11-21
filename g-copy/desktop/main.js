@@ -10,7 +10,9 @@
 const { app, BrowserWindow, Menu, Notification, Tray, dialog, ipcMain, nativeImage, powerSaveBlocker, shell } = require('electron');
 const { spawn } = require('node:child_process');
 const path = require('node:path');
+const http = require('node:http');
 const { Updater } = require('./updater');
+const { Launch } = require('./launch');
 const pkg = require('./package.json');
 
 let engine = null;        // child process
@@ -29,6 +31,7 @@ let toldAboutBackground = false;
 let updater = null;
 let relaunchAfterUpdate = false; // "Restart to Update" was clicked
 let swapStarted = false;
+let launching = true;      // the launch screen is still up
 
 function enginePath() {
   if (process.env.GCOPY_ENGINE) return process.env.GCOPY_ENGINE;
@@ -37,11 +40,12 @@ function enginePath() {
 }
 
 // startEngine launches the engine and resolves with the address it prints.
-function startEngine() {
+function startEngine(onSpawn) {
   return new Promise((resolve, reject) => {
     const extra = (process.env.GCOPY_ENGINE_ARGS || '').split(' ').filter(Boolean);
     const child = spawn(enginePath(), ['-desktop', ...extra], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     engine = child;
+    if (onSpawn) child.once('spawn', onSpawn);
     engineGone = new Promise((done) => child.once('exit', done));
 
     let out = '';
@@ -56,11 +60,16 @@ function startEngine() {
       if (m) { settled = true; clearTimeout(timer); resolve(m[0]); }
     });
     child.stderr.on('data', (d) => { out += d; });
-    child.once('error', (e) => { clearTimeout(timer); fail('Cannot start the backup engine: ' + e.message); });
+    child.once('error', (e) => {
+      clearTimeout(timer);
+      if (engine === child && child.pid === undefined) engine = null; // it never ran: nothing to wait for when quitting
+      fail('Cannot start the backup engine: ' + e.message);
+    });
     child.once('exit', (code) => {
       clearTimeout(timer);
-      fail('The backup engine exited right after starting (code ' + code + ').\n' + out.trim().slice(-400));
-      if (settled && !shuttingDown) engineDied(code);
+      const wasUp = settled; // it had started: this is a crash, not a failed start
+      fail('The backup engine exited right after starting (code ' + code + '). ' + out.trim().slice(-300));
+      if (wasUp && !shuttingDown) engineDied(code);
     });
   });
 }
@@ -88,8 +97,7 @@ function createWindow(url) {
     title: 'G-Copy',
     backgroundColor: '#151515', // same as the page, so there is no white flash while it loads
     autoHideMenuBar: true,
-    // Opened at login: start in the menu bar, ready for the schedules.
-    show: !(process.platform === 'darwin' && app.getLoginItemSettings().wasOpenedAtLogin),
+    show: false, // shown when the launch screen is done
     webPreferences: {
       backgroundThrottling: false, // keeps following scheduled runs while hidden
       preload: path.join(__dirname, 'preload.js'),
@@ -141,7 +149,7 @@ function askStopBackup() {
 }
 
 function showWindow() {
-  if (!win) return;
+  if (!win || launching) return;
   if (win.isMinimized()) win.restore();
   win.show();
   win.focus();
@@ -281,6 +289,90 @@ ipcMain.on('notify', (event, title, body) => {
   if (process.platform === 'win32') win.flashFrame(true);
 });
 
+// ── launch ───────────────────────────────────────────────────────────────
+
+// pingEngine resolves when the engine answers an HTTP request (any answer).
+function pingEngine(origin) {
+  return new Promise((resolve, reject) => {
+    const req = http.get(origin + '/', (res) => { res.resume(); resolve(); });
+    req.setTimeout(5000, () => req.destroy(new Error('no answer within 5 seconds')));
+    req.on('error', (e) => reject(new Error('The backup engine does not answer: ' + e.message)));
+  });
+}
+
+// launch starts everything, one step per cell of the launch screen's wedge.
+async function launch() {
+  // Opened at login: G-Copy starts quietly in the menu bar, without windows.
+  const quiet = process.platform === 'darwin' && app.getLoginItemSettings().wasOpenedAtLogin;
+  const screen = new Launch();
+  const noop = () => {};
+  // The build's own check (CI): start for real, save a picture of the launch screen, quit.
+  const selfTest = process.env.GCOPY_SELFTEST_SHOT || '';
+  const ui = quiet ? { doing: (t) => console.log('[launch] ' + t), done: noop, failed: noop, finish: async () => {} } : screen;
+  try {
+    if (!quiet) await screen.open();
+    ui.doing('Starting G-Copy');
+    ui.done(1);                                   // 1 the app itself is up
+
+    ui.doing('Building the menus');
+    buildMenu();
+    updateTray();
+    ui.done(2);                                   // 2 menus and menu bar icon
+
+    ui.doing('Starting the backup engine');
+    const started = startEngine(() => { ui.done(3); ui.doing('Waiting for the backup engine'); }); // 3 engine process runs
+    const url = await started;
+    ui.done(4);                                   // 4 engine printed its address
+
+    ui.doing('Checking the backup engine');
+    await pingEngine(new URL(url).origin);
+    ui.done(5);                                   // 5 engine answers requests
+
+    ui.doing('Creating the main window');
+    createWindow(url);
+    const wc = win.webContents;
+    const once = (emitter, event) => new Promise((r) => emitter.once(event, r));
+    const loadFailed = new Promise((_, reject) => wc.once('did-fail-load', (_e, code, desc, _u, isMain) => {
+      if (isMain) reject(new Error('The interface could not be loaded: ' + desc + ' (' + code + ')'));
+    }));
+    const [navigated, domReady, loaded, drawn] = [once(wc, 'did-navigate'), once(wc, 'dom-ready'), once(wc, 'did-finish-load'), once(win, 'ready-to-show')];
+    ui.done(6);                                   // 6 main window exists
+
+    ui.doing('Loading the interface');
+    await Promise.race([navigated, loadFailed]);
+    ui.done(7);                                   // 7 engine served the page
+    await Promise.race([domReady, loadFailed]);
+    ui.done(8);                                   // 8 page is built
+    ui.doing('Loading scripts and styles');
+    await Promise.race([loaded, loadFailed]);
+    ui.done(9);                                   // 9 everything on the page loaded
+    ui.doing('Drawing the main window');
+    await drawn;
+    ui.done(10);                                  // 10 first frame is ready
+
+    ui.doing('Starting update checks');
+    startUpdater();
+    ui.done(11);                                  // 11 updater runs
+    ui.doing('Ready');
+
+    if (selfTest) await screen.capture(selfTest);
+    await ui.finish();
+    launching = false;
+    if (!quiet && win) win.show();
+    if (selfTest) { console.log('[launch] self-test passed'); app.quit(); }
+  } catch (e) {
+    console.log('[launch] ' + e.message);
+    if (quiet || !screen.win) {
+      dialog.showErrorBox('G-Copy could not start', e.message);
+      shuttingDown = true;
+      app.quit();
+      return;
+    }
+    screen.failed(e.message); // stays on screen; Quit (Cmd+Q) closes G-Copy
+    if (selfTest) { await screen.capture(selfTest); app.exit(1); }
+  }
+}
+
 // ── app lifecycle ────────────────────────────────────────────────────────
 
 if (!app.requestSingleInstanceLock()) {
@@ -289,18 +381,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('second-instance', showWindow);
   app.on('activate', showWindow); // Dock icon clicked while the window is hidden
 
-  app.whenReady().then(async () => {
-    buildMenu();
-    updateTray();
-    try {
-      createWindow(await startEngine());
-      startUpdater();
-    } catch (e) {
-      dialog.showErrorBox('G-Copy could not start', e.message);
-      shuttingDown = true;
-      app.quit();
-    }
-  });
+  app.whenReady().then(launch);
 
   // Without schedules, closing the window ends the app; with them it only hides.
   app.on('window-all-closed', () => app.quit());

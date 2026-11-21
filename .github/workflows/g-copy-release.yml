@@ -81,10 +81,34 @@ jobs:
           echo "engine answered $code"
           [ "$code" = 200 ]
 
+      # Start the real app: every start-up step must complete (the launch
+      # screen's wedge reaches 11 of 11) and it must quit cleanly.
+      - name: The app launches on this Mac
+        run: |
+          export GCOPY_CONFIG_DIR="$RUNNER_TEMP/gcopy-launch-cfg"
+          export GCOPY_SELFTEST_SHOT="$RUNNER_TEMP/launch-screen.png"
+          log="$RUNNER_TEMP/launch.log"
+          "dist/G-Copy-darwin-arm64/G-Copy.app/Contents/MacOS/G-Copy" > "$log" 2>&1 &
+          pid=$!
+          for i in $(seq 1 90); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+          if kill -0 "$pid" 2>/dev/null; then kill -9 "$pid"; echo "the app did not finish starting within 90 seconds:"; cat "$log"; exit 1; fi
+          code=0; wait "$pid" || code=$?
+          grep '^\[launch\]' "$log" || true
+          [ "$code" = 0 ] || { echo "the app exited with $code:"; cat "$log"; exit 1; }
+          grep -q '11/11 Ready' "$log" && grep -q 'self-test passed' "$log"
+          [ -s "$GCOPY_SELFTEST_SHOT" ] && cp "$GCOPY_SELFTEST_SHOT" dist/launch-screen.png
+          ! pgrep -x gcopy-engine || { echo "the engine was left running"; exit 1; }
+
       - uses: actions/upload-artifact@v4
         with:
           name: g-copy-mac
           path: g-copy/desktop/dist/G-Copy-*-mac-*.zip
+          retention-days: 14
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: g-copy-launch-screen
+          path: g-copy/desktop/dist/launch-screen.png
           retention-days: 14
 
   release:

@@ -1,2 +1,2 @@
-- Two or more sources on different disks are now read at the same time, each disk at its own pace. Into a fast server (10GbE, Thunderbolt DAS) this is about 1.5× faster with two disks in our tests. With a 1 Gb NAS the network is the limit, so it stays about the same.
-- Folders on the same disk (also different partitions or APFS volumes of one disk) and shares of the same server are still read one after another, so a hard disk does not have to jump back and forth.
+- New launch screen, the same as in every GRAYZONE app. Its grey wedge fills as G-Copy really starts (engine, window, interface), and a start-up problem is written on it instead of a separate error box.
+- Fixed: if the backup engine could not be started, G-Copy could not be quit normally.

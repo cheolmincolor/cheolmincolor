@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; font-src 'self'; img-src 'self'; script-src 'self'">
+<title>G-Copy</title>
+<style>
+/* GRAYZONE launch screen. Shared by every GRAYZONE app: keep to the spec. */
+@font-face { font-family: Inter; src: url('assets/fonts/Inter-latin.woff2') format('woff2'); font-weight: 100 900; }
+* { box-sizing: border-box; margin: 0; }
+html, body { width: 640px; height: 400px; overflow: hidden; }
+body {
+  background: #121212; color: #E8E8E8;
+  font-family: Inter, 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  padding: 36px 40px 32px;
+  display: flex; flex-direction: column; justify-content: space-between;
+  -webkit-user-select: none; user-select: none; cursor: default;
+  -webkit-app-region: drag;
+}
+.top { display: flex; justify-content: space-between; font-size: 11px; letter-spacing: 0.14em; color: #8A8A8A; }
+.mid { display: flex; align-items: center; gap: 24px; }
+.mid img { width: 72px; height: 72px; display: block; }
+.names { display: flex; flex-direction: column; gap: 10px; }
+.brand { font-size: 52px; font-weight: 600; letter-spacing: 0.16em; color: #E8E8E8; line-height: 1; white-space: nowrap; }
+.app { font-size: 18px; font-weight: 400; letter-spacing: 0.04em; color: #9A9A9A; line-height: 1; }
+.zones, .wedge { display: flex; gap: 3px; }
+.zones span { flex: 1 1 0; text-align: center; font-size: 10px; color: #E8E8E8; line-height: 1; height: 10px; margin-bottom: 4px; }
+.wedge i { flex: 1 1 0; height: 12px; border: 1px solid #333333; }
+.wedge i.on { background: var(--g); border-color: var(--g); }
+.wedge i.on.z0 { border-color: #2A2A2A; }   /* zone 0 is black on a near-black page */
+.wedge i.own { border-color: #E8E8E8 !important; } /* this app's zone */
+.foot { display: flex; justify-content: space-between; align-items: baseline; margin-top: 8px; font-size: 11px; color: #8A8A8A; }
+.foot #status { flex: 1; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 12px; }
+</style>
+</head>
+<body>
+  <div class="top"><span>DIGITAL INTERMEDIATE LAB</span><span id="version"></span></div>
+  <div class="mid">
+    <img id="icon" alt="">
+    <div class="names"><div class="brand">GRAY ZONE</div><div class="app" id="app-name"></div></div>
+  </div>
+  <div>
+    <div class="zones" id="zones"></div>
+    <div class="wedge" id="wedge"></div>
+    <div class="foot"><span>0</span><span id="status"></span><span>X</span></div>
+  </div>
+  <script src="splash.js"></script>
+</body>
+</html>

@@ -242,6 +242,7 @@ GOOS=darwin GOARCH=arm64 go build -o dist/gcopy-mac-arm64 .
 | `internal/server` | 로컬 API, 디스크 목록, 기록, 설정 |
 | `internal/server/web` | 화면 (HTML · CSS · JS, 빌드 단계 없음) |
 | `desktop` | 앱 창 (Electron). 엔진을 실행하고 그 화면을 창에 띄웁니다 |
+| `desktop/launch.js`, `splash.*` | GRAYZONE 공통 런치 화면 (640×400, 존 웨지 11칸 = 실제 시작 단계 11개, G-Copy는 존 III). 규격을 임의로 바꾸지 않습니다 |
 
 데스크톱 앱은 엔진을 보이지 않는 보조 프로그램으로 실행합니다. 앱을 닫거나 앱이 강제 종료되면 엔진도 복사 중이던 임시 파일을 지우고 종료합니다.
 
