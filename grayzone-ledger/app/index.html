@@ -75,6 +75,16 @@ tfoot td { font-weight: 600; border-top: 1px solid var(--axis); }
 .group { display: flex; justify-content: space-between; align-items: baseline; padding: 14px 2px 6px; font-size: 13px; color: var(--ink2); }
 .group b { font-size: 15px; color: var(--ink); }
 .list { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.month { margin-top: 8px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); overflow: hidden; }
+.month .list { border: 0; border-top: 1px solid var(--line); border-radius: 0; }
+.month-head { display: grid; grid-template-columns: 18px auto 1fr; align-items: center; gap: 8px; width: 100%; padding: 13px 14px; border: 0; background: none; text-align: left; font-size: 13px; color: var(--ink2); }
+.month-head:hover { background: var(--fill); }
+.month-head b { font-size: 15px; color: var(--ink); }
+.month-head .num { text-align: right; }
+.month-head .due { color: var(--bad); }
+.chev { width: 16px; height: 16px; color: var(--muted); transition: transform .15s; }
+.month.open .chev { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .chev { transition: none; } }
 .item { display: grid; grid-template-columns: auto 1fr auto; gap: 2px 10px; width: 100%; padding: 11px 12px; border: 0; border-bottom: 1px solid var(--line); background: none; text-align: left; align-items: start; }
 .item:last-child { border-bottom: 0; }
 .item:active { background: var(--fill); }

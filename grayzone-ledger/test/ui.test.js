@@ -132,6 +132,41 @@ test('화면', async (t) => {
     await close();
   });
 
+  await t.test('장부: 달마다 접고 펴기 (가장 최근 달만 펼친 채로 시작, 기억함)', async () => {
+    const { page, errors, shot, close } = await open(browser);
+    await page.click('nav [data-tab=ledger]');
+    const heads = page.locator('.month-head');
+    assert.equal(await heads.count(), 11); // 2026년 1~11월
+    assert.match(await heads.first().innerText(), /11월[\s\S]*2건 · 4,000,000원 · 미수 4,000,000원/);
+    assert.deepEqual(await page.locator('.month').evaluateAll((ms) => ms.map((m) => m.classList.contains('open'))).then((a) => a.filter(Boolean).length), 1);
+    assert.equal(await page.locator('.item').count(), 2); // 11월 2건만 보임
+    await shot('15-months');
+    await page.locator('.month-head', { hasText: '8월' }).click();
+    assert.equal(await page.locator('.item').count(), 6);
+    await page.locator('.month-head', { hasText: '11월' }).click();
+    assert.equal(await page.locator('.item').count(), 4);
+    // 다른 탭에 갔다 와도 그대로
+    await page.click('nav [data-tab=home]');
+    await page.click('nav [data-tab=ledger]');
+    assert.equal(await page.locator('.item').count(), 4);
+    await page.click('[data-months=open]');
+    assert.equal(await page.locator('.item').count(), 32);
+    await page.click('[data-months=close]');
+    assert.equal(await page.locator('.item').count(), 0);
+    // 검색·미수 보기는 모두 펼쳐서
+    await page.click('[data-lf=unpaid]');
+    assert.equal(await page.locator('.month').count(), 0);
+    assert.ok(await page.locator('.item').count() > 0);
+    await page.click('[data-lf=all]');
+    // 접힌 달에 등록하면 그 달이 펼쳐져 보임
+    await page.click('#add');
+    await page.fill('#fDate', '2026-03-20'); await page.fill('#fClient', 'A'); await page.fill('#fTitle', '3월 추가'); await page.fill('#fAmount', '1000');
+    await page.click('[data-a=save]');
+    await page.waitForSelector('.item:has-text("3월 추가")');
+    assert.deepEqual(errors, []);
+    await close();
+  });
+
   await t.test('검색 → 수정 → 삭제', async () => {
     const { page, errors, close, google } = await open(browser);
     await page.click('nav [data-tab=ledger]');

@@ -1,7 +1,7 @@
 (function () {
 'use strict';
 
-var S = { jobs: [], today: '', sheetUrl: '', title: '', setup: false, status: null, vat: { basis: '부가세 별도', hasSheet: false }, checks: [], hiddenChecks: 0, years: null, update: { status: 'idle', current: '' }, year: null, tab: 'home', q: '', lf: 'all', uf: 'all', us: 'old', loaded: false };
+var S = { jobs: [], today: '', sheetUrl: '', title: '', setup: false, status: null, vat: { basis: '부가세 별도', hasSheet: false }, checks: [], hiddenChecks: 0, years: null, update: { status: 'idle', current: '' }, year: null, tab: 'home', q: '', lf: 'all', open: loadOpen(), uf: 'all', us: 'old', loaded: false };
 var $ = function (s, el) { return (el || document).querySelector(s); };
 var app = $('#app'), modal = $('#modal'), toastEl = $('#toast');
 
@@ -390,10 +390,18 @@ function ageTag(j) {
 }
 function chip(group, key, label, cur) { return '<button class="chip' + (cur === key ? ' on' : '') + '" data-' + group + '="' + key + '">' + label + '</button>'; }
 
+// ---------- 장부: 달마다 접고 펴기 ----------
+// 펼친 달은 이 컴퓨터에 기억합니다({ '2026-11': true, '2026-10': false }). 처음 보는 해는 가장 최근 달만 펼칩니다.
+function loadOpen() { try { return JSON.parse(localStorage.getItem('gz.open') || '{}') || {}; } catch (e) { return {}; } }
+function saveOpen() { try { localStorage.setItem('gz.open', JSON.stringify(S.open)); } catch (e) { /* 기억 못 해도 동작 */ } }
+function monthKey(m) { return S.year + '-' + m; }
+function isOpen(m, first) { var k = monthKey(m); return k in S.open ? S.open[k] : first; }
+
 function viewLedger() {
   return '<div class="tools"><input type="search" id="q" placeholder="거래처·내용·감독·PD 검색 (전체 연도)" value="' + esc(S.q) + '"></div>' +
     '<div class="chips">' + chip('lf', 'all', '전체', S.lf) + chip('lf', 'unpaid', '미수', S.lf) + chip('lf', 'noinv', '계산서 미발행', S.lf) +
-    chip('lf', 'check', '점검' + (S.checks.length ? ' ' + S.checks.length : ''), S.lf) + '</div>' +
+    chip('lf', 'check', '점검' + (S.checks.length ? ' ' + S.checks.length : ''), S.lf) +
+    (S.lf === 'all' && !S.q.trim() ? '<span class="gap"></span><button class="chip" data-months="open">모두 펼치기</button><button class="chip" data-months="close">모두 접기</button>' : '') + '</div>' +
     '<div id="ledgerList">' + ledgerList() + '</div>';
 }
 function ledgerList() {
@@ -416,11 +424,21 @@ function ledgerList() {
     groups[key].push(j);
   });
   if (!q) order.sort(function (a, b) { return (Number(b) || -1) - (Number(a) || -1); }); // 최근 달이 위, 기타는 맨 아래
-  order.forEach(function (key) {
+  // 전체 보기(검색·필터 없음)에서만 달마다 접고 폅니다. 검색·미수·미발행은 찾은 것을 모두 펼쳐 보여 줍니다.
+  var foldable = !q && S.lf === 'all';
+  order.forEach(function (key, i) {
     var g = groups[key], u = sum(g, function (j) { return j.unpaid; });
     var name = q ? (key === 'null' ? '연도 없음' : key + '년') : (key === '0' ? '기타' : key + '월');
-    html += '<div class="group"><b>' + name + '</b><span class="num">' + g.length + '건 · ' + won(sum(g, function (j) { return num(j.amount); })) + '원' + (u ? ' · 미수 ' + won(u) + '원' : '') + '</span></div>' +
-      '<div class="list">' + g.map(function (j) { return item(j, { fullDate: !!q }); }).join('') + '</div>';
+    var info = g.length + '건 · ' + won(sum(g, function (j) { return num(j.amount); })) + '원' + (u ? ' · <span class="due">미수 ' + won(u) + '원</span>' : '');
+    if (!foldable) {
+      html += '<div class="group"><b>' + name + '</b><span class="num">' + info + '</span></div>' +
+        '<div class="list">' + g.map(function (j) { return item(j, { fullDate: !!q }); }).join('') + '</div>';
+      return;
+    }
+    var open = isOpen(key, i === 0);
+    html += '<section class="month' + (open ? ' open' : '') + '">' +
+      '<button class="month-head" data-month="' + key + '" aria-expanded="' + open + '"><svg class="chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><b>' + name + '</b><span class="num">' + info + '</span></button>' +
+      (open ? '<div class="list">' + g.map(function (j) { return item(j); }).join('') + '</div>' : '') + '</section>';
   });
   return html;
 }
@@ -634,7 +652,9 @@ function showForm(j) {
     if (!edit) {
       submit(el, call('addJob', [now]).then(function (d) {
         setData(d);
-        S.year = Number(now.date.slice(0, 4)); S.tab = 'ledger'; S.q = ''; S.lf = 'all'; render();
+        S.year = Number(now.date.slice(0, 4)); S.tab = 'ledger';
+        S.open[S.year + '-' + Number(now.date.slice(5, 7))] = true; saveOpen(); // 등록한 달은 펼쳐서 보이게
+        S.q = ''; S.lf = 'all'; render();
         toast('등록했습니다: ' + now.title);
       }));
       return;
@@ -663,10 +683,23 @@ app.addEventListener('click', function (e) {
   var s = e.target.closest('[data-setup]');
   if (s) { setupAction(s.dataset.setup, s); return; }
   if (e.target.closest('[data-retry]')) { app.innerHTML = '<div class="loading">장부를 불러오는 중…</div>'; load(); return; }
-  var t = e.target.closest('[data-act],[data-row],[data-lf],[data-uf],[data-us],[data-go]');
+  var t = e.target.closest('[data-act],[data-row],[data-lf],[data-uf],[data-us],[data-go],[data-month],[data-months]');
   if (!t) return;
   var d = t.dataset;
   if (d.lf) { S.lf = d.lf; render(); return; }
+  if (d.month !== undefined) {
+    var sec = t.closest('.month');
+    S.open[monthKey(d.month)] = !sec.classList.contains('open');
+    saveOpen();
+    $('#ledgerList').innerHTML = ledgerList();
+    return;
+  }
+  if (d.months) {
+    Array.prototype.forEach.call(document.querySelectorAll('[data-month]'), function (b) { S.open[monthKey(b.dataset.month)] = d.months === 'open'; });
+    saveOpen();
+    $('#ledgerList').innerHTML = ledgerList();
+    return;
+  }
   if (d.uf) { S.uf = d.uf; render(); return; }
   if (d.us) { S.us = d.us; render(); return; }
   if (d.go) { var p = d.go.split(':'); S.tab = p[0]; if (p[0] === 'ledger') S.lf = p[1]; else S.uf = p[1]; render(); window.scrollTo(0, 0); return; }
