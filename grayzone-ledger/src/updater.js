@@ -52,6 +52,7 @@ class Updater {
    * @param {string} [o.relaunchCmd]  Mac 에서 새 앱을 여는 명령(테스트에서 바꿈)
    * @param {string} [o.feed]  릴리스를 받을 주소(테스트용, 개발 실행에서만). 기본은 GitHub
    * @param {number} [o.timeoutMs]  업데이트 정보 요청의 시간 제한(기본 15초)
+   * @param {number} [o.stallMs]  내려받는 중 이만큼 아무것도 안 오면 포기(기본 60초)
    */
   constructor(o) {
     this.o = o;
@@ -61,6 +62,8 @@ class Updater {
     this.downloadPrefix = feed ? feed + '/download/' : DOWNLOAD_PREFIX;
     this.latestUrl = this.downloadPrefix + FEED_TAG + '/latest.json';
     this.timeoutMs = o.timeoutMs || 15000;
+    this.stallMs = o.stallMs || 60000;
+    this.controller = null;
     this.state = { status: 'idle', current: o.version, latest: '', notes: '', progress: 0, error: '' };
     this.prepared = null;
     this.busy = null;
@@ -115,8 +118,14 @@ class Updater {
     return this.busy;
   }
 
+  /** 진행 중인 확인·내려받기를 멈춥니다(다음 확인 때 다시 받습니다). */
+  abort(message) {
+    if (this.controller) this.controller.abort(new Error(message || '업데이트를 멈췄습니다.'));
+  }
+
   async run(download) {
     this.set({ status: 'checking', error: '' });
+    this.controller = new AbortController();
     try {
       const found = await this.findLatest();
       if (!found || !newer(found.version, this.o.version)) {
@@ -136,8 +145,11 @@ class Updater {
       if (download) await this.download(found.version, zipUrl, file);
       return this.state;
     } catch (e) {
-      this.set({ status: 'error', error: e.message });
+      const reason = this.controller && this.controller.signal.aborted ? this.controller.signal.reason : null;
+      this.set({ status: 'error', error: (reason && reason.message) || e.message });
       return this.state;
+    } finally {
+      this.controller = null;
     }
   }
 
@@ -149,22 +161,46 @@ class Updater {
     fs.mkdirSync(dir, { recursive: true });
     this.set({ status: 'downloading', progress: 0 });
 
-    const res = await this.fetch(url, { headers: { 'User-Agent': 'GRAYZONE-Ledger-App' } });
+    const ctl = this.controller || new AbortController();
+    const res = await this.fetch(url, { headers: { 'User-Agent': 'GRAYZONE-Ledger-App' }, signal: ctl.signal });
     if (!res.ok || !res.body) throw new Error(`업데이트 파일을 받지 못했습니다 (${res.status})`);
     const zip = path.join(dir, file.name);
-    const out = fs.createWriteStream(zip);
+    // 받은 조각을 곧바로(동기로) 씁니다. 쓰기를 기다리느라 받기를 멈추면 Node 의 fetch(undici)가
+    // 연결이 끝날 때 「assert(!this.paused)」로 죽는 문제가 있어, 받기를 멈추지 않습니다.
+    const fd = fs.openSync(zip, 'w');
     const hash = crypto.createHash('sha256');
     let got = 0;
     let lastPct = -1;
-    for await (const chunk of res.body) {
-      const buf = Buffer.from(chunk);
-      hash.update(buf);
-      got += buf.length;
-      if (!out.write(buf)) await new Promise((r) => out.once('drain', r));
-      const pct = file.size ? Math.min(99, Math.floor((got / file.size) * 100)) : 0;
-      if (pct !== lastPct) { lastPct = pct; this.set({ progress: pct }); }
+    let stall = null;
+    const watch = () => {
+      clearTimeout(stall);
+      stall = setTimeout(() => ctl.abort(new Error('업데이트 파일이 한동안 오지 않아 멈췄습니다. 다음에 다시 받습니다.')), this.stallMs);
+    };
+    const aborted = new Promise((_, reject) => ctl.signal.addEventListener('abort', () => reject(ctl.signal.reason), { once: true }));
+    aborted.catch(() => {});
+    try {
+      watch();
+      const it = res.body[Symbol.asyncIterator]();
+      for (;;) {
+        // 멈춤·취소가 되면 기다리던 조각을 더 기다리지 않습니다(연결이 망가져 끝나지 않는 경우까지).
+        const { value: chunk, done } = await Promise.race([it.next(), aborted]);
+        if (done) break;
+        watch();
+        const buf = Buffer.from(chunk);
+        hash.update(buf);
+        got += buf.length;
+        fs.writeSync(fd, buf);
+        const pct = file.size ? Math.min(99, Math.floor((got / file.size) * 100)) : 0;
+        if (pct !== lastPct) { lastPct = pct; this.set({ progress: pct }); }
+      }
+    } finally {
+      clearTimeout(stall);
+      fs.closeSync(fd);
     }
-    await new Promise((r, j) => out.end((e) => (e ? j(e) : r())));
+    if (file.size && got !== file.size) {
+      fs.rmSync(dir, { recursive: true, force: true });
+      throw new Error('업데이트 파일을 끝까지 받지 못했습니다. 다음에 다시 받습니다.');
+    }
     if (hash.digest('hex') !== file.sha256) {
       fs.rmSync(dir, { recursive: true, force: true });
       throw new Error('받은 파일이 손상되었습니다(SHA-256 불일치). 다음에 다시 받습니다.');

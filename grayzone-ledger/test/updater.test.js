@@ -122,6 +122,44 @@ test('고정 주소의 내려받을 주소가 이 저장소 릴리스가 아니�
   assert.match(s.error, /알 수 없는 주소/);
 });
 
+test('내려받다가 멈추면(조각이 안 옴) 포기하고, 다음 확인 때 다시 받음', async () => {
+  const dir = tmp();
+  const zip = makeZip(dir, 'darwin', 'x');
+  const base = fakeGitHub({ zip });
+  let stuck = true;
+  const f = async (url, o) => {
+    if (stuck && url.endsWith('.zip')) {
+      return { ok: true, body: (async function* () { yield zip.subarray(0, 100); await new Promise(() => {}); })() }; // 끝나지 않음
+    }
+    return base(url, o);
+  };
+  const u = updater({ workDir: path.join(dir, 'w'), fetch: f, stallMs: 300 });
+  const keepAlive = setTimeout(() => {}, 5000);
+  const s = await u.check();
+  clearTimeout(keepAlive);
+  assert.equal(s.status, 'error');
+  assert.match(s.error, /한동안 오지 않아/);
+  stuck = false;
+  assert.equal((await u.check()).status, 'ready');
+});
+
+test('앱 본체가 멈추게 할 수 있음(네트워크 라이브러리 오류 등)', async () => {
+  const dir = tmp();
+  const zip = makeZip(dir, 'darwin', 'x');
+  const base = fakeGitHub({ zip });
+  const f = async (url, o) => (url.endsWith('.zip')
+    ? { ok: true, body: (async function* () { yield zip.subarray(0, 100); await new Promise(() => {}); })() }
+    : base(url, o));
+  const u = updater({ workDir: path.join(dir, 'w'), fetch: f });
+  const keepAlive = setTimeout(() => {}, 5000);
+  const p = u.check();
+  while (u.state.status !== 'downloading') await new Promise((r) => setTimeout(r, 10));
+  u.abort('업데이트를 받다가 연결이 끊겼습니다.');
+  const s = await p;
+  clearTimeout(keepAlive);
+  assert.deepEqual([s.status, s.error], ['error', '업데이트를 받다가 연결이 끊겼습니다.']);
+});
+
 test('최신이면 아무것도 받지 않음', async () => {
   const dir = tmp();
   const zip = makeZip(dir, 'darwin', 'x');

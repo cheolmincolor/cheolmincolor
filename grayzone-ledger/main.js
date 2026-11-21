@@ -17,6 +17,14 @@ app.setName(APP_NAME);
 if (process.env.GZ_USER_DATA) app.setPath('userData', process.env.GZ_USER_DATA); // 테스트용
 if (process.platform === 'win32') app.setAppUserModelId('com.grayzone.ledger');
 
+// 안전망: 업데이트를 받다가 네트워크 라이브러리 안에서 오류가 나도 앱이 죽거나 오류 창이 뜨지 않게 합니다.
+process.on('uncaughtException', (e) => {
+  console.error(e);
+  if (updater && /checking|available|downloading/.test(updater.state.status)) {
+    updater.abort('업데이트를 받다가 연결이 끊겼습니다. 다음에 다시 받습니다.');
+  }
+});
+
 let win = null;
 let splash = null;
 let service = null;
