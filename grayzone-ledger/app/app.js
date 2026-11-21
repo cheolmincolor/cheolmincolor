@@ -476,7 +476,8 @@ function viewUnpaid() {
   var html = '<div class="kpis">' + kpi('미수금', won(total), list.length + '건' + (S.vat.basis === '부가세 포함' ? ' · 부가세 포함' : ' · 부가세 포함 ' + won(withVat) + '원')) +
     kpi('90일 넘은 미수', won(sum(list, function (j) { return daysSince(j.date) > 90 ? j.unpaid : 0; })), list.filter(function (j) { return daysSince(j.date) > 90; }).length + '건') + '</div>' +
     '<div class="chips">' + chip('uf', 'all', '전체', S.uf) + chip('uf', 'noinv', '계산서 미발행', S.uf) + chip('uf', 'wait', '입금 대기', S.uf) +
-    '<span class="gap"></span>' + chip('us', 'old', '오래된 순', S.us) + chip('us', 'big', '금액순', S.us) + chip('us', 'client', '거래처별', S.us) + '</div>';
+    '<span class="gap"></span>' + chip('us', 'old', '월별', S.us) + chip('us', 'big', '금액순', S.us) + chip('us', 'client', '거래처별', S.us) + '</div>' +
+    (S.us === 'old' && list.length ? '<div class="chips"><span class="gap"></span><button class="chip" data-umonths="open">모두 펼치기</button><button class="chip" data-umonths="close">모두 접기</button></div>' : '');
   if (!list.length) return html + '<div class="empty">미수금이 없습니다.</div>';
 
   var byDate = function (a, b) { return (a.date > b.date) - (a.date < b.date) || a.row - b.row; };
@@ -491,8 +492,27 @@ function viewUnpaid() {
       });
     return html;
   }
-  list.sort(S.us === 'big' ? function (a, b) { return b.unpaid - a.unpaid || byDate(a, b); } : byDate);
-  return html + '<div class="list">' + list.map(unpaidItem).join('') + '</div>';
+  if (S.us === 'big') {
+    list.sort(function (a, b) { return b.unpaid - a.unpaid || byDate(a, b); });
+    return html + '<div class="list">' + list.map(unpaidItem).join('') + '</div>';
+  }
+  // 월별(오래된 달이 위): 달마다 접고 폅니다. 처음에는 가장 오래된 달만 펼쳐 둡니다. 펼친 달은 기억합니다.
+  var months = {}, order = [];
+  list.sort(byDate).forEach(function (j) {
+    var k = isIso(j.date) ? j.date.slice(0, 7) : '';
+    if (!months[k]) { months[k] = []; order.push(k); }
+    months[k].push(j);
+  });
+  order.forEach(function (k, i) {
+    var g = months[k], key = 'u:' + k, open = key in S.open ? S.open[key] : i === 0;
+    var name = k ? Number(k.slice(0, 4)) + '년 ' + Number(k.slice(5)) + '월' : '날짜 없음';
+    var late = g.filter(function (j) { return daysSince(j.date) > 90; }).length;
+    html += '<section class="month' + (open ? ' open' : '') + '">' +
+      '<button class="month-head" data-umonth="' + key + '" aria-expanded="' + open + '"><svg class="chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><b>' + name + '</b>' +
+      '<span class="num">' + g.length + '건 · <span class="due">' + won(sum(g, function (j) { return j.unpaid; })) + '원</span>' + (late ? ' · 90일 넘음 ' + late + '건' : '') + '</span></button>' +
+      (open ? '<div class="list">' + g.map(unpaidItem).join('') + '</div>' : '') + '</section>';
+  });
+  return html;
 }
 function unpaidItem(j) {
   var day = isIso(j.date) ? j.date.slice(2).replace(/-/g, '.') : esc(j.date || '-');
@@ -688,7 +708,7 @@ app.addEventListener('click', function (e) {
   var s = e.target.closest('[data-setup]');
   if (s) { setupAction(s.dataset.setup, s); return; }
   if (e.target.closest('[data-retry]')) { app.innerHTML = '<div class="loading">장부를 불러오는 중…</div>'; load(); return; }
-  var t = e.target.closest('[data-act],[data-row],[data-lf],[data-uf],[data-us],[data-go],[data-month],[data-months]');
+  var t = e.target.closest('[data-act],[data-row],[data-lf],[data-uf],[data-us],[data-go],[data-month],[data-months],[data-umonth],[data-umonths]');
   if (!t) return;
   var d = t.dataset;
   if (d.lf) { S.lf = d.lf; render(); return; }
@@ -698,6 +718,14 @@ app.addEventListener('click', function (e) {
     saveOpen();
     $('#ledgerList').innerHTML = ledgerList();
     return;
+  }
+  if (d.umonth) {
+    S.open[d.umonth] = !t.closest('.month').classList.contains('open');
+    saveOpen(); render(); return;
+  }
+  if (d.umonths) {
+    Array.prototype.forEach.call(document.querySelectorAll('[data-umonth]'), function (b) { S.open[b.dataset.umonth] = d.umonths === 'open'; });
+    saveOpen(); render(); return;
   }
   if (d.months) {
     Array.prototype.forEach.call(document.querySelectorAll('[data-month]'), function (b) { S.open[monthKey(b.dataset.month)] = d.months === 'open'; });

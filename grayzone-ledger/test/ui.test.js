@@ -100,7 +100,21 @@ test('화면', async (t) => {
     await page.evaluate(() => window.__menu('tab:unpaid'));
     const total = () => page.locator('.kpi .value').first().innerText();
     assert.equal(await total(), '79,200,000원');
+    // 월별로 접혀 있고 가장 오래된 달만 펼쳐 있음
+    const heads = page.locator('.month-head');
+    assert.equal(await heads.count(), 5); // 2024-12, 2026-08·09·10·11
+    assert.match(await heads.first().innerText(), /2024년 12월[\s\S]*1건 · 3,000,000원 · 90일 넘음 1건/);
+    assert.equal(await page.locator('.item').count(), 1);
     await shot('4-unpaid');
+    await page.locator('.month-head', { hasText: '2026년 10월' }).click();
+    assert.equal(await page.locator('.item').count(), 5);
+    await page.click('[data-umonths=close]');
+    assert.equal(await page.locator('.item').count(), 0);
+    await page.click('[data-us=big]'); // 금액순은 접지 않고 전부
+    assert.equal(await page.locator('.item').count(), 11);
+    await page.click('[data-us=old]');
+    await page.click('[data-umonths=open]');
+    assert.equal(await page.locator('.item').count(), 11);
     const title = '26년 11월 작업 2';
     const row = () => page.locator('.item', { hasText: title });
     const cells = () => google.cells(google.rowOf(title));

@@ -1,7 +1,7 @@
 {
   "name": "grayzone-ledger",
   "productName": "G-Account",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "G-Account: GRAYZONE 매출 장부 (구글 시트 연동 경리 앱)",
   "private": true,
   "main": "main.js",
