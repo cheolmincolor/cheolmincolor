@@ -37,7 +37,7 @@ import qtplayer  # noqa: E402
 
 APP_NAME = "G-Retag"
 APP_SUBTITLE = "for QuickTime"
-APP_VERSION = "3.8.0"
+APP_VERSION = "3.9.0"
 COPYRIGHT = "© 2026 GRAYZONE. All rights reserved."
 TAGS = {"mac": (1, 2, 1), "std": (1, 1, 1)}
 SEG = 10.0          # 미리보기 구간 길이(초)
@@ -702,7 +702,7 @@ def run_window(url):
         NV_STATE = "pending"  # 창이 뜨면 켬. 화면은 그때까지 기다림
     # 메인 창은 숨긴 채 불러오고, 그동안 런치 화면(640×400, 제목 표시줄 없음, 크기 고정, 화면 중앙)을 보여 줌
     WINDOW = webview.create_window(f"{APP_NAME} {APP_SUBTITLE}", url, width=1240, height=820, min_size=(1020, 700),
-                                   background_color="#0e0f12", text_select=False, hidden=True)
+                                   background_color="#121212", text_select=False, hidden=True)
     SPLASH = webview.create_window(f"{APP_NAME} {APP_SUBTITLE}", url.replace("/?t=", "/launch?t="), width=640, height=400,
                                    resizable=False, frameless=True, easy_drag=True, background_color="#121212",
                                    text_select=False)
