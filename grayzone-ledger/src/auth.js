@@ -98,7 +98,7 @@ class Auth {
           finish(new UserError(error === 'access_denied' ? '구글 로그인을 취소했습니다.' : '구글 로그인 오류: ' + error));
           return;
         }
-        send(200, '로그인했습니다', '이 창을 닫고 GRAYZONE 매출 장부 앱으로 돌아가세요.');
+        send(200, '로그인했습니다', '이 창을 닫고 G-Account 앱으로 돌아가세요.');
         finish(null, url.searchParams.get('code'));
       });
       const finish = (err, code) => {

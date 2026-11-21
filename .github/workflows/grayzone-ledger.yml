@@ -1,6 +1,6 @@
-# GRAYZONE 장부 데스크톱 앱: 테스트하고 Mac·Windows 용 zip 을 만듭니다.
+# G-Account(GRAYZONE 매출 장부) 데스크톱 앱: 테스트하고 Mac·Windows 용 zip 을 만듭니다.
 # 결과 zip 은 Actions 실행 화면 아래쪽 「Artifacts」에서 받습니다.
-name: GRAYZONE 장부 앱
+name: G-Account
 
 on:
   push:
@@ -39,7 +39,7 @@ jobs:
         run: TARGETS=win32-x64 bash package.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: GRAYZONE-Ledger-windows
+          name: G-Account-windows
           path: grayzone-ledger/dist/*.zip
           retention-days: 30
 
@@ -54,15 +54,15 @@ jobs:
       - name: Mac 용 zip (Apple Silicon · Intel, ad-hoc 서명)
         run: TARGETS="darwin-arm64 darwin-x64" bash package.sh
       - name: 서명된 Apple Silicon 앱이 실제로 뜨는지 확인
-        run: GZ_EXE="dist/GRAYZONE Ledger-darwin-arm64/GRAYZONE Ledger.app/Contents/MacOS/GRAYZONE Ledger" node --test test/electron.test.js
+        run: GZ_EXE="dist/G-Account-darwin-arm64/G-Account.app/Contents/MacOS/G-Account" node --test test/electron.test.js
       - name: 자동 업데이트로 바꿔 넣은 앱도 서명이 유지되고 뜨는지 확인
         run: |
           V=$(node -p "require('./package.json').version")
-          GZ_MAC_UPDATE_ZIP="dist/GRAYZONE-Ledger-$V-mac-arm64.zip" GZ_UPDATE_TARGET="$RUNNER_TEMP/apps" node --test test/mac-update.test.js
-          GZ_EXE="$RUNNER_TEMP/apps/GRAYZONE Ledger.app/Contents/MacOS/GRAYZONE Ledger" node --test test/electron.test.js
+          GZ_MAC_UPDATE_ZIP="dist/G-Account-$V-mac-arm64.zip" GZ_UPDATE_TARGET="$RUNNER_TEMP/apps" node --test test/mac-update.test.js
+          GZ_EXE="$RUNNER_TEMP/apps/G-Account.app/Contents/MacOS/G-Account" node --test test/electron.test.js
       - uses: actions/upload-artifact@v4
         with:
-          name: GRAYZONE-Ledger-mac
+          name: G-Account-mac
           path: grayzone-ledger/dist/*.zip
           retention-days: 30
 
@@ -93,9 +93,9 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then echo "$TAG 은 이미 있습니다."; exit 0; fi
           node scripts/release-manifest.js dist "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/" > latest.json
           node -e "process.stdout.write(require('./latest.json').notes)" > notes.md
-          gh release create "$TAG" dist/GRAYZONE-Ledger-$V-*.zip latest.json --target "$GITHUB_SHA" --title "GRAYZONE 매출 장부 $V" --notes-file notes.md --latest=false
+          gh release create "$TAG" dist/G-Account-$V-*.zip latest.json --target "$GITHUB_SHA" --title "G-Account $V" --notes-file notes.md --latest=false
           if ! gh release view ledger-updates >/dev/null 2>&1; then
-            gh release create ledger-updates --prerelease --target "$GITHUB_SHA" --title "GRAYZONE 매출 장부 업데이트 정보" \
-              --notes "GRAYZONE 매출 장부 앱이 새 버전을 찾을 때 읽는 latest.json 입니다. 설치 파일은 ledger-v… 릴리스에 있습니다."
+            gh release create ledger-updates --prerelease --target "$GITHUB_SHA" --title "G-Account 업데이트 정보" \
+              --notes "G-Account 앱이 새 버전을 찾을 때 읽는 latest.json 입니다. 설치 파일은 ledger-v… 릴리스에 있습니다."
           fi
           gh release upload ledger-updates latest.json --clobber

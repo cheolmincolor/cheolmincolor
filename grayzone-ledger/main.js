@@ -12,7 +12,7 @@ const SPLASH_RESULT_MS = 900; // 「최신 버전입니다」 같은 결과를 �
 
 // 앱 데이터 폴더 이름(로그인·시트 연결이 저장된 곳)이라 바꾸지 않습니다. 화면에 보이는 이름은 DISPLAY_NAME.
 const APP_NAME = 'GRAYZONE 장부';
-const DISPLAY_NAME = 'GRAYZONE 매출 장부';
+const DISPLAY_NAME = 'G-Account';
 app.setName(APP_NAME);
 if (process.env.GZ_USER_DATA) app.setPath('userData', process.env.GZ_USER_DATA); // 테스트용
 if (process.platform === 'win32') app.setAppUserModelId('com.grayzone.ledger');

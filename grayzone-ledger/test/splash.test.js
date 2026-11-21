@@ -24,10 +24,10 @@ test('업데이트 확인 창', async (t) => {
   const shot = async (n) => { if (SHOTS) await page.screenshot({ path: path.join(SHOTS, n + '.png') }); };
 
   // 고지: 로고, 앱 이름, 그레이존 매출 장부 전용 앱이라는 안내
-  assert.equal(await page.title(), 'GRAYZONE 매출 장부');
-  assert.equal(await page.locator('h1').innerText(), 'GRAYZONE 매출 장부');
+  assert.equal(await page.title(), 'G-Account');
+  assert.equal(await page.locator('h1').innerText(), 'G-Account');
   assert.ok(await page.evaluate(() => document.querySelector('.logo').naturalWidth > 0), '로고가 보이지 않음');
-  assert.match(await page.locator('.notice').innerText(), /그레이존\(GRAYZONE\)의 매출 장부 전용 앱/);
+  assert.match(await page.locator('.notice').innerText(), /G-Account는 그레이존\(GRAYZONE\)의 매출 장부 전용 앱/);
 
   await set({ status: 'checking', current: '1.2.0' });
   assert.equal(await page.locator('#ver').innerText(), '버전 1.2.0');

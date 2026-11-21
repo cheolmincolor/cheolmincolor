@@ -10,8 +10,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-NAME="GRAYZONE Ledger"
-SLUG="GRAYZONE-Ledger"
+SLUG="G-Account"
 VERSION=$(node -p "require('./package.json').version")
 OUT=${OUT:-dist}
 if [ -z "${TARGETS:-}" ]; then
@@ -25,6 +24,8 @@ OUT=$(cd "$OUT" && pwd)
 
 for target in $TARGETS; do
   os=${target%-*}; arch=${target#*-}
+  # Windows 실행 파일 이름은 한 버전 더 예전 이름으로 둡니다: 1.4.0 까지의 앱은 그 이름의 exe 만 찾아 업데이트합니다.
+  NAME="G-Account"; [ "$os" = win32 ] && NAME="GRAYZONE Ledger"
   echo "── $target"
   if [ "$os" = darwin ] && [ "$(uname)" != Darwin ]; then
     echo "   Mac 용은 macOS 에서 만들어야 합니다(서명). 건너뜁니다." >&2
@@ -35,7 +36,7 @@ for target in $TARGETS; do
     --asar --icon=build/icon \
     --app-bundle-id=com.grayzone.ledger --app-version="$VERSION" \
     --app-category-type=public.app-category.finance --extend-info=build/mac-info.plist \
-    --win32metadata.ProductName="GRAYZONE 장부" --win32metadata.FileDescription="GRAYZONE 장부" --win32metadata.CompanyName="GRAYZONE" \
+    --win32metadata.ProductName="G-Account" --win32metadata.FileDescription="G-Account" --win32metadata.CompanyName="GRAYZONE" \
     --app-copyright="GRAYZONE" \
     --ignore='^/(dist|test|scripts|node_modules|package\.sh|README\.md|\.gitignore)($|/)' --ignore='^/build/(icon\.svg|icon\.icns|icon\.ico|mac-info\.plist)$' --quiet
 

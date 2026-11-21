@@ -32,7 +32,7 @@ function checksOf(j) { return S.checks.filter(function (c) { return c.row === j.
 // ---------- 서버 호출 ----------
 var busy = 0;
 function call(name, args) {
-  if (!window.gz) return Promise.reject(new Error('이 화면은 GRAYZONE 매출 장부 앱 안에서 열어야 동작합니다.'));
+  if (!window.gz) return Promise.reject(new Error('이 화면은 G-Account 앱 안에서 열어야 동작합니다.'));
   busy++; document.body.classList.add('busy');
   return window.gz.call(name, args || []).then(function (r) {
     if (--busy === 0) document.body.classList.remove('busy');

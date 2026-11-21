@@ -3,7 +3,9 @@
 <plist version="1.0">
 <dict>
   <key>CFBundleDisplayName</key>
-  <string>GRAYZONE 장부</string>
+  <string>G-Account</string>
+  <key>CFBundleName</key>
+  <string>G-Account</string>
   <key>LSMinimumSystemVersion</key>
   <string>12.0</string>
   <key>NSHumanReadableCopyright</key>

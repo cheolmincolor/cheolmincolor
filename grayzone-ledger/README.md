@@ -1,4 +1,4 @@
-# GRAYZONE 장부
+# G-Account
 
 구글 시트 「GRAYZONE 매출 장부」와 연결해 쓰는 경리용 데스크톱 앱입니다. Mac과 Windows에서 동작합니다.
 
@@ -63,14 +63,14 @@
 
 ### 2단계: 앱 받아서 설치
 
-GitHub의 [릴리스 페이지](https://github.com/cheolmincolor/cheolmincolor/releases)에서 가장 위의 「GRAYZONE 장부 1.x.x」를 열고,
+GitHub의 [릴리스 페이지](https://github.com/cheolmincolor/cheolmincolor/releases)에서 가장 위의 「G-Account 1.x.x」를 열고,
 아래쪽 **Assets**에서 내 컴퓨터용 파일을 받습니다. GitHub 로그인은 필요 없습니다.
 
 | 컴퓨터 | 받을 파일 |
 |---|---|
-| Mac (Apple Silicon, M1 이후) | `GRAYZONE-Ledger-버전-mac-arm64.zip` |
-| Mac (Intel) | `GRAYZONE-Ledger-버전-mac-x64.zip` |
-| Windows (64비트) | `GRAYZONE-Ledger-버전-windows-x64.zip` |
+| Mac (Apple Silicon, M1 이후) | `G-Account-버전-mac-arm64.zip` |
+| Mac (Intel) | `G-Account-버전-mac-x64.zip` |
+| Windows (64비트) | `G-Account-버전-windows-x64.zip` |
 
 어떤 Mac인지는  메뉴 > 이 Mac에 관하여에서 확인합니다. 「칩」에 Apple M…이 보이면 Apple Silicon입니다.
 처음 한 번만 받으면 됩니다. 그다음부터는 앱이 스스로 업데이트합니다(아래 「자동 업데이트」).
@@ -78,7 +78,7 @@ GitHub의 [릴리스 페이지](https://github.com/cheolmincolor/cheolmincolor/r
 **Mac**
 
 1. 받은 zip을 엽니다(Safari는 자동으로 풀어 줍니다).
-2. `GRAYZONE Ledger.app`을 **응용 프로그램** 폴더로 옮깁니다. 자동 업데이트가 되려면 꼭 이 폴더에 두세요.
+2. `G-Account.app`을 **응용 프로그램** 폴더로 옮깁니다. 자동 업데이트가 되려면 꼭 이 폴더에 두세요.
 3. 처음 열 때 「확인되지 않은 개발자」 경고가 나오면:
    - 앱을 **오른쪽 클릭 > 열기 > 열기**를 누르거나,
    - **시스템 설정 > 개인정보 보호 및 보안**의 아래쪽에서 **그래도 열기**를 누릅니다.
@@ -212,7 +212,7 @@ GitHub의 [릴리스 페이지](https://github.com/cheolmincolor/cheolmincolor/r
 | 「「장부」 시트가 없습니다」 | 다른 스프레드시트의 주소를 붙여 넣었습니다. 매출 장부 시트의 주소인지 확인하세요. |
 | 「웹 애플리케이션 유형의 클라이언트입니다」 | 1단계 ④에서 유형을 **데스크톱 앱**으로 다시 만들어 그 JSON을 고르세요. |
 | 「Access blocked」/「access_denied」 | 1단계 ③에서 대상이 「내부」로 되어 있거나 게시가 안 된 경우입니다. 「외부」 + 앱 게시로 바꾸세요. |
-| Mac에서 「손상되었기 때문에 열 수 없습니다」 | 터미널에서 `xattr -cr "/Applications/GRAYZONE Ledger.app"`를 실행한 뒤 다시 엽니다. |
+| Mac에서 「손상되었기 때문에 열 수 없습니다」 | 터미널에서 `xattr -cr "/Applications/G-Account.app"`를 실행한 뒤 다시 엽니다. |
 
 앱을 처음 상태로 돌리려면 ⚙ 설정 > **처음부터 다시 설정**을 누릅니다. 시트의 내용은 바뀌지 않습니다.
 

@@ -64,14 +64,14 @@ test('앱 열기: 업데이트 확인 창(고지 포함) → 최신이면 장부
   const server = await feedServer({ latest: VERSION });
   const { app, splash, done } = await launch(`http://127.0.0.1:${server.address().port}`);
   try {
-    assert.equal(await splash.locator('h1').innerText(), 'GRAYZONE 매출 장부');
-    assert.match(await splash.locator('.notice').innerText(), /그레이존\(GRAYZONE\)의 매출 장부 전용 앱/);
+    assert.equal(await splash.locator('h1').innerText(), 'G-Account');
+    assert.match(await splash.locator('.notice').innerText(), /G-Account는 그레이존\(GRAYZONE\)의 매출 장부 전용 앱/);
     assert.equal(await splash.locator('#ver').innerText(), '버전 ' + VERSION);
     await splash.waitForFunction(() => /최신 버전입니다/.test(document.getElementById('msg').textContent));
     const { main } = await waitMain(app);
     if (!splash.isClosed()) await splash.waitForEvent('close', { timeout: 15000 }); // 장부 창이 뜨면 확인 창은 닫힘
     assert.equal(app.windows().length, 1);
-    assert.equal(await main.title(), 'GRAYZONE 매출 장부');
+    assert.equal(await main.title(), 'G-Account');
   } finally { await done(); server.close(); }
 });
 

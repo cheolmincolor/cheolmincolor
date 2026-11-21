@@ -18,7 +18,8 @@ const REPO = 'cheolmincolor/cheolmincolor';
 const TAG_PREFIX = 'ledger-v';
 // 늘 최신 버전의 latest.json 을 담아 두는 릴리스. 같은 저장소에 다른 앱 릴리스가 많아도 바로 찾습니다.
 const FEED_TAG = 'ledger-updates';
-const APP_NAME = 'GRAYZONE Ledger';
+// Windows 실행 파일 이름: 새 이름과, 이름을 바꾸기 전(1.4.0 까지)의 이름
+const WIN_EXES = ['G-Account.exe', 'GRAYZONE Ledger.exe'];
 const DOWNLOAD_PREFIX = `https://github.com/${REPO}/releases/download/`;
 
 /** '1.10.0' > '1.9.2' */
@@ -78,7 +79,7 @@ class Updater {
 
   async getJson(url) {
     const res = await this.fetch(url, {
-      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'GRAYZONE-Ledger-App' },
+      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'G-Account-App' },
       signal: AbortSignal.timeout(this.timeoutMs),
     }).catch((e) => { throw new Error(e && e.name === 'TimeoutError' ? '응답이 없습니다(시간 초과).' : '인터넷에 연결하지 못했습니다.'); });
     if (!res.ok) throw Object.assign(new Error(`업데이트 정보를 받지 못했습니다 (${res.status})`), { status: res.status });
@@ -162,7 +163,7 @@ class Updater {
     this.set({ status: 'downloading', progress: 0 });
 
     const ctl = this.controller || new AbortController();
-    const res = await this.fetch(url, { headers: { 'User-Agent': 'GRAYZONE-Ledger-App' }, signal: ctl.signal });
+    const res = await this.fetch(url, { headers: { 'User-Agent': 'G-Account-App' }, signal: ctl.signal });
     if (!res.ok || !res.body) throw new Error(`업데이트 파일을 받지 못했습니다 (${res.status})`);
     const zip = path.join(dir, file.name);
     // 받은 조각을 곧바로(동기로) 씁니다. 쓰기를 기다리느라 받기를 멈추면 Node 의 fetch(undici)가
@@ -221,7 +222,7 @@ class Updater {
     const mac = this.o.platform === 'darwin';
     const look = (dir, depth) => {
       if (mac && dir.endsWith('.app') && fs.existsSync(path.join(dir, 'Contents', 'MacOS'))) return dir;
-      if (!mac && fs.existsSync(path.join(dir, APP_NAME + '.exe'))) return dir;
+      if (!mac && WIN_EXES.some((x) => fs.existsSync(path.join(dir, x)))) return dir;
       if (depth === 0) return null;
       for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
         if (e.isDirectory()) { const f = look(path.join(dir, e.name), depth - 1); if (f) return f; }
@@ -261,7 +262,7 @@ class Updater {
       const open = this.o.relaunchCmd || 'open';
       return [
         '#!/bin/sh',
-        '# GRAYZONE 장부 업데이트: 앱이 끝나기를 기다렸다가 새 앱으로 바꿉니다.',
+        '# G-Account 업데이트: 앱이 끝나기를 기다렸다가 새 앱으로 바꿉니다.',
         `while kill -0 ${Number(pid)} 2>/dev/null; do sleep 0.5; done`,
         `APP=${shq(targetPath)}`,
         `NEW=${shq(src)}`,
@@ -278,7 +279,7 @@ class Updater {
     }
     // Windows: 실행 중인 파일은 덮어쓸 수 없어 앱이 끝난 뒤 복사합니다. 한글 경로 때문에 PowerShell(UTF-8 BOM)로 씁니다.
     return '﻿' + [
-      '# GRAYZONE 장부 업데이트: 앱이 끝나기를 기다렸다가 새 파일로 바꿉니다.',
+      '# G-Account 업데이트: 앱이 끝나기를 기다렸다가 새 파일로 바꿉니다.',
       "$ErrorActionPreference = 'Stop'",
       `while (Get-Process -Id ${Number(pid)} -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 500 }`,
       `$src = ${psq(src)}`,
@@ -286,7 +287,10 @@ class Updater {
       'for ($i = 0; $i -lt 20; $i++) {',
       "  try { Copy-Item -Path (Join-Path $src '*') -Destination $dst -Recurse -Force; break } catch { Start-Sleep -Milliseconds 500 }",
       '}',
-      relaunch ? `Start-Process -FilePath (Join-Path $dst ${psq(APP_NAME + '.exe')})` : '',
+      `$exes = @(${WIN_EXES.map(psq).join(', ')}) | ForEach-Object { Join-Path $dst $_ } | Where-Object { Test-Path $_ }`,
+      '# 새 이름의 실행 파일이 들어왔으면 예전 이름의 파일은 지웁니다.',
+      'if ($exes.Count -gt 1) { $exes | Select-Object -Skip 1 | Remove-Item -Force -ErrorAction SilentlyContinue }',
+      relaunch ? 'Start-Process -FilePath ($exes | Select-Object -First 1)' : '',
       '',
     ].join('\r\n');
   }

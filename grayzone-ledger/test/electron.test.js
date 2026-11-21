@@ -25,7 +25,7 @@ test('Electron 앱: 창·메뉴·격리', { skip: needsDisplay && 'DISPLAY 없�
     const errors = [];
     win.on('pageerror', (e) => errors.push(String(e)));
     await win.waitForSelector('.steps');
-    assert.equal(await win.title(), 'GRAYZONE 매출 장부');
+    assert.equal(await win.title(), 'G-Account');
     assert.equal(await win.locator('.step.now h2').innerText(), 'OAuth 클라이언트 파일 고르기');
 
     // 화면은 Node.js 에 접근할 수 없고, gz 두 가지만 씁니다.

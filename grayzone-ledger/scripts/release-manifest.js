@@ -18,7 +18,7 @@ if (!m) { console.error(`CHANGELOG.md 에 ## ${version} 이 없습니다.`); pro
 const KEYS = { 'mac-arm64': 'darwin-arm64', 'mac-x64': 'darwin-x64', 'windows-x64': 'win32-x64' };
 const files = {};
 for (const name of fs.readdirSync(dir)) {
-  const k = name.match(new RegExp(`^GRAYZONE-Ledger-${version.replace(/\./g, '\\.')}-(mac-arm64|mac-x64|windows-x64)\\.zip$`));
+  const k = name.match(new RegExp(`^G-Account-${version.replace(/\./g, '\\.')}-(mac-arm64|mac-x64|windows-x64)\\.zip$`));
   if (!k) continue;
   const buf = fs.readFileSync(path.join(dir, name));
   files[KEYS[k[1]]] = { name, size: buf.length, sha256: crypto.createHash('sha256').update(buf).digest('hex'), ...(baseUrl ? { url: baseUrl + name } : {}) };

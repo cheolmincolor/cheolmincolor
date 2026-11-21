@@ -24,7 +24,7 @@ function makeZip(dir, platform, marker) {
 
 /** 가짜 GitHub: 릴리스 목록, latest.json, zip */
 function fakeGitHub({ zip, version = '1.2.0', platformKey = 'darwin-arm64', sha, extra = [] }) {
-  const name = `GRAYZONE-Ledger-${version}-mac-arm64.zip`;
+  const name = `G-Account-${version}-mac-arm64.zip`;
   const manifest = { version, notes: '- 새 기능', files: { [platformKey]: { name, size: zip.length, sha256: sha || crypto.createHash('sha256').update(zip).digest('hex') } } };
   const rel = (v, o = {}) => ({ tag_name: 'ledger-v' + v, draft: false, prerelease: false, assets: [
     { name: 'latest.json', browser_download_url: `${DL}ledger-v${v}/latest.json` },
@@ -83,7 +83,7 @@ test('새 버전 확인 → 내려받기 → SHA-256 확인 → 풀기 (초안·
   assert.ok(u.states.includes('checking') && u.states.includes('downloading'));
   assert.match(u.prepared.app, /GRAYZONE Ledger\.app$/);
   assert.equal(fs.readFileSync(path.join(u.prepared.app, 'Contents/MacOS/GRAYZONE Ledger'), 'utf8'), 'v1.2.0');
-  assert.equal(fs.readdirSync(path.dirname(path.dirname(u.prepared.app))).includes('GRAYZONE-Ledger-1.2.0-mac-arm64.zip'), false); // zip 은 지움
+  assert.equal(fs.readdirSync(path.dirname(path.dirname(u.prepared.app))).includes('G-Account-1.2.0-mac-arm64.zip'), false); // zip 은 지움
   // 준비된 뒤에는 다시 받지 않음
   const n = u.fetch.calls.length;
   await u.check();
@@ -93,7 +93,7 @@ test('새 버전 확인 → 내려받기 → SHA-256 확인 → 풀기 (초안·
 test('고정 주소(ledger-updates)로 찾음: 같은 저장소에 다른 앱 릴리스가 많아도 됨', async () => {
   const dir = tmp();
   const zip = makeZip(dir, 'darwin', 'v1.3.0');
-  const name = 'GRAYZONE-Ledger-1.3.0-mac-arm64.zip';
+  const name = 'G-Account-1.3.0-mac-arm64.zip';
   const sha = crypto.createHash('sha256').update(zip).digest('hex');
   const calls = [];
   const f = async (url) => {
@@ -270,7 +270,8 @@ test('Windows: 끝나기를 기다렸다가 복사하고 다시 여는 PowerShel
   assert.match(ps, /Get-Process -Id 4321/);
   assert.ok(ps.includes(`$dst = '${install.replace(/'/g, "''")}'`));
   assert.ok(ps.includes(`$src = '${u.prepared.app.replace(/'/g, "''")}'`));
-  assert.match(ps, /Start-Process -FilePath \(Join-Path \$dst 'GRAYZONE Ledger\.exe'\)/);
+  assert.ok(ps.includes("$exes = @('G-Account.exe', 'GRAYZONE Ledger.exe')"));
+  assert.match(ps, /Start-Process -FilePath \(\$exes \| Select-Object -First 1\)/);
   // 끌 때 설치(다시 열지 않음)
   const w = updater({ platform: 'win32', arch: 'x64', workDir: path.join(dir, 'w2'), execPath: path.join(install, 'GRAYZONE Ledger.exe'), fetch: fakeGitHub({ zip, platformKey: 'win32-x64' }) });
   await w.check();
@@ -280,8 +281,8 @@ test('Windows: 끝나기를 기다렸다가 복사하고 다시 여는 PowerShel
 test('릴리스 정보: CHANGELOG 의 이번 버전 내용과 zip 3개의 SHA-256', () => {
   const dir = tmp();
   const v = require('../package.json').version;
-  for (const k of ['mac-arm64', 'mac-x64', 'windows-x64']) fs.writeFileSync(path.join(dir, `GRAYZONE-Ledger-${v}-${k}.zip`), k);
-  fs.writeFileSync(path.join(dir, 'GRAYZONE-Ledger-0.9.0-mac-x64.zip'), 'old');
+  for (const k of ['mac-arm64', 'mac-x64', 'windows-x64']) fs.writeFileSync(path.join(dir, `G-Account-${v}-${k}.zip`), k);
+  fs.writeFileSync(path.join(dir, 'G-Account-0.9.0-mac-x64.zip'), 'old');
   const out = JSON.parse(execFileSync('node', [path.join(__dirname, '..', 'scripts', 'release-manifest.js'), dir]));
   assert.equal(out.version, v);
   const log = fs.readFileSync(path.join(__dirname, '..', 'CHANGELOG.md'), 'utf8');
@@ -291,7 +292,7 @@ test('릴리스 정보: CHANGELOG 의 이번 버전 내용과 zip 3개의 SHA-25
   assert.equal(out.files['win32-x64'].sha256, crypto.createHash('sha256').update('windows-x64').digest('hex'));
   assert.equal(out.files['win32-x64'].url, undefined);
   const withUrl = JSON.parse(execFileSync('node', [path.join(__dirname, '..', 'scripts', 'release-manifest.js'), dir, `${DL}ledger-v${v}/`]));
-  assert.equal(withUrl.files['darwin-arm64'].url, `${DL}ledger-v${v}/GRAYZONE-Ledger-${v}-mac-arm64.zip`);
-  fs.rmSync(path.join(dir, `GRAYZONE-Ledger-${v}-mac-x64.zip`));
+  assert.equal(withUrl.files['darwin-arm64'].url, `${DL}ledger-v${v}/G-Account-${v}-mac-arm64.zip`);
+  fs.rmSync(path.join(dir, `G-Account-${v}-mac-x64.zip`));
   assert.throws(() => execFileSync('node', [path.join(__dirname, '..', 'scripts', 'release-manifest.js'), dir], { stdio: 'pipe' }));
 });
