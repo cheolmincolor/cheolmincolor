@@ -2,45 +2,45 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; connect-src 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; font-src 'self'; connect-src 'none'">
 <meta name="color-scheme" content="dark">
 <title>G-Account</title>
 <style>
-:root { color-scheme: dark; --bg: #141413; --surface: #1a1a19; --ink: #f0efec; --ink2: #c3c2b7; --muted: #979590; --line: #2c2c2a; --btn: #f0efec; --btn-ink: #0b0b0b; --bar: #3987e5; --bad: #f08a8a; }
+/* GRAYZONE 런치 화면 규격 (모든 GRAYZONE 앱 공통). 수치를 임의로 바꾸지 않습니다. */
+@font-face { font-family: Inter; font-weight: 400; src: url(fonts/inter-latin-400-normal.woff2) format('woff2'); }
+@font-face { font-family: Inter; font-weight: 600; src: url(fonts/inter-latin-600-normal.woff2) format('woff2'); }
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); }
-body { font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", "Malgun Gothic", "Noto Sans KR", sans-serif;
-  display: flex; flex-direction: column; padding: 26px 28px 20px; -webkit-app-region: drag; user-select: none; border: 1px solid var(--line); word-break: keep-all; }
-button { font: inherit; cursor: pointer; -webkit-app-region: no-drag; }
-.logo { width: 220px; display: block; margin: 0 auto 14px; }
-h1 { font-size: 18px; margin: 0; text-align: center; letter-spacing: .02em; }
-.ver { text-align: center; color: var(--muted); margin-top: 2px; font-variant-numeric: tabular-nums; }
-.notice { margin: 16px 0 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink2); font-size: 12px; }
-.notice b { color: var(--ink); font-weight: 600; }
-.status { margin-top: auto; padding-top: 16px; min-height: 40px; }
-.status p { margin: 0 0 8px; color: var(--ink2); }
-.status p.err { color: var(--bad); }
-.track { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
-.fill { height: 100%; width: 0; background: var(--bar); border-radius: 3px; transition: width .2s; }
-.track.indet .fill { width: 30%; animation: slide 1.1s ease-in-out infinite; }
-@keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
-.acts { display: flex; justify-content: center; gap: 8px; margin-top: 12px; min-height: 32px; }
-.acts button { height: 32px; padding: 0 14px; border-radius: 8px; border: 1px solid #383835; background: transparent; color: var(--ink2); }
-.acts button.pri { background: var(--btn); color: var(--btn-ink); border-color: var(--btn); font-weight: 600; }
-@media (prefers-reduced-motion: reduce) { .track.indet .fill { animation: none; width: 100%; opacity: .5; } }
+html, body { margin: 0; width: 100%; height: 100%; background: #121212; color: #E8E8E8; }
+body { font-family: Inter, "Noto Sans KR", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  padding: 36px 40px 32px; display: flex; flex-direction: column; justify-content: space-between;
+  -webkit-app-region: drag; user-select: none; overflow: hidden; }
+.top { display: flex; justify-content: space-between; font-size: 11px; letter-spacing: .14em; color: #8A8A8A; }
+.mid { display: flex; align-items: center; gap: 24px; }
+.mid img { width: 72px; height: 72px; display: block; }
+.mid .txt { display: flex; flex-direction: column; gap: 10px; }
+.gz { font-size: 52px; font-weight: 600; letter-spacing: .16em; color: #E8E8E8; line-height: 1; white-space: nowrap; }
+.app { font-size: 18px; font-weight: 400; letter-spacing: .04em; color: #9A9A9A; line-height: 1; }
+.zones { display: grid; grid-template-columns: repeat(11, 1fr); gap: 3px; font-size: 10px; color: #E8E8E8; text-align: center; line-height: 1; margin-bottom: 4px; }
+.cells { display: grid; grid-template-columns: repeat(11, 1fr); gap: 3px; }
+.cell { height: 12px; border: 1px solid #333333; }
+.cell.on { background: var(--v); border-color: var(--v); }
+.cell.z0 { border-color: #2A2A2A; }
+.cell.mine { border-color: #E8E8E8; }
+.foot { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; margin-top: 8px; font-size: 11px; color: #8A8A8A; line-height: 1.3; }
+.foot #msg { text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 </style>
 </head>
 <body>
-  <img class="logo" src="grayzone-logo.svg" alt="GRAY ZONE">
-  <h1>G-Account</h1>
-  <div class="ver" id="ver">&nbsp;</div>
-  <p class="notice"><b>G-Account</b>는 <b>그레이존(GRAYZONE)의 매출 장부</b> 전용 앱입니다.
-    「GRAYZONE 매출 장부」 구글 시트와 연결해 작업 등록, 계산서·입금, 미수금, 부가세를 관리합니다.</p>
-  <div class="status" role="status" aria-live="polite">
-    <p id="msg">업데이트를 확인하고 있습니다…</p>
-    <div class="track indet" id="track"><div class="fill" id="fill"></div></div>
+  <div class="top"><span>DIGITAL INTERMEDIATE LAB</span><span id="ver"></span></div>
+  <div class="mid">
+    <img src="../build/icon.png" alt="" id="icon">
+    <div class="txt"><div class="gz">GRAY ZONE</div><div class="app">G-Account</div></div>
   </div>
-  <div class="acts" id="acts"></div>
+  <div class="wedge">
+    <div class="zones" id="zones" hidden></div>
+    <div class="cells" id="cells"></div>
+    <div class="foot" role="status" aria-live="polite"><span>0</span><span id="msg"></span><span>X</span></div>
+  </div>
 <script src="splash.js"></script>
 </body>
 </html>

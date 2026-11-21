@@ -29,7 +29,7 @@ test('Electron 앱: 창·메뉴·격리', { skip: needsDisplay && 'DISPLAY 없�
     assert.equal(await win.locator('.step.now h2').innerText(), 'OAuth 클라이언트 파일 고르기');
 
     // 화면은 Node.js 에 접근할 수 없고, gz 두 가지만 씁니다.
-    assert.deepEqual(await win.evaluate(() => [typeof window.require, typeof window.process, Object.keys(window.gz).sort().join()]), ['undefined', 'undefined', 'call,onMenu,onUpdate']);
+    assert.deepEqual(await win.evaluate(() => [typeof window.require, typeof window.process, Object.keys(window.gz).sort().join()]), ['undefined', 'undefined', 'call,loaded,onMenu,onUpdate']);
     const up = (await win.evaluate(() => window.gz.call('update:status'))).ok;
     assert.deepEqual([up.status, up.current], ['idle', require('../package.json').version]);
     assert.deepEqual(await win.evaluate(() => window.gz.call('status')), { ok: { hasClient: false, signedIn: false, email: '', spreadsheetId: '', spreadsheetTitle: '' } });

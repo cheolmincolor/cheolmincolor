@@ -39,6 +39,7 @@ class SheetsClient {
           method,
           headers: { Authorization: 'Bearer ' + token, ...(body ? { 'Content-Type': 'application/json' } : {}) },
           body: body ? JSON.stringify(body) : undefined,
+          signal: AbortSignal.timeout(30000), // 응답이 없으면 30초 뒤 포기
         });
       } catch (e) {
         throw new UserError('구글 시트에 연결하지 못했습니다. 인터넷 연결을 확인해 주세요.');

@@ -1,36 +1,32 @@
-// 앱을 열 때 먼저 뜨는 「업데이트 확인」 창. 앱 본체가 보내 주는 상태를 보여 주기만 합니다.
+// GRAYZONE 런치 화면. 앱 본체가 보내 주는 상태({ version, filled, text })를 보여 주기만 합니다.
 (function () {
   'use strict';
+  // 존 0 → X 의 회색 값 (규격)
+  var GRAYS = ['#000000', '#1B1B1B', '#303030', '#474747', '#5E5E5E', '#777777', '#919191', '#ABABAB', '#C6C6C6', '#E0E0E0', '#FFFFFF'];
+  var ROMAN = ['0', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
+  // 이 앱의 존 번호(0~10). 아직 정해지지 않아 null 입니다. 정해지면 숫자만 넣으면 외곽선과 로마 숫자가 표시됩니다.
+  var APP_ZONE = null;
+
   var $ = function (id) { return document.getElementById(id); };
-  var api = window.gzSplash;
+  var cells = $('cells'), zones = $('zones');
+  GRAYS.forEach(function (g, i) {
+    var c = document.createElement('div');
+    c.className = 'cell' + (i === 0 ? ' z0' : '') + (i === APP_ZONE ? ' mine' : '');
+    c.style.setProperty('--v', g);
+    cells.appendChild(c);
+    var z = document.createElement('span');
+    z.textContent = i === APP_ZONE ? ROMAN[i] : '';
+    zones.appendChild(z);
+  });
+  zones.hidden = APP_ZONE === null;
 
   function render(s) {
-    var msg = $('msg'), track = $('track'), fill = $('fill'), acts = $('acts');
-    if (s.current) $('ver').textContent = '버전 ' + s.current;
-    var text = '', bar = 'indet', pct = 0, buttons = '', err = false;
-    var v = s.latest ? ' ' + s.latest : '';
-    switch (s.stage || s.status) {
-      case 'checking': text = '업데이트를 확인하고 있습니다…'; buttons = 'skip'; break;
-      case 'available': text = '새 버전' + v + '이 있습니다. 받을 준비를 합니다…'; buttons = 'skip'; break;
-      case 'downloading': text = '새 버전' + v + '을 받는 중… ' + (s.progress || 0) + '%'; bar = 'pct'; pct = s.progress || 0; buttons = 'skip'; break;
-      case 'ready': case 'installing': case 'install': text = '새 버전' + v + '을 설치하고 다시 시작합니다…'; bar = 'pct'; pct = 100; break;
-      case 'none': text = '최신 버전입니다. 장부를 엽니다…'; bar = 'pct'; pct = 100; break;
-      case 'unsupported': text = (s.error || '이 컴퓨터에서는 자동 업데이트를 할 수 없습니다.') + ' 장부를 엽니다…'; bar = 'pct'; pct = 100; break;
-      case 'error': text = '업데이트를 확인하지 못했습니다. 장부를 엽니다…'; bar = 'pct'; pct = 100; err = true; break;
-      case 'install-error': text = s.error || '업데이트를 설치하지 못했습니다.'; bar = 'none'; buttons = 'open'; err = true; break;
-      default: text = '업데이트를 확인하고 있습니다…';
-    }
-    msg.textContent = text;
-    msg.className = err ? 'err' : '';
-    track.hidden = bar === 'none';
-    track.className = 'track' + (bar === 'indet' ? ' indet' : '');
-    fill.style.width = bar === 'pct' ? pct + '%' : '';
-    var html = buttons === 'skip' ? '<button id="skip">업데이트 건너뛰고 열기</button>'
-      : buttons === 'open' ? '<button class="pri" id="skip">장부 열기</button>' : '';
-    if (acts.innerHTML !== html) acts.innerHTML = html;
-    var b = $('skip');
-    if (b) b.onclick = function () { b.disabled = true; api.skip(); };
+    if (s.version) $('ver').textContent = s.version;
+    $('msg').textContent = s.text || '';
+    var n = Math.max(0, Math.min(11, s.filled || 0));
+    for (var i = 0; i < 11; i++) cells.children[i].classList.toggle('on', i < n);
   }
 
-  if (api) api.onState(render);
+  if (window.gzSplash) window.gzSplash.onState(render);
+  window.__render = render; // 테스트용
 })();

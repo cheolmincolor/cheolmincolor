@@ -8,7 +8,6 @@ const { Service } = require('./src/service');
 const { Updater } = require('./src/updater');
 
 const UPDATE_EVERY_MS = 6 * 60 * 60 * 1000;
-const SPLASH_RESULT_MS = 900; // 「최신 버전입니다」 같은 결과를 잠깐 보여 주는 시간
 
 // 앱 데이터 폴더 이름(로그인·시트 연결이 저장된 곳)이라 바꾸지 않습니다. 화면에 보이는 이름은 DISPLAY_NAME.
 const APP_NAME = 'GRAYZONE 장부';
@@ -67,7 +66,7 @@ function start() {
     feed: !app.isPackaged ? process.env.GZ_UPDATE_FEED : undefined, // 테스트용 가짜 릴리스 주소(개발 실행에서만)
     onChange: (state) => {
       if (win && !win.isDestroyed()) win.webContents.send('gz:update', state);
-      toSplash(state);
+      if (launchProgress) launchProgress(state);
     },
   });
   app.setAboutPanelOptions({ applicationName: DISPLAY_NAME, applicationVersion: app.getVersion(), copyright: 'GRAYZONE' });
@@ -91,32 +90,43 @@ function start() {
   ipcMain.handle('gz:call', (_e, name, args) => service.run(String(name), args));
   buildMenu();
   if (process.env.GZ_NO_UPDATE) { openMain(); return; }
-  startupUpdate();
+  launch();
   setInterval(() => updater.check(), UPDATE_EVERY_MS);
 }
 
-// ---------- 앱을 열 때: 업데이트 확인 창 ----------
+// ---------- 앱을 열 때: GRAYZONE 런치 화면 ----------
+
+const MIN_LAUNCH_MS = 1000; // 로딩이 아주 빨라도 최소 1초는 보여 줍니다(규격)
+const NOTE_MS = 1200;       // 넘어가도 되는 문제(업데이트 확인 실패)를 읽을 수 있게 잠깐 멈추는 시간
 
 /**
- * 먼저 작은 「업데이트 확인」 창을 띄웁니다(GRAYZONE 매출 장부 고지 포함).
- * - 최신이거나 확인할 수 없으면 잠깐 결과를 보여 주고 장부를 엽니다.
- * - 새 버전이 있으면 받아서 설치하고 앱을 다시 시작합니다.
- * - 「업데이트 건너뛰고 열기」를 누르면 바로 장부를 엽니다(받던 업데이트는 뒤에서 계속, 끌 때 적용).
+ * 런치 화면(640×400, GRAYZONE 공통 규격)을 띄우고 실제 초기화 단계를 차례로 진행합니다.
+ * 웨지 11칸은 단계에 연결되어 있습니다:
+ *   1칸 설정 읽기 · 3칸 업데이트 확인 · 8칸 새 버전 받기(받는 만큼) · 10칸 장부 창 준비 · 11칸 장부 읽기
+ * 새 버전을 받았으면 설치하고 앱을 다시 시작합니다.
+ * 앱을 쓸 수 없는 오류는 무엇이 실패했는지 적고 멈춥니다. 업데이트 확인·설치 실패는 한 줄로 알리고 계속합니다.
  */
-async function startupUpdate() {
-  let skipped = false;
-  let installing = false;
+async function launch() {
+  const t0 = Date.now();
+  let done = false;
+  let state = { version: app.getVersion(), filled: 0, text: '시작하는 중…' };
+  global.gzLaunchLog = []; // 보여 준 단계 기록(테스트가 읽습니다)
+  const show = (patch) => { state = { ...state, ...patch }; global.gzLaunchLog.push({ filled: state.filled, text: state.text }); toSplash(state); };
+  const stop = (what, e) => { done = 'failed'; console.error(e); show({ text: `${what} 실패: ${e && e.message ? e.message : e}` }); };
+
   splash = new BrowserWindow({
-    width: 460,
-    height: 440,
+    width: 640,
+    height: 400,
+    useContentSize: true,
     resizable: false,
     maximizable: false,
+    minimizable: false,
     fullscreenable: false,
     frame: false,
     show: false,
     center: true,
     title: DISPLAY_NAME,
-    backgroundColor: '#141413',
+    backgroundColor: '#121212',
     icon: path.join(__dirname, 'build', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'splash-preload.js'),
@@ -129,38 +139,64 @@ async function startupUpdate() {
   splash.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   splash.webContents.on('will-navigate', (e) => e.preventDefault());
   splash.once('ready-to-show', () => splash.show());
-  splash.on('closed', () => {
-    splash = null;
-    if (!win && !skipped && !installing) { skipped = true; openMain(); } // 창을 닫아도 장부는 엽니다
-  });
+  splash.on('closed', () => { splash = null; if (done !== true) app.quit(); }); // 끝나기 전에 닫으면 앱을 끝냅니다
   const ready = new Promise((resolve) => ipcMain.once('gz:splash-ready', resolve));
-  ipcMain.on('gz:splash-skip', () => {
-    if (skipped) return;
-    skipped = true;
-    openMain();
-  });
   splash.loadFile(path.join(__dirname, 'app', 'splash.html'));
   await ready;
-  toSplash(updater.state);
+  show({});
 
-  const s = await updater.check({ download: true });
-  if (skipped) return;
-  if (s.status === 'ready') {
-    toSplash({ ...s, stage: 'install' });
-    await delay(SPLASH_RESULT_MS);
-    if (skipped) return;
+  // 1. 설정 읽기
+  show({ text: '설정을 읽는 중…' });
+  const st = await service.run('status');
+  if (st.err) return stop('설정 읽기', new Error(st.err));
+  show({ filled: 1 });
+
+  // 2. 업데이트 확인 → 3. 새 버전 받기
+  show({ text: '업데이트를 확인하는 중…' });
+  launchProgress = (u) => {
+    if (u.status === 'available') show({ filled: 3, text: `새 버전 ${u.latest}을 받을 준비를 하는 중…` });
+    if (u.status === 'downloading') show({ filled: 3 + Math.floor((u.progress || 0) / 20), text: `새 버전 ${u.latest}을 받는 중… ${u.progress || 0}%` });
+  };
+  const u = await updater.check({ download: true });
+  launchProgress = null;
+  if (u.status === 'ready') {
+    show({ filled: 8, text: `새 버전 ${u.latest}을 설치하고 다시 시작하는 중…` });
     try {
       updater.install({ relaunch: true });
-      installing = true;
-      app.quit();
+      done = true;
+      setTimeout(() => app.quit(), Math.max(0, MIN_LAUNCH_MS - (Date.now() - t0)));
+      return;
     } catch (e) {
-      toSplash({ ...updater.state, stage: 'install-error', error: e.message });
+      show({ text: '업데이트 설치 실패(계속 진행): ' + e.message });
+      await delay(NOTE_MS);
     }
-    return;
+  } else if (u.status === 'error' || u.status === 'unsupported') {
+    show({ filled: 8, text: (u.status === 'error' ? '업데이트 확인 실패(계속 진행): ' : '업데이트 건너뜀: ') + (u.error || '') });
+    await delay(NOTE_MS);
+  } else {
+    show({ filled: 8, text: '최신 버전입니다.' });
   }
-  await delay(SPLASH_RESULT_MS);
-  if (!skipped) { skipped = true; openMain(); }
+
+  // 4. 장부 창 준비 → 5. 장부 읽기 (장부 창이 첫 화면을 그리면 끝)
+  show({ text: '장부 창을 준비하는 중…' });
+  const loaded = new Promise((resolve) => ipcMain.once('gz:loaded', resolve));
+  const pageReady = new Promise((resolve, reject) => {
+    createWindow({ hidden: true });
+    win.webContents.once('did-finish-load', resolve);
+    win.webContents.once('did-fail-load', (_e, code, desc) => reject(new Error(desc || String(code))));
+  });
+  try { await pageReady; } catch (e) { return stop('장부 창 준비', e); }
+  show({ filled: 10, text: '장부를 읽는 중…' });
+  await loaded;
+  show({ filled: 11, text: '준비 완료' });
+
+  await delay(Math.max(0, MIN_LAUNCH_MS - (Date.now() - t0)));
+  done = true;
+  if (win && !win.isDestroyed()) win.show();
+  if (splash && !splash.isDestroyed()) splash.destroy();
 }
+
+let launchProgress = null;
 
 function toSplash(state) {
   if (splash && !splash.isDestroyed()) splash.webContents.send('gz:splash', state);
@@ -168,10 +204,9 @@ function toSplash(state) {
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** 장부 창을 열고, 준비되면 업데이트 확인 창을 닫습니다. */
 function openMain() {
   if (win) return;
-  createWindow(() => { if (splash && !splash.isDestroyed()) splash.destroy(); });
+  createWindow();
 }
 
 /** 업데이트 zip 풀기: Mac 은 ditto(서명·링크 보존), Windows 는 기본 tar(10 이상), 그 밖은 unzip */
@@ -182,7 +217,7 @@ function extract(zip, dest) {
   return new Promise((resolve, reject) => execFile(cmd, args, (e) => (e ? reject(new Error('업데이트 파일을 풀지 못했습니다: ' + e.message)) : resolve())));
 }
 
-function createWindow(onShown) {
+function createWindow(opts = {}) {
   win = new BrowserWindow({
     width: 980,
     height: 880,
@@ -200,7 +235,7 @@ function createWindow(onShown) {
       spellcheck: false,
     },
   });
-  win.once('ready-to-show', () => { win.show(); if (onShown) onShown(); });
+  if (!opts.hidden) win.once('ready-to-show', () => win.show());
   win.on('closed', () => { win = null; });
   // 화면 안의 링크(시트 열기 등)는 기본 브라우저로 엽니다. 앱 창은 다른 페이지로 이동하지 않습니다.
   win.webContents.setWindowOpenHandler(({ url }) => {

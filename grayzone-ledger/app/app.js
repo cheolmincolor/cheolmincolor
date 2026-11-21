@@ -55,6 +55,7 @@ function setData(d) {
   render();
   if (d.notice) toast(d.notice);
 }
+var firstPaint = false;
 function load() {
   return call('status').then(function (st) {
     if (!st.hasClient || !st.signedIn || !st.spreadsheetId) return showSetup(st);
@@ -63,6 +64,9 @@ function load() {
     if (e.auth) return call('status').then(function (st) { showSetup(st, errText(e)); });
     if (!S.loaded) app.innerHTML = '<div class="empty">' + esc(errText(e)) + '<div class="btns" style="justify-content:center;margin-top:14px"><button class="btn" style="flex:0 0 auto" data-retry>다시 시도</button></div></div>';
     else toast(errText(e));
+  }).then(function () {
+    // 첫 화면(장부·처음 설정·오류 안내)을 그렸다고 앱 본체에 알립니다.
+    if (!firstPaint) { firstPaint = true; if (window.gz && window.gz.loaded) window.gz.loaded(); }
   });
 }
 /** 로그인이 풀린 채로 저장하려 하면 설정 화면으로 보냅니다. */

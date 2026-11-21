@@ -1,5 +1,5 @@
 'use strict';
-// 실제 Electron 앱을 띄워, 앱을 열 때의 업데이트 확인 창 흐름을 가짜 릴리스 서버로 확인합니다.
+// 실제 Electron 앱을 띄워 런치 화면의 흐름(실제 초기화 단계 → 웨지)을 가짜 릴리스 서버로 확인합니다.
 //   xvfb-run -a node --test test/electron-startup.test.js
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -10,25 +10,16 @@ const http = require('http');
 const { _electron: electron } = require('playwright');
 
 const VERSION = require('../package.json').version;
+const SHOTS = process.env.SHOTS;
 const needsDisplay = process.platform === 'linux' && !process.env.DISPLAY;
 
-/** 가짜 릴리스 서버. latest: 올라가 있는 버전, delayMs: 응답 지연 */
 function feedServer({ latest, delayMs = 0 }) {
   const server = http.createServer((req, res) => {
-    server.requests = (server.requests || 0) + 1;
     const base = `http://127.0.0.1:${server.address().port}`;
-    const send = (body) => setTimeout(() => {
-      server.answered = true;
-      if (!res.destroyed) { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); }
-    }, delayMs).unref(); // 시험이 끝난 뒤 이 타이머 때문에 기다리지 않도록
+    const send = (body) => setTimeout(() => { if (!res.destroyed) { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); } }, delayMs).unref();
     const key = `${process.platform}-${process.arch}`;
-    if (req.url === '/releases') {
-      return send([{ tag_name: 'ledger-v' + latest, draft: false, prerelease: false, assets: [
-        { name: 'latest.json', browser_download_url: `${base}/download/ledger-v${latest}/latest.json` },
-        { name: 'app.zip', browser_download_url: `${base}/download/ledger-v${latest}/app.zip` }] }]);
-    }
-    if (req.url === `/download/ledger-v${latest}/latest.json`) {
-      return send({ version: latest, notes: '', files: { [key]: { name: 'app.zip', size: 1, sha256: '00' } } });
+    if (req.url === '/download/ledger-updates/latest.json') {
+      return send({ version: latest, notes: '', files: { [key]: { name: 'app.zip', size: 1, sha256: '00', url: `${base}/download/ledger-v${latest}/app.zip` } } });
     }
     res.writeHead(404).end();
   });
@@ -37,68 +28,75 @@ function feedServer({ latest, delayMs = 0 }) {
 
 async function launch(feed) {
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'gz-start-'));
+  const t0 = Date.now();
   const app = await electron.launch({
     executablePath: require('electron'),
     args: [...(process.getuid && process.getuid() === 0 ? ['--no-sandbox'] : []), path.join(__dirname, '..')],
     env: { ...process.env, GZ_USER_DATA: userData, GZ_UPDATE_FEED: feed, GZ_NO_UPDATE: '' },
   });
   const splash = await app.firstWindow();
-  return { app, splash, done: async () => { await app.close(); fs.rmSync(userData, { recursive: true, force: true }); } };
+  return { app, splash, t0, done: async () => { await app.close(); fs.rmSync(userData, { recursive: true, force: true }); } };
 }
 
-/** 장부 창(설정 화면)이 열리고 업데이트 확인 창이 닫힐 때까지 */
-async function waitMain(app) {
-  for (let i = 0; i < 100; i++) {
-    const ws = app.windows();
-    for (const w of ws) {
-      if (await w.locator('.steps').count().catch(() => 0)) return { main: w };
-    }
-    await new Promise((r) => setTimeout(r, 100));
-  }
-  throw new Error('장부 창이 열리지 않았습니다');
+/** 런치 화면이 닫힐 때까지 기다리고, 그동안 보여 준 상태 기록과 장부 창을 돌려줍니다. */
+async function finish(app, splash) {
+  if (!splash.isClosed()) await splash.waitForEvent('close', { timeout: 30000 });
+  const log = await app.evaluate(() => global.gzLaunchLog);
+  const main = app.windows().find((w) => w !== splash);
+  await main.waitForSelector('.steps');
+  return { log, main };
 }
 
 const opts = { skip: needsDisplay && 'DISPLAY 없음 (xvfb-run 으로 실행)' };
 
-test('앱 열기: 업데이트 확인 창(고지 포함) → 최신이면 장부가 열리고 확인 창은 닫힘', opts, async () => {
+test('런치: 640×400 창, 번들 버전, 단계마다 웨지가 차고 11칸이 찬 뒤 장부로 넘어감 (최소 1초)', opts, async () => {
   const server = await feedServer({ latest: VERSION });
-  const { app, splash, done } = await launch(`http://127.0.0.1:${server.address().port}`);
+  const { app, splash, t0, done } = await launch(`http://127.0.0.1:${server.address().port}`);
   try {
-    assert.equal(await splash.locator('h1').innerText(), 'G-Account');
-    assert.match(await splash.locator('.notice').innerText(), /G-Account는 그레이존\(GRAYZONE\)의 매출 장부 전용 앱/);
-    assert.equal(await splash.locator('#ver').innerText(), '버전 ' + VERSION);
-    await splash.waitForFunction(() => /최신 버전입니다/.test(document.getElementById('msg').textContent));
-    const { main } = await waitMain(app);
-    if (!splash.isClosed()) await splash.waitForEvent('close', { timeout: 15000 }); // 장부 창이 뜨면 확인 창은 닫힘
-    assert.equal(app.windows().length, 1);
+    assert.deepEqual(await splash.evaluate(() => [innerWidth, innerHeight]), [640, 400]);
+    assert.equal(await splash.locator('#ver').innerText(), VERSION); // 번들(package.json) 버전
+    assert.equal(await app.evaluate(({ app: a }) => a.getVersion()), VERSION);
+    if (SHOTS) await splash.screenshot({ path: path.join(SHOTS, '23-launch-electron.png') });
+    const { log, main } = await finish(app, splash);
+    assert.ok(Date.now() - t0 >= 1000, '1초보다 빨리 넘어감');
+    const filled = log.map((x) => x.filled);
+    assert.deepEqual(filled, filled.slice().sort((a, b) => a - b), '웨지가 줄어든 적이 있음: ' + filled.join());
+    assert.equal(filled[filled.length - 1], 11);
+    const texts = log.map((x) => x.text);
+    for (const want of ['설정을 읽는 중…', '업데이트를 확인하는 중…', '최신 버전입니다.', '장부 창을 준비하는 중…', '장부를 읽는 중…', '준비 완료']) {
+      assert.ok(texts.includes(want), `「${want}」가 없음: ${[...new Set(texts)].join(' / ')}`);
+    }
     assert.equal(await main.title(), 'G-Account');
+    assert.equal(app.windows().length, 1);
   } finally { await done(); server.close(); }
 });
 
-test('앱 열기: 새 버전이 있으면 받으러 감 (개발 실행에서는 설치하지 않고 이유를 보이고 장부를 엶)', opts, async () => {
-  const server = await feedServer({ latest: '99.0.0' });
-  const { app, splash, done } = await launch(`http://127.0.0.1:${server.address().port}`);
-  try {
-    await splash.waitForFunction(() => /개발 실행에서는 업데이트를 설치하지 않습니다/.test(document.getElementById('msg').textContent));
-    await waitMain(app);
-  } finally { await done(); server.close(); }
-});
-
-test('앱 열기: 인터넷이 안 되면 잠깐 알리고 장부를 엶', opts, async () => {
+test('런치: 업데이트 확인이 실패하면 한 줄로 알리고 계속 진행해 장부를 엶', opts, async () => {
   const { app, splash, done } = await launch('http://127.0.0.1:9'); // 아무도 듣지 않는 포트
   try {
-    await splash.waitForFunction(() => /확인하지 못했습니다/.test(document.getElementById('msg').textContent));
-    await waitMain(app);
+    const { log } = await finish(app, splash);
+    assert.ok(log.some((x) => /^업데이트 확인 실패\(계속 진행\): /.test(x.text)), [...new Set(log.map((x) => x.text))].join(' / '));
+    assert.equal(log[log.length - 1].filled, 11);
   } finally { await done(); }
 });
 
-test('앱 열기: 확인이 늦으면 「업데이트 건너뛰고 열기」로 바로 엶', opts, async () => {
-  const server = await feedServer({ latest: VERSION, delayMs: 60000 }); // 1분 동안 답하지 않는 서버
+test('런치: 새 버전이 있으면 받으러 감 (개발 실행에서는 설치하지 않고 이유를 알린 뒤 계속)', opts, async () => {
+  const server = await feedServer({ latest: '99.0.0' });
   const { app, splash, done } = await launch(`http://127.0.0.1:${server.address().port}`);
   try {
-    await splash.waitForSelector('#skip');
-    await splash.click('#skip');
-    await waitMain(app);
-    assert.equal(server.answered, undefined, '서버가 답하기 전에 장부가 열려야 함');
+    const { log } = await finish(app, splash);
+    assert.ok(log.some((x) => /새 버전 99\.0\.0/.test(x.text)));
+    assert.ok(log.some((x) => /^업데이트 건너뜀: 개발 실행에서는/.test(x.text)));
   } finally { await done(); server.close(); }
+});
+
+test('런치: 끝나기 전에 런치 창을 닫으면 앱이 끝남 (장부 창이 몰래 뜨지 않음)', opts, async () => {
+  const server = await feedServer({ latest: VERSION, delayMs: 60000 });
+  const { app, splash, done } = await launch(`http://127.0.0.1:${server.address().port}`);
+  try {
+    await splash.waitForFunction(() => /업데이트를 확인하는 중/.test(document.getElementById('msg').textContent));
+    const closed = app.waitForEvent('close', { timeout: 10000 });
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
+    await closed;
+  } finally { await done().catch(() => {}); server.close(); }
 });
