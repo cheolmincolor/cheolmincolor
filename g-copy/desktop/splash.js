@@ -26,4 +26,7 @@ function render(s) {
   if (s.status != null) document.getElementById('status').textContent = s.status;
 }
 window.renderSplash = render; // also used by the tests
-if (window.splash) window.splash.onState(render);
+// Say "ready" (the window is shown then) only once the embedded fonts are
+// in, so the screen never appears in a fallback font first.
+const fonts = Promise.all([document.fonts.load('400 18px Pretendard'), document.fonts.load('600 52px Manrope')]).catch(() => {});
+fonts.then(() => { if (window.splash) window.splash.onState(render); });

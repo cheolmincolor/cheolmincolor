@@ -244,6 +244,14 @@ GOOS=darwin GOARCH=arm64 go build -o dist/gcopy-mac-arm64 .
 | `desktop` | 앱 창 (Electron). 엔진을 실행하고 그 화면을 창에 띄웁니다 |
 | `desktop/launch.js`, `splash.*` | GRAYZONE 공통 런치 화면 (640×400, 존 웨지 11칸 = 실제 시작 단계 11개, G-Copy는 존 III). 규격을 임의로 바꾸지 않습니다 |
 
+### 화면 디자인 (GRAY ZONE 공통 규칙)
+
+- 어두운 테마 하나(#121212), 글자·버튼·테두리·바탕·진행 표시는 모두 무채색(존 회색)입니다.
+- 색은 작은 상태 아이콘에만 씁니다: 완료 #42D392, 주의 #F2B84B, 실패 #FF6B6B, 현재 단계·새 버전 #5B8CFF. 색만으로 뜻을 전하지 않고 굵은 글자·외곽선·아이콘 모양을 함께 씁니다.
+- 글꼴은 Pretendard(앱에 내장, `internal/server/web/fonts`와 `desktop/assets/fonts`), 런치 화면의 큰 `GRAY ZONE` 글자만 Manrope 600입니다. 둘 다 SIL OFL.
+- 메인 화면 우상단에 `© GRAY ZONE` 표기가 항상 보입니다.
+- 앱 아이콘은 이 규칙의 대상이 아니며 그대로 둡니다.
+
 데스크톱 앱은 엔진을 보이지 않는 보조 프로그램으로 실행합니다. 앱을 닫거나 앱이 강제 종료되면 엔진도 복사 중이던 임시 파일을 지우고 종료합니다.
 
 복사 파이프라인은 `pipeline.go`, 중단 대비 기록은 `journal.go`, 이름 충돌 확인은 `names.go`에 있습니다. 속도 측정: `GCOPY_BENCH=1 go test -run BenchCopySpeed -v ./internal/engine/` (카드·NAS를 대역폭 모델로 흉내 냄).

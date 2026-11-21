@@ -6,12 +6,13 @@
 <title>G-Copy</title>
 <style>
 /* GRAYZONE launch screen. Shared by every GRAYZONE app: keep to the spec. */
-@font-face { font-family: Inter; src: url('assets/fonts/Inter-latin.woff2') format('woff2'); font-weight: 100 900; }
+@font-face { font-family: Pretendard; src: url('assets/fonts/PretendardVariable.woff2') format('woff2'); font-weight: 45 920; }
+@font-face { font-family: Manrope; src: url('assets/fonts/Manrope-600-latin.woff2') format('woff2'); font-weight: 600; } /* the GRAY ZONE wordmark only */
 * { box-sizing: border-box; margin: 0; }
 html, body { width: 640px; height: 400px; overflow: hidden; }
 body {
   background: #121212; color: #E8E8E8;
-  font-family: Inter, 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  font-family: Pretendard, -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', sans-serif;
   padding: 36px 40px 32px;
   display: flex; flex-direction: column; justify-content: space-between;
   -webkit-user-select: none; user-select: none; cursor: default;
@@ -21,7 +22,7 @@ body {
 .mid { display: flex; align-items: center; gap: 24px; }
 .mid img { width: 72px; height: 72px; display: block; }
 .names { display: flex; flex-direction: column; gap: 10px; }
-.brand { font-size: 52px; font-weight: 600; letter-spacing: 0.16em; color: #E8E8E8; line-height: 1; white-space: nowrap; }
+.brand { font-family: Manrope, Pretendard, sans-serif; font-size: 52px; font-weight: 600; letter-spacing: 0.08em; color: #E8E8E8; line-height: 1; white-space: nowrap; }
 .app { font-size: 18px; font-weight: 400; letter-spacing: 0.04em; color: #9A9A9A; line-height: 1; }
 .zones, .wedge { display: flex; gap: 3px; }
 .zones span { flex: 1 1 0; text-align: center; font-size: 10px; color: #E8E8E8; line-height: 1; height: 10px; margin-bottom: 4px; }
