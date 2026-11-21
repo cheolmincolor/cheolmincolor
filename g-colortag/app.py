@@ -36,7 +36,7 @@ import qtplayer  # noqa: E402
 
 APP_NAME = "G-Retag"
 APP_SUBTITLE = "for QuickTime"
-APP_VERSION = "3.6.0"
+APP_VERSION = "3.7.0"
 COPYRIGHT = "© 2026 GRAYZONE. All rights reserved."
 TAGS = {"mac": (1, 2, 1), "std": (1, 1, 1)}
 SEG = 10.0          # 미리보기 구간 길이(초)
@@ -116,7 +116,7 @@ def check_709(tag):
     p, t, m = tag
     if p in (1, 2) and m in (1, 2) and t not in (16, 18):
         return True, ""
-    return False, "Rec.709 영상이 아니라 저장에서 제외됩니다"
+    return False, "HDR 등 다른 방식의 영상이라 저장에서 제외됩니다"
 
 
 # ---------------------------------------------------------------- 미리보기
@@ -302,11 +302,11 @@ class Core:
                 if not f:
                     continue
                 if not f["ok"]:
-                    f.update(status="skipped", result="제외: Rec.709 영상 아님")
+                    f.update(status="skipped", result="제외: 지원하지 않는 방식의 영상")
                     continue
                 done_already = f["tag"] == tag and (not ct.needs_gama(tag) or f.get("gamma") == ct.MAC_GAMMA)
                 if done_already:
-                    f.update(status="skipped", result=f"이미 {want} 입니다")
+                    f.update(status="skipped", result=f"이미 이 상태입니다 ({want})")
                     continue
                 f.update(status="working", result="저장 중…", progress=0)
 
@@ -420,6 +420,13 @@ class Core:
                 WINDOW.toggle_fullscreen()
                 self.fullscreen = on
             return {"ok": WINDOW is not None}
+        if name == "open_qt":  # 저장한 파일을 퀵타임으로 열어 확인
+            f = self.files.get(data.get("id"))
+            if not f or not f["out"] or not os.path.exists(f["out"]):
+                raise ApiError("저장한 파일을 찾을 수 없습니다")
+            if sys.platform == "darwin":
+                subprocess.run(["open", "-a", "QuickTime Player", f["out"]])
+            return {"ok": True}
         if name == "reveal":
             self.reveal(data.get("id"))
             return {"ok": True}

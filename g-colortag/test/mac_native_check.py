@@ -132,7 +132,7 @@ def test():
         steps_txt = js("Array.from(document.querySelectorAll('#introSteps li')).map(l => l.className + ':' + l.textContent).join(' | ')")
         step(f"로딩 화면: {steps_txt}")
         INTRO_CHECKS.append(("로딩 화면: 태그 안내 + 플레이어 준비 + 업데이트 확인",
-                             bool(js("GCT.intro()")) and "준비됨" in steps_txt and "wait:" not in steps_txt))
+                             bool(js("GCT.intro()")) and "준비 완료" in steps_txt and "wait:" not in steps_txt))
         js("GCT.closeIntro()")
         time.sleep(0.5)
         if js("GCT.updModal()"):
