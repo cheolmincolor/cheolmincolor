@@ -60,7 +60,7 @@ test('화면', async (t) => {
   await t.test('요약: 숫자·차트·표', async () => {
     const { page, errors, shot, close } = await open(browser);
     // 운영체제가 밝은 모드여도 어두운 바탕
-    assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), 'rgb(13, 13, 13)');
+    assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), 'rgb(18, 18, 18)');
     assert.equal(await page.locator('.kpi .value').first().innerText(), '144,700,000원');
     assert.match(await page.locator('.kpi .sub').first().innerText(), /32건 · 평균 4,521,875원/);
     assert.equal(await page.locator('svg.chart path').count(), 23);
@@ -355,6 +355,52 @@ test('화면', async (t) => {
     await page.reload();
     await page.waitForSelector('.kpis');
     assert.equal(await page.locator('nav button.on').innerText().then((x) => x.replace(/\d+/, '').trim()), '미수금');
+    assert.deepEqual(errors, []);
+    await close();
+  });
+
+  await t.test('GRAY ZONE 디자인 규칙: 저작권 표기, 글꼴, 무채색(강조 아이콘만 색)', async () => {
+    const { page, errors, shot, close } = await open(browser, { before: (g) => { g.grid[g.rowOf('26년 6월 작업 2') - 1].v[5] = ''; } });
+    const ACCENTS = ['rgb(66, 211, 146)', 'rgb(242, 184, 75)', 'rgb(255, 107, 107)', 'rgb(91, 140, 255)'];
+    const audit = () => page.evaluate((accents) => {
+      const bad = [];
+      const gray = (c) => { const m = c.match(/[\d.]+/g).map(Number); return m[0] === m[1] && m[1] === m[2]; };
+      for (const el of document.querySelectorAll('body, body *')) {
+        if (el.closest('svg') && el.tagName !== 'svg') { const f = getComputedStyle(el).fill; if (f !== 'none' && !gray(f)) bad.push('fill ' + f); continue; }
+        const s = getComputedStyle(el);
+        for (const p of ['color', 'backgroundColor', 'borderTopColor', 'outlineColor']) if (!gray(s[p])) bad.push(el.className + ' ' + p + ' ' + s[p]);
+        for (const pe of ['::before', '::after']) { const c = getComputedStyle(el, pe); if (c.content !== 'none' && !gray(c.color) && !accents.includes(c.color)) bad.push(el.className + pe + ' ' + c.color); }
+      }
+      return bad;
+    }, ACCENTS);
+    for (const tab of ['home', 'ledger', 'unpaid']) {
+      await page.click(`nav [data-tab=${tab}]`);
+      if (tab !== 'home') await page.locator('[data-months=open], [data-umonths=open]').first().click();
+      assert.deepEqual(await audit(), [], tab + ' 화면에 유채색');
+      // 저작권 표기: 실제 글자, 우상단 버튼 왼쪽, 늘 보임
+      const c = page.locator('.copyright');
+      assert.equal(await c.innerText(), '© GRAY ZONE');
+      assert.deepEqual(await c.evaluate((el) => { const s = getComputedStyle(el); return [s.fontSize, s.fontWeight, s.letterSpacing, s.color]; }), ['11px', '500', '1.54px', 'rgb(138, 138, 138)']);
+      const cb = await c.boundingBox(), yb = await page.locator('#year').boundingBox();
+      assert.ok(cb.y >= 0 && cb.y + cb.height <= 860 && Math.abs(yb.x - (cb.x + cb.width) - 12) < 0.6, '표기 위치: ' + JSON.stringify([cb, yb.x]));
+      assert.ok(Math.abs((cb.y + cb.height / 2) - (yb.y + yb.height / 2)) <= 1);
+      await shot('30-rules-' + tab);
+    }
+    await page.evaluate(() => window.scrollTo(0, 2000)); // 스크롤해도 보임
+    assert.ok((await page.locator('.copyright').boundingBox()).y >= 0);
+    assert.equal(await page.locator('.copyright').evaluate((el) => { const r = el.getBoundingClientRect(); return document.elementFromPoint(r.x + 2, r.y + r.height / 2) === el; }), true);
+    // 글꼴 Pretendard 내장, 배경 #121212
+    assert.match(await page.evaluate(() => getComputedStyle(document.body).fontFamily), /^Pretendard/);
+    assert.ok(await page.evaluate(() => [...document.fonts].some((f) => f.family.replace(/"/g, '') === 'Pretendard' && f.status === 'loaded')));
+    // 상태는 기호와 함께: 완료 ✓, 주의 ⚠
+    await page.click('nav [data-tab=ledger]');
+    assert.equal(await page.locator('.tag.ok').first().evaluate((el) => getComputedStyle(el, '::before').content), '"✓ "');
+    assert.equal(await page.locator('.tag.bad').first().evaluate((el) => getComputedStyle(el, '::before').content), '"⚠ "');
+    // 입력 창과 오류 표시도 무채색 + ✕
+    await page.click('#add'); await page.click('[data-a=save]');
+    assert.equal(await page.locator('.sheet .err').evaluate((el) => getComputedStyle(el, '::before').content), '"✕ "');
+    assert.deepEqual(await audit(), [], '등록 창에 유채색');
+    await shot('31-rules-form');
     assert.deepEqual(errors, []);
     await close();
   });

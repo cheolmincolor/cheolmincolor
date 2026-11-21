@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>G-Account</title>
 <meta name="color-scheme" content="dark">
@@ -10,10 +10,12 @@
 /* 어두운 바탕 하나로 씁니다(운영체제의 밝은/어두운 모드와 상관없음). */
 :root {
   color-scheme: dark;
-  --bg: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink2: #c3c2b7; --muted: #979590;
-  --line: #2c2c2a; --axis: #383835; --fill: #262624; --btn: #f0efec; --btn-ink: #0b0b0b;
-  --s1: #3987e5; --s2: #d95926;
-  --bad: #f08a8a; --bad-bg: #3a1f1f; --ok: #7fd07f; --ok-bg: #1c2f1c; --wait: #e5c06a; --wait-bg: #33290f;
+  /* GRAY ZONE 공통 디자인 규칙: 무채색(존 회색)만. 유채색은 아래 강조 아이콘 네 가지에만 씁니다. */
+  --bg: #121212; --surface: #121212; --ink: #E8E8E8; --ink2: #9A9A9A; --muted: #8A8A8A;
+  --line: #333333; --axis: #5E5E5E; --fill: #1B1B1B; --btn: #E0E0E0; --btn-ink: #121212;
+  --s1: #E0E0E0; --s2: #5E5E5E;
+  --bad: #E8E8E8; --bad-bg: #121212; --ok: #9A9A9A; --ok-bg: #121212; --wait: #9A9A9A; --wait-bg: #121212;
+  --a-ok: #42D392; --a-warn: #F2B84B; --a-fail: #FF6B6B; --a-now: #5B8CFF; /* 완료 ✓ · 주의 ⚠ · 실패 ✕ · 현재 단계·새 버전 */
   --shadow: 0 6px 20px rgba(0,0,0,.6);
 }
 * { box-sizing: border-box; }
@@ -222,12 +224,62 @@ table { font-size: 14px; }
   .icon-btn { width: auto; padding: 0 12px; display: inline-flex; align-items: center; gap: 6px; }
   .icon-btn .lbl { display: inline; }
 }
+
+/* ---------- GRAY ZONE 공통 디자인 규칙 ---------- */
+@font-face { font-family: Pretendard; font-weight: 45 920; font-display: block; src: url(fonts/PretendardVariable.woff2) format('woff2-variations'); }
+body, button, input, select, textarea { font-family: Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; }
+:focus-visible { outline: 2px solid #FFFFFF; outline-offset: 2px; }
+/* 저작권 표기: 우상단 버튼들의 왼쪽, 늘 보이는 머리줄 안 */
+.copyright { font-size: 11px; font-weight: 500; letter-spacing: .14em; color: #8A8A8A; white-space: nowrap; margin-right: 2px; }
+@media (max-width: 719px) { header h1 small { display: none; } }
+/* 버튼: 테두리로만. 주 버튼만 밝은 바탕 */
+.btn, .acts button, .chip, .icon-btn, select, .seg button, .issue button { background: none; border: 1px solid #5E5E5E; border-radius: 6px; color: #E8E8E8; font-weight: 500; }
+.btn:hover, .acts button:hover, .chip:hover, .icon-btn:hover, select:hover, .seg button:hover, .issue button:hover { border-color: #ABABAB; }
+.btn.pri, .fab, .updatebar button:not(.x) { background: #E0E0E0; color: #121212; border-color: #E0E0E0; font-weight: 600; border-radius: 6px; }
+.btn.pri:hover, .fab:hover, .updatebar button:not(.x):hover { background: #FFFFFF; border-color: #FFFFFF; }
+.acts button.pri { background: none; color: #E8E8E8; border-color: #ABABAB; font-weight: 600; }
+.chip.on, .seg button.on { background: #303030; border-color: #E8E8E8; color: #E8E8E8; font-weight: 600; }
+.btn.danger::before { content: '✕ '; color: var(--a-fail); }
+.sheet { background: #1B1B1B; }
+.sheet > .btns:has(+ .err), .sheet > .btns:last-child, .sheet > .err { background: #1B1B1B; }
+.sheet .btn, label.f input, label.f select, label.f textarea, .step input, .tools input[type=search] { background: #121212; border-radius: 6px; }
+/* 상태: 색이 아니라 기호·외곽선·굵기로. 기호에만 강조색 */
+.tag { background: none; border: 1px solid #333333; color: #9A9A9A; border-radius: 4px; }
+.tag.ok::before { content: '✓ '; color: var(--a-ok); }
+.tag.wait::before { content: '○ '; }
+.tag.bad { border-color: #E8E8E8; color: #E8E8E8; font-weight: 700; }
+.tag.bad::before { content: '⚠ '; color: var(--a-warn); }
+.due, .month-head .due { color: #E8E8E8; font-weight: 700; }
+nav button .badge { background: none; border: 1px solid #E8E8E8; color: #E8E8E8; }
+.err { color: #E8E8E8; font-weight: 700; }
+.err:not(:empty)::before { content: '✕ '; color: var(--a-fail); }
+.banner { background: #1B1B1B; border: 1px solid #E8E8E8; color: #E8E8E8; border-radius: 6px; }
+.banner b, .banner .go { color: #E8E8E8; }
+.banner b::before { content: '⚠ '; color: var(--a-warn); }
+.issue { background: #1B1B1B; border: 1px solid #E8E8E8; color: #E8E8E8; font-weight: 700; border-radius: 6px; }
+table.vat td.warn { color: #E8E8E8; font-weight: 700; }
+table.vat td.warn::before { content: '⚠ '; color: var(--a-warn); font-weight: 400; }
+.step .no { background: none; border: 1px solid #333333; color: #9A9A9A; }
+.step.now .no { background: #E0E0E0; border-color: #E0E0E0; color: #121212; }
+.step.done .no { background: none; color: var(--a-ok); }
+.step .ok { color: #9A9A9A; }
+.updatebar { border-color: #5E5E5E; border-radius: 6px; }
+.updatebar span::before { content: '● '; color: var(--a-now); }
+/* 진행 막대, 표 머리글 */
+.meter { background: #303030; }
+.meter i { background: #ABABAB; }
+th { font-size: 11px; font-weight: 500; letter-spacing: .14em; color: #8A8A8A; }
+.card, .kpi, .list, .month, .month-head { border-radius: 8px; }
+.month.open .month-head { border-radius: 8px 8px 0 0; }
+.month .list { border-radius: 0 0 8px 8px; }
+.toast { border-radius: 6px; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <h1>G-Account<small>GRAYZONE 매출 장부</small></h1>
+    <h1>G-Account<small>매출 장부</small></h1>
+    <span class="copyright">© GRAY ZONE</span>
     <select id="year" aria-label="연도"></select>
     <a class="icon-btn" id="sheetLink" target="_blank" rel="noopener" title="시트 열기 (⌘⇧O)" aria-label="시트 열기"><i>▦</i><span class="lbl">시트</span></a>
     <button class="icon-btn refresh" id="refresh" title="새로 고침 (⌘R)" aria-label="새로 고침"><i>↻</i><span class="lbl">새로 고침</span></button>

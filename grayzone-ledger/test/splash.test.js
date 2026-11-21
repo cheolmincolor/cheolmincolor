@@ -43,11 +43,14 @@ test('런치 화면: 규격 대조', async (t) => {
   assert.deepEqual(await css('.mid', ['gap', 'alignItems']), ['24px', 'center']);
   const icon = await box('#icon');
   assert.deepEqual([icon.width, icon.height], [72, 72]);
-  assert.deepEqual(await css('.gz', ['fontSize', 'fontWeight', 'letterSpacing', 'color']), ['52px', '600', '8.32px', rgb('#E8E8E8')]);
+  assert.deepEqual(await css('.gz', ['fontSize', 'fontWeight', 'letterSpacing', 'color']), ['52px', '600', '4.16px', rgb('#E8E8E8')]);
   assert.deepEqual(await css('.app', ['fontSize', 'fontWeight', 'letterSpacing', 'color']), ['18px', '400', '0.72px', rgb('#9A9A9A')]);
   assert.equal((await css('.mid .txt', ['gap']))[0], '10px');
   assert.deepEqual([await page.locator('.gz').innerText(), await page.locator('.app').innerText()], ['GRAY ZONE', 'G-Account']);
-  assert.ok(await page.evaluate(() => document.fonts.check('600 52px Inter') && [...document.fonts].filter((f) => f.status === 'loaded').length >= 2), 'Inter 글꼴이 내장되지 않음');
+  // 글꼴: 큰 GRAY ZONE 만 Manrope 600, 나머지는 Pretendard. 둘 다 앱에 내장
+  assert.match((await css('.gz', ['fontFamily']))[0], /^Manrope/);
+  assert.match((await css('body', ['fontFamily']))[0], /^Pretendard/);
+  assert.deepEqual(await page.evaluate(() => [...document.fonts].filter((f) => f.status === 'loaded').map((f) => f.family.replace(/"/g, '')).sort()), ['Manrope', 'Pretendard']);
 
   // 아이콘 = 실제 앱 아이콘(build/icon.png). Dock 아이콘(icon.icns)의 512px 그림과 같은 파일입니다.
   const png = fs.readFileSync(path.join(__dirname, '..', 'build', 'icon.png'));
@@ -72,7 +75,7 @@ test('런치 화면: 규격 대조', async (t) => {
   let v = await look();
   assert.ok(v.every((x) => x[0] === 'rgba(0, 0, 0, 0)' && x[2] === '1px'));
   assert.equal(v[0][1], rgb('#2A2A2A'));
-  assert.ok(v.slice(1).every((x) => x[1] === rgb('#333333')));
+  assert.ok(v.slice(1).every((x, i) => x[1] === rgb(i + 1 === 9 ? '#E8E8E8' : '#333333')));
   assert.deepEqual(await page.locator('.foot span').allInnerTexts(), ['0', '설정을 읽는 중…', 'X']);
   assert.deepEqual(await css('.foot', ['fontSize', 'color']), ['11px', rgb('#8A8A8A')]);
   await shot('20-launch-0');
@@ -82,12 +85,14 @@ test('런치 화면: 규격 대조', async (t) => {
   v = await look();
   assert.deepEqual(v.slice(0, 6).map((x) => x[0]), GRAYS.slice(0, 6).map(rgb));
   assert.equal(v[0][1], rgb('#2A2A2A'));
-  assert.ok(v.slice(6).every((x) => x[0] === 'rgba(0, 0, 0, 0)' && x[1] === rgb('#333333')));
+  assert.ok(v.slice(6).every((x, i) => x[0] === 'rgba(0, 0, 0, 0)' && x[1] === rgb(i + 6 === 9 ? '#E8E8E8' : '#333333')));
   await shot('21-launch-mid');
 
   // 100%: 11칸 모두
   await set({ version: '9.8.7', filled: 11, text: '준비 완료' });
-  assert.deepEqual((await look()).map((x) => x[0]), GRAYS.map(rgb));
+  v = await look();
+  assert.deepEqual(v.map((x) => x[0]), GRAYS.map(rgb));
+  assert.equal(v[9][1], rgb('#E8E8E8')); // 이 앱의 존 칸은 채워져도 #E8E8E8 외곽선
   await shot('22-launch-100');
 
   // 오류: 무엇이 실패했는지 한 줄
@@ -99,7 +104,11 @@ test('런치 화면: 규격 대조', async (t) => {
   const colors = await page.evaluate(() => [...document.querySelectorAll('body, body *')].flatMap((el) => { const s = getComputedStyle(el); return [s.color, s.backgroundColor, s.borderTopColor]; }));
   assert.ok(colors.every((c) => { const m = c.match(/\d+/g).map(Number); return m[0] === m[1] && m[1] === m[2]; }), '유채색이 있음');
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > 640 || document.documentElement.scrollHeight > 400), false);
-  // 이 앱의 존 번호는 아직 정해지지 않아 존 표시는 없음
-  assert.equal(await page.locator('.cell.mine').count(), 0);
+  // 이 앱의 존: IX (왼쪽에서 10번째 칸). 그 칸 바로 위에 로마 숫자 10pt #E8E8E8
+  assert.deepEqual(await cells.evaluateAll((cs) => cs.map((c, i) => (c.classList.contains('mine') ? i : -1)).filter((i) => i >= 0)), [9]);
+  assert.deepEqual(await page.locator('#zones span').allInnerTexts().then((a) => a.map((x, i) => [i, x]).filter((x) => x[1])), [[9, 'IX']]);
+  assert.deepEqual(await css('#zones', ['fontSize', 'color']), ['10px', rgb('#E8E8E8')]);
+  const z = await page.locator('#zones span').nth(9).boundingBox(), c9 = boxes[9];
+  assert.ok(Math.abs(z.x - c9[0]) < 0.02 && Math.abs(z.width - c9[1]) < 0.02, '존 번호가 그 칸 바로 위가 아님');
   assert.deepEqual(errors, []);
 });

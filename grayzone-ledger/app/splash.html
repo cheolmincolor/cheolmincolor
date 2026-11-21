@@ -7,18 +7,18 @@
 <title>G-Account</title>
 <style>
 /* GRAYZONE 런치 화면 규격 (모든 GRAYZONE 앱 공통). 수치를 임의로 바꾸지 않습니다. */
-@font-face { font-family: Inter; font-weight: 400; src: url(fonts/inter-latin-400-normal.woff2) format('woff2'); }
-@font-face { font-family: Inter; font-weight: 600; src: url(fonts/inter-latin-600-normal.woff2) format('woff2'); }
+@font-face { font-family: Pretendard; font-weight: 45 920; font-display: block; src: url(fonts/PretendardVariable.woff2) format('woff2-variations'); }
+@font-face { font-family: Manrope; font-weight: 600; font-display: block; src: url(fonts/manrope-latin-600-normal.woff2) format('woff2'); }
 * { box-sizing: border-box; }
 html, body { margin: 0; width: 100%; height: 100%; background: #121212; color: #E8E8E8; }
-body { font-family: Inter, "Noto Sans KR", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+body { font-family: Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
   padding: 36px 40px 32px; display: flex; flex-direction: column; justify-content: space-between;
   -webkit-app-region: drag; user-select: none; overflow: hidden; }
 .top { display: flex; justify-content: space-between; font-size: 11px; letter-spacing: .14em; color: #8A8A8A; }
 .mid { display: flex; align-items: center; gap: 24px; }
 .mid img { width: 72px; height: 72px; display: block; }
 .mid .txt { display: flex; flex-direction: column; gap: 10px; }
-.gz { font-size: 52px; font-weight: 600; letter-spacing: .16em; color: #E8E8E8; line-height: 1; white-space: nowrap; }
+.gz { font-family: Manrope, Pretendard, sans-serif; font-size: 52px; font-weight: 600; letter-spacing: .08em; color: #E8E8E8; line-height: 1; white-space: nowrap; }
 .app { font-size: 18px; font-weight: 400; letter-spacing: .04em; color: #9A9A9A; line-height: 1; }
 .zones { display: grid; grid-template-columns: repeat(11, 1fr); gap: 3px; font-size: 10px; color: #E8E8E8; text-align: center; line-height: 1; margin-bottom: 4px; }
 .cells { display: grid; grid-template-columns: repeat(11, 1fr); gap: 3px; }

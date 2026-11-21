@@ -224,7 +224,7 @@ function createWindow(opts = {}) {
     minWidth: 380,
     minHeight: 560,
     title: DISPLAY_NAME,
-    backgroundColor: '#0d0d0d',
+    backgroundColor: '#121212',
     icon: path.join(__dirname, 'build', 'icon.png'),
     show: false,
     webPreferences: {
