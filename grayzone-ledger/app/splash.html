@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; connect-src 'none'">
+<meta name="color-scheme" content="dark">
+<title>GRAYZONE 매출 장부</title>
+<style>
+:root { color-scheme: dark; --bg: #141413; --surface: #1a1a19; --ink: #f0efec; --ink2: #c3c2b7; --muted: #979590; --line: #2c2c2a; --btn: #f0efec; --btn-ink: #0b0b0b; --bar: #3987e5; --bad: #f08a8a; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); }
+body { font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", "Malgun Gothic", "Noto Sans KR", sans-serif;
+  display: flex; flex-direction: column; padding: 26px 28px 20px; -webkit-app-region: drag; user-select: none; border: 1px solid var(--line); word-break: keep-all; }
+button { font: inherit; cursor: pointer; -webkit-app-region: no-drag; }
+.logo { width: 220px; display: block; margin: 0 auto 14px; }
+h1 { font-size: 18px; margin: 0; text-align: center; letter-spacing: .02em; }
+.ver { text-align: center; color: var(--muted); margin-top: 2px; font-variant-numeric: tabular-nums; }
+.notice { margin: 16px 0 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink2); font-size: 12px; }
+.notice b { color: var(--ink); font-weight: 600; }
+.status { margin-top: auto; padding-top: 16px; min-height: 40px; }
+.status p { margin: 0 0 8px; color: var(--ink2); }
+.status p.err { color: var(--bad); }
+.track { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.fill { height: 100%; width: 0; background: var(--bar); border-radius: 3px; transition: width .2s; }
+.track.indet .fill { width: 30%; animation: slide 1.1s ease-in-out infinite; }
+@keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+.acts { display: flex; justify-content: center; gap: 8px; margin-top: 12px; min-height: 32px; }
+.acts button { height: 32px; padding: 0 14px; border-radius: 8px; border: 1px solid #383835; background: transparent; color: var(--ink2); }
+.acts button.pri { background: var(--btn); color: var(--btn-ink); border-color: var(--btn); font-weight: 600; }
+@media (prefers-reduced-motion: reduce) { .track.indet .fill { animation: none; width: 100%; opacity: .5; } }
+</style>
+</head>
+<body>
+  <img class="logo" src="grayzone-logo.svg" alt="GRAY ZONE">
+  <h1>GRAYZONE 매출 장부</h1>
+  <div class="ver" id="ver">&nbsp;</div>
+  <p class="notice">이 앱은 <b>그레이존(GRAYZONE)의 매출 장부</b> 전용 앱입니다.
+    「GRAYZONE 매출 장부」 구글 시트와 연결해 작업 등록, 계산서·입금, 미수금, 부가세를 관리합니다.</p>
+  <div class="status" role="status" aria-live="polite">
+    <p id="msg">업데이트를 확인하고 있습니다…</p>
+    <div class="track indet" id="track"><div class="fill" id="fill"></div></div>
+  </div>
+  <div class="acts" id="acts"></div>
+<script src="splash.js"></script>
+</body>
+</html>

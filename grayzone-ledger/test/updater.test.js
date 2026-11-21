@@ -45,11 +45,19 @@ function fakeGitHub({ zip, version = '1.2.0', platformKey = 'darwin-arm64', sha,
   return f;
 }
 
+/** 쓸 수 있는 가짜 「응용 프로그램」 폴더 안의 앱 */
+function fakeInstalledApp() {
+  const apps = path.join(tmp(), 'Applications');
+  const exe = path.join(apps, 'GRAYZONE Ledger.app', 'Contents', 'MacOS', 'GRAYZONE Ledger');
+  fs.mkdirSync(path.dirname(exe), { recursive: true });
+  return exe;
+}
+
 function updater(o) {
   const states = [];
   const u = new Updater({
     version: '1.1.0', platform: 'darwin', arch: 'arm64', packaged: true, pid: 999999,
-    execPath: '/Applications/GRAYZONE Ledger.app/Contents/MacOS/GRAYZONE Ledger',
+    execPath: fakeInstalledApp(),
     extract: async (zip, dest) => { execFileSync('unzip', ['-q', zip, '-d', dest]); },
     spawn: () => ({ unref() {} }),
     onChange: (s) => states.push(s.status),
@@ -142,16 +150,31 @@ test('Mac: 앱이 끝나면 새 앱으로 바꾸고 다시 엶 (실제 sh 스크
   assert.equal(fs.existsSync(bundle + '.old-update'), false);
 });
 
-test('Mac: 다운로드 폴더에서 바로 연 앱(App Translocation)·쓰기 권한 없는 곳은 설치하지 않고 이유를 알림', async () => {
+test('Mac: 다운로드 폴더에서 바로 연 앱(App Translocation)·쓰기 권한 없는 곳은 받지도 않고 이유를 알림', async () => {
   const dir = tmp();
   const zip = makeZip(dir, 'darwin', 'x');
-  const u = updater({ workDir: path.join(dir, 'w'), fetch: fakeGitHub({ zip }),
+  const f1 = fakeGitHub({ zip });
+  const u = updater({ workDir: path.join(dir, 'w'), fetch: f1,
     execPath: '/private/var/folders/x/AppTranslocation/ABC/d/GRAYZONE Ledger.app/Contents/MacOS/GRAYZONE Ledger' });
-  await u.check();
-  assert.throws(() => u.install({ relaunch: true }), /응용 프로그램/);
+  const s = await u.check();
+  assert.deepEqual([s.status, s.latest], ['unsupported', '1.2.0']);
+  assert.match(s.error, /응용 프로그램/);
+  assert.equal(f1.calls.some((c) => c.endsWith('.zip')), false); // 큰 파일은 받지 않음
+  assert.throws(() => u.install({ relaunch: true }), /설치할 업데이트가 없습니다/);
   const v = updater({ workDir: path.join(dir, 'v'), fetch: fakeGitHub({ zip }), execPath: '/nonexistent-dir/GRAYZONE Ledger.app/Contents/MacOS/GRAYZONE Ledger' });
-  await v.check();
-  assert.throws(() => v.install({ relaunch: true }), /쓸 권한이 없어/);
+  assert.match((await v.check()).error, /쓸 권한이 없어/);
+});
+
+test('응답이 없으면 시간 제한 안에 포기하고 앱은 계속', async () => {
+  const hang = (url, opts) => new Promise((_, reject) => opts.signal.addEventListener('abort', () => reject(opts.signal.reason)));
+  const u = updater({ workDir: path.join(tmp(), 'w'), fetch: hang, timeoutMs: 200 });
+  const t0 = Date.now();
+  const keepAlive = setTimeout(() => {}, 5000); // 실제 앱은 늘 살아 있지만, 테스트 프로세스는 기다리는 동안 깨워 둡니다.
+  const s = await u.check();
+  clearTimeout(keepAlive);
+  assert.equal(s.status, 'error');
+  assert.match(s.error, /시간 초과/);
+  assert.ok(Date.now() - t0 < 2000);
 });
 
 test('Windows: 끝나기를 기다렸다가 복사하고 다시 여는 PowerShell 스크립트 (한글·따옴표 경로)', async () => {
@@ -191,7 +214,8 @@ test('릴리스 정보: CHANGELOG 의 이번 버전 내용과 zip 3개의 SHA-25
   fs.writeFileSync(path.join(dir, 'GRAYZONE-Ledger-0.9.0-mac-x64.zip'), 'old');
   const out = JSON.parse(execFileSync('node', [path.join(__dirname, '..', 'scripts', 'release-manifest.js'), dir]));
   assert.equal(out.version, v);
-  assert.match(out.notes, /자동 업데이트/);
+  const log = fs.readFileSync(path.join(__dirname, '..', 'CHANGELOG.md'), 'utf8');
+  assert.ok(out.notes.length > 0 && log.includes(`## ${v}\n\n${out.notes}\n`), '이번 버전의 바뀐 점이 아님');
   assert.doesNotMatch(out.notes, /^## /m);
   assert.deepEqual(Object.keys(out.files).sort(), ['darwin-arm64', 'darwin-x64', 'win32-x64']);
   assert.equal(out.files['win32-x64'].sha256, crypto.createHash('sha256').update('windows-x64').digest('hex'));

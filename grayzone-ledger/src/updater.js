@@ -48,10 +48,15 @@ class Updater {
    * @param {typeof fetch} [o.fetch]
    * @param {(state: object) => void} [o.onChange]
    * @param {string} [o.relaunchCmd]  Mac 에서 새 앱을 여는 명령(테스트에서 바꿈)
+   * @param {string} [o.feed]  릴리스를 받을 주소(테스트용, 개발 실행에서만). 기본은 GitHub
+   * @param {number} [o.timeoutMs]  업데이트 정보 요청의 시간 제한(기본 15초)
    */
   constructor(o) {
     this.o = o;
     this.fetch = o.fetch || fetch;
+    this.api = o.feed ? o.feed.replace(/\/$/, '') + '/releases' : `https://api.github.com/repos/${REPO}/releases?per_page=30`;
+    this.downloadPrefix = o.feed ? o.feed.replace(/\/$/, '') + '/download/' : DOWNLOAD_PREFIX;
+    this.timeoutMs = o.timeoutMs || 15000;
     this.state = { status: 'idle', current: o.version, latest: '', notes: '', progress: 0, error: '' };
     this.prepared = null;
     this.busy = null;
@@ -65,7 +70,10 @@ class Updater {
   key() { return `${this.o.platform}-${this.o.arch}`; }
 
   async getJson(url) {
-    const res = await this.fetch(url, { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'GRAYZONE-Ledger-App' } });
+    const res = await this.fetch(url, {
+      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'GRAYZONE-Ledger-App' },
+      signal: AbortSignal.timeout(this.timeoutMs),
+    }).catch((e) => { throw new Error(e && e.name === 'TimeoutError' ? '응답이 없습니다(시간 초과).' : '인터넷에 연결하지 못했습니다.'); });
     if (!res.ok) throw new Error(`업데이트 정보를 받지 못했습니다 (${res.status})`);
     return res.json();
   }
@@ -81,7 +89,7 @@ class Updater {
   async run(download) {
     this.set({ status: 'checking', error: '' });
     try {
-      const releases = await this.getJson(`https://api.github.com/repos/${REPO}/releases?per_page=30`);
+      const releases = await this.getJson(this.api);
       const best = releases
         .filter((r) => !r.draft && !r.prerelease && String(r.tag_name).startsWith(TAG_PREFIX))
         .map((r) => ({ r, v: r.tag_name.slice(TAG_PREFIX.length) }))
@@ -100,6 +108,8 @@ class Updater {
       this.set({ status: 'available', latest: best.v, notes: String(manifest.notes || ''), checkedAt: Date.now() });
       if (!file) { this.set({ status: 'unsupported', error: '이 컴퓨터용 파일이 이번 버전에 없습니다.' }); return this.state; }
       if (!this.o.packaged) { this.set({ status: 'unsupported', error: '개발 실행에서는 업데이트를 설치하지 않습니다.' }); return this.state; }
+      const t = this.target(); // 바꿔 넣을 수 없는 곳이면 받지도 않습니다.
+      if (t.error) { this.set({ status: 'unsupported', error: t.error }); return this.state; }
       const zipAsset = asset(file.name);
       if (!zipAsset) throw new Error('릴리스에 ' + file.name + ' 이 없습니다.');
       if (download) await this.download(best.v, zipAsset.browser_download_url, file);
@@ -112,7 +122,7 @@ class Updater {
 
   /** 내려받기 → SHA-256 확인 → 풀기 → 새 앱 위치 확인 */
   async download(version, url, file) {
-    if (!url.startsWith(DOWNLOAD_PREFIX)) throw new Error('알 수 없는 주소의 업데이트 파일입니다.');
+    if (!url.startsWith(this.downloadPrefix)) throw new Error('알 수 없는 주소의 업데이트 파일입니다.');
     const dir = path.join(this.o.workDir, version);
     fs.rmSync(this.o.workDir, { recursive: true, force: true }); // 예전에 받아 둔 것 정리
     fs.mkdirSync(dir, { recursive: true });
