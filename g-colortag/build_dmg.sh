@@ -43,7 +43,7 @@ APP="$WORK/dmg/G-Retag.app"; RES="$APP/Contents/Resources"
 mkdir -p "$APP/Contents/MacOS" "$RES/bin" "$RES/web" "$RES/site"
 cp app.py colortag.py updater.py qtplayer.py migrate.py LICENSE.txt "$RES/"
 cp web/index.html web/launch.html "$RES/web/"
-mkdir -p "$RES/web/fonts"; cp web/fonts/*.woff2 "$RES/web/fonts/"   # 런치 화면 글꼴 (Inter, Noto Sans KR · OFL)
+mkdir -p "$RES/web/fonts"; cp web/fonts/*.woff2 "$RES/web/fonts/"   # 앱 글꼴 Pretendard, GRAY ZONE 워드마크 Manrope (OFL)
 gunzip -c "$FF_GZ" > "$RES/bin/ffmpeg"; chmod 755 "$RES/bin/ffmpeg"
 tar xzf "$PY_TGZ" -C "$RES"                      # → $RES/python
 P="$RES/python"; PL="$P/lib/python3.12"           # 필요 없는 부분 정리 (용량 절약)

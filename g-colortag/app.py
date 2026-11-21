@@ -560,8 +560,8 @@ def pick_dialog():
 # ---------------------------------------------------------------- HTTP 서버
 TOKEN = secrets.token_urlsafe(18)
 STATIC = {"/appicon.png": (os.path.join(HERE, "web", "appicon.png"), "image/png"),  # 앱 아이콘(AppIcon.icns)에서 꺼낸 그림
-          "/fonts/Inter.woff2": (os.path.join(HERE, "web", "fonts", "Inter.woff2"), "font/woff2"),
-          "/fonts/NotoSansKR.woff2": (os.path.join(HERE, "web", "fonts", "NotoSansKR.woff2"), "font/woff2")}
+          "/fonts/Pretendard.woff2": (os.path.join(HERE, "web", "fonts", "Pretendard.woff2"), "font/woff2"),
+          "/fonts/Manrope.woff2": (os.path.join(HERE, "web", "fonts", "Manrope.woff2"), "font/woff2")}
 CORE = None
 HOSTS = set()
 

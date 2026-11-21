@@ -7,11 +7,11 @@
 <meta charset="utf-8">
 <title>G-Retag for QuickTime</title>
 <style>
-  @font-face { font-family: "Inter"; src: url("/fonts/Inter.woff2") format("woff2"); font-weight: 100 900; }
-  @font-face { font-family: "Noto Sans KR"; src: url("/fonts/NotoSansKR.woff2") format("woff2"); font-weight: 100 900; }
+  @font-face { font-family: "Pretendard"; src: url("/fonts/Pretendard.woff2") format("woff2"); font-weight: 45 920; }
+  @font-face { font-family: "Manrope"; src: url("/fonts/Manrope.woff2") format("woff2"); font-weight: 200 800; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { width: 100%; height: 100%; background: #121212; overflow: hidden; cursor: default;
-    font-family: "Inter", "Noto Sans KR", -apple-system, BlinkMacSystemFont, sans-serif;
+    font-family: "Pretendard", -apple-system, BlinkMacSystemFont, sans-serif;
     -webkit-font-smoothing: antialiased; -webkit-user-select: none; user-select: none; }
   /* 창 640×400, 안쪽 여백 위 36 · 좌우 40 · 아래 32, 세 구역을 위·가운데·아래로 균등 배치 */
   #launch { width: 640px; height: 400px; padding: 36px 40px 32px; display: flex; flex-direction: column;
@@ -22,7 +22,7 @@
   .mid { display: flex; align-items: center; gap: 24px; }
   .mid img { width: 72px; height: 72px; flex: none; display: block; }
   .names { display: flex; flex-direction: column; gap: 10px; }
-  .gz { font-size: 52px; line-height: 1; font-weight: 600; letter-spacing: .16em; color: #E8E8E8; white-space: nowrap; }
+  .gz { font-family: "Manrope", "Pretendard", sans-serif; font-size: 52px; line-height: 1; font-weight: 600; letter-spacing: .08em; color: #E8E8E8; white-space: nowrap; }
   .app { font-size: 18px; line-height: 1; font-weight: 400; letter-spacing: .04em; color: #9A9A9A; white-space: nowrap; }
   /* 하단 웨지: 11칸, 간격 3, 높이 12. 로딩 표시를 겸함 */
   .wedge { position: relative; display: flex; gap: 3px; height: 12px; }

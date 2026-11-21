@@ -6,8 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>G-Retag for QuickTime</title>
 <style>
-  @font-face { font-family: "Inter"; src: url("/fonts/Inter.woff2") format("woff2"); font-weight: 100 900; }
-  @font-face { font-family: "Noto Sans KR"; src: url("/fonts/NotoSansKR.woff2") format("woff2"); font-weight: 100 900; }
+  @font-face { font-family: "Pretendard"; src: url("/fonts/Pretendard.woff2") format("woff2"); font-weight: 45 920; }
   :root {
     /* GRAYZONE 공통: 무채색만 사용 (유채색은 앱 아이콘 안에만). 런치 화면과 같은 배경·글자색 */
     --bg: #121212; --panel: #181818; --panel2: #1F1F1F; --line: #2A2A2A; --line2: #333333;
@@ -18,7 +17,7 @@
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text); overflow: hidden;
-    font: 14px/1.45 "Inter", "Noto Sans KR", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif;
+    font: 13px/1.4 "Pretendard", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif;
     -webkit-font-smoothing: antialiased; -webkit-user-select: none; user-select: none; }
   button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
   button:disabled { cursor: default; }
@@ -325,15 +324,50 @@
   #seek::-webkit-slider-runnable-track { background: linear-gradient(to right, #E8E8E8 var(--p), #303030 var(--p)); }
   #drop { border-color: #E8E8E8; }
   .side-head b, .choice-label { font-size: 11px; letter-spacing: .14em; color: var(--mute); font-weight: 400; }
+
+  /* ---- GRAY ZONE 공통 화면 요소 표준 (grayzone-app-design / components.md) ---- */
+  html, body { font-size: 13px; line-height: 1.4; }
+  #app { grid-template-rows: 56px 1fr; }
+  header { padding: 0 16px; border-bottom: 1px solid #333333; }
+  main { grid-template-columns: 260px 1fr; }
+  aside { border-right: 1px solid #333333; }
+  .brand { font-size: 15px; font-weight: 600; }
+  .gzmark { font-size: 11px; font-weight: 500; letter-spacing: .14em; color: #8A8A8A; white-space: nowrap; }  /* 저작권 표기: 항상 보임 */
+  .hdr-right { gap: 12px; }
+  .btn { height: 32px; padding: 0 14px; border-radius: 6px; border: 1px solid #5E5E5E; background: none; color: #E8E8E8;
+    font-size: 13px; font-weight: 500; }
+  .btn:hover:not(:disabled) { background: none; border-color: #ABABAB; }
+  .btn.primary { background: #E0E0E0; border-color: #E0E0E0; color: #121212; font-weight: 600; }
+  .btn.primary:hover:not(:disabled) { background: #FFFFFF; border-color: #FFFFFF; }
+  .btn.sm { height: 26px; padding: 0 10px; font-size: 12px; border-radius: 6px; }
+  button:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px solid #FFFFFF; outline-offset: 2px; }
+  #saveBtn, #introStart, #welcome .btn { height: 32px; padding: 0 14px; font-size: 13px; border-radius: 6px; }
+  .item { padding: 9px 8px 9px 10px; border-radius: 4px; border: 0; border-left: 3px solid transparent; margin-bottom: 2px; }
+  .item:hover { background: #1B1B1B; }
+  .item.cur { background: #303030; border-left-color: #E8E8E8; }
+  .item .name { font-size: 13px; font-weight: 500; } .item.cur .name { font-weight: 600; }
+  .item.cur .st, .item.cur .badge { color: #C6C6C6; }
+  .item.bad { box-shadow: inset 0 0 0 1px #E8E8E8; background: #1B1B1B; }   /* 오류 행: 외곽선 + 굵은 글자 + 아이콘 */
+  .item.bad .name, .item.bad .st { font-weight: 700; color: #E8E8E8; }
+  .side-head b, .choice-label, .copy { font-size: 11px; font-weight: 500; letter-spacing: .14em; color: #8A8A8A; }
+  .copy { letter-spacing: 0; font-weight: 400; }
+  .time, #count, .upd-ver { font-variant-numeric: tabular-nums; }
+  .upd-bar { height: 6px; border-radius: 3px; background: #303030; }
+  .upd-bar i { background: #ABABAB; border-radius: 3px; } .upd-bar.full i { background: #777777; }
+  .panel, .transport, .savebar, .intro-card, .modal-card, .icard, .intro-key, .intro-flow div, #welcome, .upd-notes { border-radius: 6px; border-color: #333333; }
+  .panel.sel { border-color: #E8E8E8; }
+  .badge, .rec { border-radius: 4px; }
+  #stage { padding: 16px; } .side-head { padding: 16px 16px 8px; } .side-foot { padding: 10px 16px 12px; border-top: 1px solid #333333; } .copy { padding: 0 16px 12px; }
 </style>
 </head>
 <body>
 <div id="app">
   <header>
-    <div class="brand"><img class="logo" src="/appicon.png" alt="">G-Retag<span class="sub">for QuickTime</span><span class="by">by GRAYZONE</span></div>
+    <div class="brand"><img class="logo" src="/appicon.png" alt="">G-Retag<span class="sub">for QuickTime</span></div>
     <div class="hdr-right"><div id="upd" class="upd"></div>
+    <span class="gzmark" id="gzmark">© GRAY ZONE</span>
     <button id="guideBtn" class="btn">태그 안내</button>
-    <button id="addBtn" class="btn primary">+ 영상 추가</button></div>
+    <button id="addBtn" class="btn">+ 영상 추가</button></div>
   </header>
   <main>
     <aside>
@@ -417,7 +451,7 @@
     <p>Rec709 색 태그(1-1-1 General / 1-2-1 For Mac QuickTime) 확인·변환 도구<br><span class="about-note">예전 이름: G-ColorTag</span></p>
     <p class="about-copy">© 2026 GRAYZONE. All rights reserved.</p>
     <p class="about-note">이 소프트웨어의 저작권은 GRAYZONE에 있습니다.<br>GRAYZONE의 허락 없이 복제·배포·수정할 수 없습니다.</p>
-    <p class="about-note">포함된 오픈소스: FFmpeg (LGPL/GPL), Python (PSF), pywebview (BSD), PyObjC (MIT), Inter · Noto Sans KR (OFL)</p>
+    <p class="about-note">포함된 오픈소스: FFmpeg (LGPL/GPL), Python (PSF), pywebview (BSD), PyObjC (MIT), Pretendard · Manrope (OFL)</p>
     <button id="aboutClose" class="btn">닫기</button>
   </div>
 </div>
@@ -570,7 +604,7 @@ function statusLine(f) {
 function renderList() {
   const list = $("#list");
   list.innerHTML = S.files.map((f) =>
-    '<li class="item' + (f.id === curId ? " cur" : "") + '" data-id="' + f.id + '">' +
+    '<li class="item' + (f.id === curId ? " cur" : "") + (f.status === "error" ? " bad" : "") + '" data-id="' + f.id + '">' +
       '<div class="row1"><span class="name" title="' + esc(f.path) + '">' + esc(f.name) + "</span>" +
       '<button class="x" data-rm="' + f.id + '" title="목록에서 빼기"' + (S.saving ? " disabled" : "") + ">×</button></div>" +
       '<div class="row2">' + (f.playable && f.status !== "done" ? tagBadge(f.tag, f.ok, f) : "") + statusLine(f) + "</div>" +
@@ -609,6 +643,7 @@ function renderSave() {
   const cur = !n ? 1 : !choice ? 2 : 3;
   $$("#flow span").forEach((el) => { const k = +el.dataset.s; el.className = k < cur ? "done" : k === cur ? "on" : ""; });
   $("#welcome").classList.toggle("show", !S.files.length);
+  btn.classList.toggle("primary", !!S.files.length);  // 주 버튼은 화면에 하나: 영상이 없을 때는 가운데 '+ 영상 추가'가 주 버튼
   $("#abBtn").disabled = !n;
   cn.className = "cnote" + (choice && NOTES[choice][1] ? " " + NOTES[choice][1] : "");
 }
@@ -1223,6 +1258,7 @@ function renderUpdModal() {
   $("#updVer").textContent = ver;
   $("#updNotes").textContent = notes;
   $("#updBarWrap").classList.toggle("show", bar >= 0);
+  $("#updBarWrap").classList.toggle("full", bar >= 100);  // 끝난 것은 덜 눈에 띄게
   $("#updBar").style.width = Math.max(0, bar) + "%";
   $("#updMsg").textContent = msg;
   $("#updLater").textContent = later;
