@@ -42,7 +42,8 @@ rm -rf "$WORK"; mkdir -p "$WORK/dmg"
 APP="$WORK/dmg/G-Retag.app"; RES="$APP/Contents/Resources"
 mkdir -p "$APP/Contents/MacOS" "$RES/bin" "$RES/web" "$RES/site"
 cp app.py colortag.py updater.py qtplayer.py migrate.py LICENSE.txt "$RES/"
-cp web/index.html "$RES/web/"
+cp web/index.html web/launch.html "$RES/web/"
+mkdir -p "$RES/web/fonts"; cp web/fonts/*.woff2 "$RES/web/fonts/"   # 런치 화면 글꼴 (Inter, Noto Sans KR · OFL)
 gunzip -c "$FF_GZ" > "$RES/bin/ffmpeg"; chmod 755 "$RES/bin/ffmpeg"
 tar xzf "$PY_TGZ" -C "$RES"                      # → $RES/python
 P="$RES/python"; PL="$P/lib/python3.12"           # 필요 없는 부분 정리 (용량 절약)
@@ -59,7 +60,7 @@ find "$RES/site" -name "*.dSYM" -prune -exec rm -rf {} +                        
 # 메뉴 막대·Dock 에 'G-Retag' 로 보이도록 파이썬 실행 파일을 Contents/MacOS 에 둠
 cp "$P/bin/python3.12" "$APP/Contents/MacOS/G-Retag-python"
 ln -s Resources/python/lib "$APP/Contents/lib"     # 실행 파일 기준 ../lib 에서 표준 라이브러리 찾기
-python3 make_icon.py "$RES/AppIcon.icns"
+python3 make_icon.py "$RES/AppIcon.icns" "$RES/web/appicon.png"   # 런치 화면은 아이콘 파일 안의 그림을 그대로 씀
 
 cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>

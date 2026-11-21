@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2026 GRAYZONE. All rights reserved.
-"""앱 아이콘(AppIcon.icns) 생성: 어두운 배경 + RGB 막대 + 감마 곡선. 사용: python3 make_icon.py 출력.icns"""
+"""앱 아이콘(AppIcon.icns) 생성: 어두운 배경 + RGB 막대 + 감마 곡선. 사용: python3 make_icon.py 출력.icns [런치 화면용.png]"""
 import io
 import struct
 import sys
@@ -34,5 +34,20 @@ def write_icns(path):
         f.write(b"icns" + struct.pack(">I", len(body) + 8) + body)
 
 
+def icns_png(icns, out, typ=b"ic09"):
+    """아이콘 파일(.icns) 안에 든 512px 그림을 그대로 꺼냄 → 런치 화면이 Dock·Finder 와 같은 그림을 씀."""
+    data = open(icns, "rb").read()
+    pos = 8
+    while pos < len(data):
+        t, n = data[pos:pos + 4], struct.unpack(">I", data[pos + 4:pos + 8])[0]
+        if t == typ:
+            open(out, "wb").write(data[pos + 8:pos + n])
+            return
+        pos += n
+    raise SystemExit("아이콘에서 그림을 찾지 못함")
+
+
 if __name__ == "__main__":
     write_icns(sys.argv[1])
+    if len(sys.argv) > 2:
+        icns_png(sys.argv[1], sys.argv[2])

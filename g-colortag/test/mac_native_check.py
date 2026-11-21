@@ -68,6 +68,109 @@ def bars_in(img, box):
     return vals
 
 
+def gray_at(img, x, y, r=3):
+    """img 의 (x, y) 둘레 평균: (밝기 0~255, 채도 = 채널 최대-최소)."""
+    import Quartz
+    data = bytes(Quartz.CGDataProviderCopyData(Quartz.CGImageGetDataProvider(img)))
+    bpr, bpp = Quartz.CGImageGetBytesPerRow(img), Quartz.CGImageGetBitsPerPixel(img) // 8
+    tot, sat, n = 0, 0, 0
+    for yy in range(int(y) - r, int(y) + r + 1):
+        for xx in range(int(x) - r, int(x) + r + 1):
+            o = yy * bpr + xx * bpp
+            ch = list(data[o:o + bpp])
+            if bpp == 4:
+                ch.remove(max(ch))  # 알파(255) 하나 제외
+            tot += sum(ch) / 3
+            sat = max(sat, max(ch) - min(ch))
+            n += 1
+    return round(tot / n, 1), sat
+
+
+def decode(path, size=64):
+    """그림 파일을 size×size 로 그려 픽셀 바이트로 (아이콘 비교용)."""
+    import Quartz
+    from Foundation import NSURL
+    src = Quartz.CGImageSourceCreateWithURL(NSURL.fileURLWithPath_(path), None)
+    img = Quartz.CGImageSourceCreateImageAtIndex(src, 0, None)
+    ctx = Quartz.CGBitmapContextCreate(None, size, size, 8, size * 4, Quartz.CGColorSpaceCreateWithName(Quartz.kCGColorSpaceSRGB),
+                                       Quartz.kCGImageAlphaPremultipliedLast)
+    Quartz.CGContextSetInterpolationQuality(ctx, Quartz.kCGInterpolationHigh)
+    Quartz.CGContextDrawImage(ctx, Quartz.CGRectMake(0, 0, size, size), img)
+    out = Quartz.CGBitmapContextCreateImage(ctx)
+    return bytes(Quartz.CGDataProviderCopyData(Quartz.CGImageGetDataProvider(out)))
+
+
+GRAYS = [0x00, 0x1B, 0x30, 0x47, 0x5E, 0x77, 0x91, 0xAB, 0xC6, 0xE0, 0xFF]
+LAUNCH_SHOTS = {}
+
+
+def launch_watch():
+    """런치 화면: 뜨자마자 한 장, 로딩 중간 한 장 (100% 는 app.LAUNCH_HOOK 에서)."""
+    from webview.platforms.cocoa import BrowserView
+    while app.SPLASH is None or not app.LAUNCH["t_shown"]:
+        time.sleep(0.01)
+    num = BrowserView.instances[app.SPLASH.uid].window.windowNumber()
+    time.sleep(0.15)
+    try:
+        LAUNCH_SHOTS["start"] = (capture_window(num, os.path.join(OUT, "launch_start.png")), app.LAUNCH["cells"], app.LAUNCH["status"])
+    except Exception as e:
+        step(f"런치 화면 첫 캡처 실패: {e}")
+
+
+def launch_hook():
+    from webview.platforms.cocoa import BrowserView
+    w = BrowserView.instances[app.SPLASH.uid].window
+    LAUNCH_SHOTS["end"] = (capture_window(w.windowNumber(), os.path.join(OUT, "launch_100.png")), app.LAUNCH["cells"], app.LAUNCH["status"])
+    LAUNCH_SHOTS["frame"] = (w.frame().size.width, w.frame().size.height, w.styleMask(), w.screen().frame().size, w.frame().origin)
+    import AppKit
+    LAUNCH_SHOTS["bar"] = (bool(w.titlebarAppearsTransparent()), w.titleVisibility() == 1,
+                           all(w.standardWindowButton_(b).isHidden() for b in (AppKit.NSWindowCloseButton, AppKit.NSWindowMiniaturizeButton, AppKit.NSWindowZoomButton)),
+                           w.contentRectForFrameRect_(w.frame()).size.height)
+    LAUNCH_SHOTS["main_hidden"] = not BrowserView.instances[app.WINDOW.uid].window.isVisible()
+    LAUNCH_SHOTS["elapsed"] = time.time() - app.LAUNCH["t_shown"]
+
+
+def launch_checks():
+    out = []
+    img, cells, status = LAUNCH_SHOTS["end"]
+    import Quartz
+    fw, fh, mask, scr, org = LAUNCH_SHOTS["frame"]
+    sc = Quartz.CGImageGetWidth(img) / fw
+    tr, hid, btn, ch_ = LAUNCH_SHOTS["bar"]
+    out.append((f"런치 화면: 창 {fw:.0f}×{fh:.0f}pt (내용 높이 {ch_:.0f}), 제목 표시줄 안 보임(투명 {tr}, 제목 숨김 {hid}, 버튼 숨김 {btn}), 크기 조절 불가",
+                (fw, fh, ch_) == (640, 400, 400) and tr and hid and btn and not mask & 8))
+    cx, cy = org.x + fw / 2, org.y + fh / 2
+    out.append((f"런치 화면: 화면 중앙 (창 중심 {cx:.0f},{cy:.0f} / 화면 {scr.width:.0f}×{scr.height:.0f})", abs(cx - scr.width / 2) < 40 and abs(cy - scr.height / 2) < 120))
+    out.append(("런치 화면이 떠 있는 동안 메인 창은 숨김", LAUNCH_SHOTS["main_hidden"]))
+    bg = gray_at(img, 20 * sc, 200 * sc)
+    out.append((f"런치 화면: 배경 {bg[0]} (#121212 = 18)", abs(bg[0] - 18) <= 3))
+    got = [gray_at(img, (40 + i * (530 / 11 + 3) + 265 / 11) * sc, 341 * sc) for i in range(11)]
+    step(f"런치 100%: {cells}칸, '{status}', 웨지 밝기 {[g[0] for g in got]} (기대 {GRAYS})")
+    out.append((f"런치 100%: 11칸 모두 제 회색 값 (최대 차이 {max(abs(g[0] - w) for g, w in zip(got, GRAYS)):.1f})",
+                cells == 11 and all(abs(g[0] - w) <= 4 for g, w in zip(got, GRAYS))))
+    sat = max(g[1] for g in got + [bg])
+    out.append((f"런치 화면: 웨지·배경에 유채색 없음 (채널 차이 {sat})", sat <= 2))
+    if "start" in LAUNCH_SHOTS:
+        img0, c0, s0 = LAUNCH_SHOTS["start"]
+        sc0 = Quartz.CGImageGetWidth(img0) / 640
+        g0 = [gray_at(img0, (40 + i * (530 / 11 + 3) + 265 / 11) * sc0, 341 * sc0)[0] for i in range(11)]
+        k = 0
+        while k < 11 and abs(g0[k] - GRAYS[k]) <= 4:
+            k += 1
+        step(f"런치 시작 직후: 그때 상태 {c0}칸 '{s0}', 캡처에서 채워진 칸 {k}, 웨지 밝기 {g0}")
+        out.append((f"런치 중간: 왼쪽 {k}칸만 채워지고 나머지는 빈 칸", k < 11 and all(abs(g0[i] - 18) <= 4 for i in range(k, 11))))
+    out.append((f"런치 화면을 {LAUNCH_SHOTS['elapsed']:.2f}초 보여 줌 (최소 1초)", LAUNCH_SHOTS["elapsed"] >= 1.0))
+    plist = subprocess.run(["/usr/libexec/PlistBuddy", "-c", "Print :CFBundleShortVersionString",
+                            os.path.join(APPDIR, "Contents", "Info.plist")], capture_output=True, text=True).stdout.strip()
+    out.append((f"런치 화면 버전 v{app.launch_state()['version']} = 번들 버전 {plist}", app.launch_state()["version"] == plist != ""))
+    tmp = os.path.join(OUT, "dock_icon.png")
+    subprocess.run(["sips", "-s", "format", "png", "-z", "512", "512", os.path.join(RES, "AppIcon.icns"), "--out", tmp], capture_output=True)
+    a, b = decode(tmp), decode(os.path.join(RES, "web", "appicon.png"))
+    diff = sum(abs(x - y) for x, y in zip(a, b)) / len(a)
+    out.append((f"런치 화면 아이콘 = Dock 아이콘(AppIcon.icns) 과 같은 그림 (평균 차이 {diff:.2f})", diff < 2))
+    return out
+
+
 def capture_window(number, path):
     """창 번호의 화면을 PNG 로 (그림자 제외)."""
     import Quartz
@@ -113,6 +216,15 @@ def test():
         while app.WINDOW is None:
             time.sleep(0.1)
         app.WINDOW.events.loaded.wait(60)
+        for _ in range(600):  # 런치 화면이 끝나고 메인 창이 뜰 때까지
+            if app.LAUNCH["shown"] or app.LAUNCH["error"]:
+                break
+            time.sleep(0.1)
+        step(f"런치 화면: {app.LAUNCH['cells']}칸, '{app.LAUNCH['status']}' {app.LAUNCH['error']}")
+        if not app.LAUNCH["shown"]:
+            raise RuntimeError("런치 화면에서 메인 창으로 넘어가지 않음: " + app.LAUNCH["error"])
+        time.sleep(1)
+        INTRO_CHECKS.extend(launch_checks())
         for _ in range(100):
             if app.NV_STATE != "pending":
                 break
@@ -239,6 +351,8 @@ def test():
 
 root = tempfile.mkdtemp(prefix="gretag-")
 srv, url = app.start_server(root)
+app.LAUNCH_HOOK = launch_hook
+threading.Thread(target=launch_watch, daemon=True).start()
 threading.Thread(target=test, daemon=True).start()
 app.run_window(url)
 sys.exit(0 if RESULT["ok"] else 1)

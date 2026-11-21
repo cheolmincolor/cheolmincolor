@@ -1,0 +1,87 @@
+<!doctype html>
+<!-- Copyright (c) 2026 GRAYZONE. All rights reserved.
+     GRAYZONE 런치 화면 (모든 GRAYZONE 앱 공통 규격). 수치를 임의로 바꾸지 말 것.
+     640×400, 배경 #121212, 무채색만 사용 (유채색은 앱 아이콘 안에만). -->
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>G-Retag for QuickTime</title>
+<style>
+  @font-face { font-family: "Inter"; src: url("/fonts/Inter.woff2") format("woff2"); font-weight: 100 900; }
+  @font-face { font-family: "Noto Sans KR"; src: url("/fonts/NotoSansKR.woff2") format("woff2"); font-weight: 100 900; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; background: #121212; overflow: hidden; cursor: default;
+    font-family: "Inter", "Noto Sans KR", -apple-system, BlinkMacSystemFont, sans-serif;
+    -webkit-font-smoothing: antialiased; -webkit-user-select: none; user-select: none; }
+  /* 창 640×400, 안쪽 여백 위 36 · 좌우 40 · 아래 32, 세 구역을 위·가운데·아래로 균등 배치 */
+  #launch { width: 640px; height: 400px; padding: 36px 40px 32px; display: flex; flex-direction: column;
+    justify-content: space-between; background: #121212; }
+  /* 상단 줄 */
+  .top { display: flex; justify-content: space-between; font-size: 11px; line-height: 1; letter-spacing: .14em; color: #8A8A8A; }
+  /* 가운데 블록 */
+  .mid { display: flex; align-items: center; gap: 24px; }
+  .mid img { width: 72px; height: 72px; flex: none; display: block; }
+  .names { display: flex; flex-direction: column; gap: 10px; }
+  .gz { font-size: 52px; line-height: 1; font-weight: 600; letter-spacing: .16em; color: #E8E8E8; white-space: nowrap; }
+  .app { font-size: 18px; line-height: 1; font-weight: 400; letter-spacing: .04em; color: #9A9A9A; white-space: nowrap; }
+  /* 하단 웨지: 11칸, 간격 3, 높이 12. 로딩 표시를 겸함 */
+  .wedge { position: relative; display: flex; gap: 3px; height: 12px; }
+  .cell { flex: 1 1 0; height: 12px; position: relative; background: transparent; box-shadow: inset 0 0 0 1px #333333; }
+  .cell.z0 { box-shadow: inset 0 0 0 1px #2A2A2A; }           /* 존 0: 배경과 구분되게 항상 외곽선 */
+  .cell.on { background: var(--v); box-shadow: none; }
+  .cell.z0.on { box-shadow: inset 0 0 0 1px #2A2A2A; }
+  .cell.mine, .cell.mine.on { box-shadow: 0 0 0 1px #E8E8E8; }  /* 이 앱의 존: 항상 외곽선 */
+  .cell.mine::before { content: attr(data-roman); position: absolute; left: 0; right: 0; bottom: 18px; text-align: center;
+    font-size: 10px; line-height: 1; color: #E8E8E8; }
+  .under { display: flex; justify-content: space-between; align-items: baseline; margin-top: 10px; font-size: 11px; line-height: 1;
+    color: #8A8A8A; }
+  #status { flex: 1; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 12px; }
+</style>
+</head>
+<body>
+<div id="launch">
+  <div class="top"><span>DIGITAL INTERMEDIATE LAB</span><span id="ver"></span></div>
+  <div class="mid"><img id="icon" src="/appicon.png" alt="">
+    <div class="names"><div class="gz">GRAY ZONE</div><div class="app" id="appName"></div></div></div>
+  <div><div class="wedge" id="wedge"></div>
+    <div class="under"><span>0</span><span id="status"></span><span>X</span></div></div>
+</div>
+<script>
+"use strict";
+const GRAYS = ["#000000", "#1B1B1B", "#303030", "#474747", "#5E5E5E", "#777777", "#919191", "#ABABAB", "#C6C6C6", "#E0E0E0", "#FFFFFF"];
+const ROMAN = ["0", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
+const TOKEN = new URLSearchParams(location.search).get("t") || "";
+const wedge = document.getElementById("wedge");
+const cells = GRAYS.map((g, i) => {
+  const c = document.createElement("div");
+  c.className = "cell" + (i === 0 ? " z0" : "");
+  c.style.setProperty("--v", g);
+  c.dataset.roman = ROMAN[i];
+  wedge.appendChild(c);
+  return c;
+});
+let last = "";
+function render(st) {  // st: {cells 0–11, status, error, version, name, zone}
+  cells.forEach((c, i) => { c.classList.toggle("on", i < st.cells); c.classList.toggle("mine", i === st.zone); });
+  document.getElementById("status").textContent = st.error || st.status || "";
+  document.getElementById("ver").textContent = st.version ? "v" + st.version : "";
+  document.getElementById("appName").textContent = st.name || "";
+}
+async function tick() {
+  try {
+    const r = await fetch("/api/launch", { headers: { "X-Token": TOKEN } });
+    const st = await r.json();
+    const js = JSON.stringify(st);
+    if (js !== last) { last = js; render(st); }
+    if (st.done && !st.seen) {  // 11칸이 다 채워진 화면이 실제로 그려진 뒤에 메인 창으로 넘어가게 알림
+      requestAnimationFrame(() => fetch("/api/launch_seen", { method: "POST", headers: { "X-Token": TOKEN, "Content-Type": "application/json" }, body: "{}" }).catch(() => {}));
+    }
+    if (st.error) return;  // 오류: 무엇이 실패했는지 적고 멈춤
+  } catch (e) { /* 다음 주기에 다시 */ }
+  setTimeout(tick, 80);
+}
+window.LAUNCH = { render };
+if (TOKEN) tick();
+</script>
+</body>
+</html>

@@ -14,6 +14,7 @@
 """
 import json
 import os
+import plistlib
 import re
 import secrets
 import shutil
@@ -36,7 +37,7 @@ import qtplayer  # noqa: E402
 
 APP_NAME = "G-Retag"
 APP_SUBTITLE = "for QuickTime"
-APP_VERSION = "3.7.0"
+APP_VERSION = "3.8.0"
 COPYRIGHT = "© 2026 GRAYZONE. All rights reserved."
 TAGS = {"mac": (1, 2, 1), "std": (1, 1, 1)}
 SEG = 10.0          # 미리보기 구간 길이(초)
@@ -361,6 +362,11 @@ class Core:
                 raise ApiError("미리볼 수 없는 영상")
             last = max(0, -(-f["duration"] // SEG) - 1) if f["duration"] else 0  # 마지막 구간 번호
             return self.previews.request(fid, int(min(max(0, seg), last)))
+        if name == "launch":
+            return launch_state()
+        if name == "launch_seen":
+            LAUNCH["seen"] = True
+            return {"ok": True}
         if name == "nv_state":
             if NV is None:
                 raise ApiError("네이티브 플레이어 없음")
@@ -435,6 +441,79 @@ class Core:
 
 # ---------------------------------------------------------------- 파일 선택 창
 WINDOW = None
+SPLASH = None        # GRAYZONE 런치 화면 창 (640×400, 제목 표시줄 없음)
+LAUNCH_ZONE = 7      # 이 앱의 존 (웨지에서 외곽선 + 로마 숫자 VII)
+LAUNCH_CELLS = 11    # 웨지 칸 수 (존 0 … X)
+LAUNCH = {"cells": 0, "status": "시작하는 중", "error": "", "done": False, "seen": False, "shown": False, "t_shown": 0.0}
+LAUNCH_HOOK = None   # 점검용: 메인 창으로 넘어가기 직전에 부름
+
+
+def bundle_version():
+    """런치 화면에 표시할 버전: 앱 번들(Info.plist)의 버전 값을 읽음. 번들 밖(개발 실행)에서만 코드 값."""
+    try:
+        with open(os.path.join(HERE, "..", "Info.plist"), "rb") as f:
+            return str(plistlib.load(f)["CFBundleShortVersionString"])
+    except Exception:
+        return APP_VERSION
+
+
+def launch_state():
+    return {k: LAUNCH[k] for k in ("cells", "status", "error", "done", "seen")} | {
+        "version": bundle_version(), "name": f"{APP_NAME} {APP_SUBTITLE}", "zone": LAUNCH_ZONE}
+
+
+def launch_sequence():
+    """런치 화면의 웨지를 실제 초기화 단계에 맞춰 채운다 (시간만 재는 가짜 진행 없음).
+
+    칸 수는 끝난 단계까지, 상태 문구는 지금 하고 있는 일. 오류가 나면 무엇이 실패했는지 적고 멈춘다.
+      1칸  내부 서버 시작 (이 함수가 불릴 때 이미 끝남)
+      3칸  앱 안의 ffmpeg 실행 확인
+      4칸  설정 불러오기
+      7칸  메인 화면 불러오기
+      9칸  퀵타임 엔진 미리보기 준비
+      11칸 업데이트 확인 (5초 안에 답이 없으면 뒤에서 계속하고 넘어감)
+    """
+    def stage(cells, status):
+        LAUNCH.update(cells=cells, status=status)
+
+    def fail(msg):
+        LAUNCH["error"] = "실패: " + msg
+        log("launch error:", msg)
+
+    stage(1, "앱 안의 ffmpeg 확인 중")
+    try:
+        ok = subprocess.run(["ffmpeg", "-version"], capture_output=True, timeout=20).returncode == 0
+    except Exception:
+        ok = False
+    if not ok:
+        return fail("앱 안의 ffmpeg 를 실행할 수 없습니다. 앱을 다시 설치해 주세요")
+    stage(3, "설정 불러오는 중")
+    CORE.prefs = load_prefs()
+    stage(4, "메인 화면 불러오는 중")
+    if not WINDOW.events.loaded.wait(40):
+        return fail("메인 화면을 불러오지 못했습니다")
+    stage(7, "퀵타임 엔진 미리보기 준비 중")
+    while NV_STATE == "pending":
+        time.sleep(0.05)
+    if sys.platform == "darwin" and NV_STATE != "on":
+        return fail("퀵타임 엔진 미리보기를 켜지 못했습니다 (기록: ~/Library/Logs/G-Retag.log)")
+    stage(9, "업데이트 확인 중")
+    t = time.time()
+    while CORE.updater.state()["status"] in ("idle", "checking") and time.time() - t < 5:
+        time.sleep(0.05)
+    stage(LAUNCH_CELLS, "준비 완료")
+    LAUNCH["done"] = True
+    t = time.time()
+    while not LAUNCH["seen"] and time.time() - t < 3:   # 11칸이 다 찬 화면이 실제로 그려질 때까지
+        time.sleep(0.02)
+    while time.time() - (LAUNCH["t_shown"] or t) < 1.0:  # 아주 빨리 끝나도 최소 1초는 보여 줌
+        time.sleep(0.02)
+    time.sleep(0.2)
+    if LAUNCH_HOOK:
+        LAUNCH_HOOK()
+    WINDOW.show()
+    SPLASH.destroy()
+    LAUNCH["shown"] = True
 NV = None            # 퀵타임 엔진(AVFoundation) 플레이어
 NV_STATE = "off"     # off | pending | on
 
@@ -480,6 +559,9 @@ def pick_dialog():
 
 # ---------------------------------------------------------------- HTTP 서버
 TOKEN = secrets.token_urlsafe(18)
+STATIC = {"/appicon.png": (os.path.join(HERE, "web", "appicon.png"), "image/png"),  # 앱 아이콘(AppIcon.icns)에서 꺼낸 그림
+          "/fonts/Inter.woff2": (os.path.join(HERE, "web", "fonts", "Inter.woff2"), "font/woff2"),
+          "/fonts/NotoSansKR.woff2": (os.path.join(HERE, "web", "fonts", "NotoSansKR.woff2"), "font/woff2")}
 CORE = None
 HOSTS = set()
 
@@ -504,10 +586,17 @@ class Handler(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         qs = parse_qs(u.query)
         tok = self.headers.get("X-Token") or (qs.get("t") or [""])[0]
+        static = STATIC.get(u.path)  # 런치 화면의 글꼴·아이콘 (비밀 아님: 토큰 없이, 이 앱 주소로만)
+        if static and self.headers.get("Host", "") in HOSTS and method in ("GET", "HEAD"):
+            if not os.path.exists(static[0]):
+                return self._send(404, b"not found", "text/plain")
+            return self._file(static[0], static[1], method)
         if self.headers.get("Host", "") not in HOSTS or not secrets.compare_digest(tok, TOKEN):
             return self._send(403, b"forbidden", "text/plain")
         CORE.last_seen = time.time()
         try:
+            if u.path == "/launch":
+                return self._file(os.path.join(HERE, "web", "launch.html"), "text/html; charset=utf-8", method)
             if u.path == "/":
                 return self._file(INDEX, "text/html; charset=utf-8", method)
             m = re.fullmatch(r"/media/([0-9a-f]+_\d+)/(mac|std)", u.path)
@@ -595,7 +684,7 @@ def start_server(root, port=0):
 
 # ---------------------------------------------------------------- 창
 def run_window(url):
-    global WINDOW
+    global WINDOW, SPLASH
     try:
         import webview
     except Exception as e:
@@ -611,8 +700,14 @@ def run_window(url):
     global NV_STATE
     if sys.platform == "darwin":
         NV_STATE = "pending"  # 창이 뜨면 켬. 화면은 그때까지 기다림
+    # 메인 창은 숨긴 채 불러오고, 그동안 런치 화면(640×400, 제목 표시줄 없음, 크기 고정, 화면 중앙)을 보여 줌
     WINDOW = webview.create_window(f"{APP_NAME} {APP_SUBTITLE}", url, width=1240, height=820, min_size=(1020, 700),
-                                   background_color="#0e0f12", text_select=False)
+                                   background_color="#0e0f12", text_select=False, hidden=True)
+    SPLASH = webview.create_window(f"{APP_NAME} {APP_SUBTITLE}", url.replace("/?t=", "/launch?t="), width=640, height=400,
+                                   resizable=False, frameless=True, easy_drag=True, background_color="#121212",
+                                   text_select=False)
+    SPLASH.events.loaded += lambda: LAUNCH.update(t_shown=LAUNCH["t_shown"] or time.time())
+    threading.Thread(target=launch_sequence, daemon=True).start()
     WINDOW.events.loaded += lambda: register_dnd() if not CORE.dnd else None
     if sys.platform == "darwin":
         def on_loaded():
