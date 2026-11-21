@@ -129,7 +129,28 @@ def launch_watch():
 def launch_hook():
     from webview.platforms.cocoa import BrowserView
     w = BrowserView.instances[app.SPLASH.uid].window
-    LAUNCH_SHOTS["end"] = (capture_window(w.windowNumber(), os.path.join(OUT, "launch_100.png")), app.LAUNCH["cells"], app.LAUNCH["status"])
+    import AppKit
+    import Quartz
+
+    def diag(tag):
+        img = capture_window(w.windowNumber(), os.path.join(OUT, f"launch_100{tag}.png"))
+        sc = Quartz.CGImageGetWidth(img) / 640
+        bg = gray_at(img, 20 * sc, 200 * sc)[0]
+        front = AppKit.NSWorkspace.sharedWorkspace().frontmostApplication()
+        step(f"런치 캡처{tag}: 배경 {bg}, 창 보임 {bool(w.isVisible())}, 가려짐 없음 {bool(w.occlusionState() & 2)}, "
+             f"앱 활성 {bool(AppKit.NSApp.isActive())}, 맨 앞 앱 {front.localizedName() if front else None}, 창 층 {w.level()}")
+        return img, bg
+    img, bg = diag("")
+    if abs(bg - 18) > 3:  # 검게 찍힘: 전체 화면도 남기고, 앱을 앞으로 가져온 뒤 다시 찍어 원인 확인
+        subprocess.run(["screencapture", "-x", os.path.join(OUT, "launch_fullscreen_when_black.png")])
+        from PyObjCTools import AppHelper
+        AppHelper.callAfter(lambda: AppKit.NSApp.activateIgnoringOtherApps_(True))
+        time.sleep(1.0)
+        img2, bg2 = diag("_after_activate")
+        LAUNCH_SHOTS["black_first"] = (bg, bg2)
+        if abs(bg2 - 18) <= 3:
+            img = img2
+    LAUNCH_SHOTS["end"] = (img, app.LAUNCH["cells"], app.LAUNCH["status"])
     LAUNCH_SHOTS["frame"] = (w.frame().size.width, w.frame().size.height, w.styleMask(), w.screen().frame().size, w.frame().origin)
     import AppKit
     LAUNCH_SHOTS["bar"] = (bool(w.titlebarAppearsTransparent()), w.titleVisibility() == 1,
@@ -168,7 +189,10 @@ def launch_checks():
             k += 1
         step(f"런치 시작 직후: 그때 상태 {c0}칸 '{s0}', 캡처에서 채워진 칸 {k}, 웨지 밝기 {g0}")
         out.append((f"런치 중간: 왼쪽 {k}칸만 채워지고 나머지는 빈 칸", k < 11 and all(abs(g0[i] - 18) <= 4 for i in range(k, 11))))
-    out.append((f"런치 화면을 {LAUNCH_SHOTS['elapsed']:.2f}초 보여 줌 (최소 1초)", LAUNCH_SHOTS["elapsed"] >= 1.0))
+    if "black_first" in LAUNCH_SHOTS:
+        b1, b2 = LAUNCH_SHOTS["black_first"]
+        out.append((f"런치 화면이 처음부터 그려짐 (첫 캡처 배경 {b1}, 앱을 앞으로 가져온 뒤 {b2})", False))
+    out.append((f"런치 화면을 {LAUNCH_SHOTS['elapsed']:.2f}초 보여 줌 (최소 1초)", LAUNCH_SHOTS["elapsed"] >= 1.0 or "black_first" in LAUNCH_SHOTS))
     plist = subprocess.run(["/usr/libexec/PlistBuddy", "-c", "Print :CFBundleShortVersionString",
                             os.path.join(APPDIR, "Contents", "Info.plist")], capture_output=True, text=True).stdout.strip()
     out.append((f"런치 화면 버전 v{app.launch_state()['version']} = 번들 버전 {plist}", app.launch_state()["version"] == plist != ""))
