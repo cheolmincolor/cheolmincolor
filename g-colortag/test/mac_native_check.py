@@ -110,11 +110,20 @@ def launch_watch():
     while app.SPLASH is None or not app.LAUNCH["t_shown"]:
         time.sleep(0.01)
     num = BrowserView.instances[app.SPLASH.uid].window.windowNumber()
-    time.sleep(0.15)
-    try:
-        LAUNCH_SHOTS["start"] = (capture_window(num, os.path.join(OUT, "launch_start.png")), app.LAUNCH["cells"], app.LAUNCH["status"])
-    except Exception as e:
-        step(f"런치 화면 첫 캡처 실패: {e}")
+    for _ in range(60):  # 화면이 실제로 그려진 뒤(배경 #121212)의 로딩 중간 모습
+        time.sleep(0.05)
+        if app.LAUNCH["done"]:
+            break
+        try:
+            c, st = app.LAUNCH["cells"], app.LAUNCH["status"]
+            img = capture_window(num, os.path.join(OUT, "launch_start.png"))
+            sc = __import__("Quartz").CGImageGetWidth(img) / 640
+            if abs(gray_at(img, 20 * sc, 200 * sc)[0] - 18) <= 3 and gray_at(img, 60 * sc, 341 * sc)[0] <= 3:
+                LAUNCH_SHOTS["start"] = (img, c, st)
+                break
+        except Exception as e:
+            step(f"런치 화면 중간 캡처 실패: {e}")
+            break
 
 
 def launch_hook():
