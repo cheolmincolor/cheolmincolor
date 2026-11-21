@@ -16,6 +16,8 @@ const crypto = require('crypto');
 
 const REPO = 'cheolmincolor/cheolmincolor';
 const TAG_PREFIX = 'ledger-v';
+// 늘 최신 버전의 latest.json 을 담아 두는 릴리스. 같은 저장소에 다른 앱 릴리스가 많아도 바로 찾습니다.
+const FEED_TAG = 'ledger-updates';
 const APP_NAME = 'GRAYZONE Ledger';
 const DOWNLOAD_PREFIX = `https://github.com/${REPO}/releases/download/`;
 
@@ -54,8 +56,10 @@ class Updater {
   constructor(o) {
     this.o = o;
     this.fetch = o.fetch || fetch;
-    this.api = o.feed ? o.feed.replace(/\/$/, '') + '/releases' : `https://api.github.com/repos/${REPO}/releases?per_page=30`;
-    this.downloadPrefix = o.feed ? o.feed.replace(/\/$/, '') + '/download/' : DOWNLOAD_PREFIX;
+    const feed = o.feed ? o.feed.replace(/\/$/, '') : '';
+    this.api = feed ? feed + '/releases' : `https://api.github.com/repos/${REPO}/releases?per_page=100`;
+    this.downloadPrefix = feed ? feed + '/download/' : DOWNLOAD_PREFIX;
+    this.latestUrl = this.downloadPrefix + FEED_TAG + '/latest.json';
     this.timeoutMs = o.timeoutMs || 15000;
     this.state = { status: 'idle', current: o.version, latest: '', notes: '', progress: 0, error: '' };
     this.prepared = null;
@@ -74,8 +78,33 @@ class Updater {
       headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'GRAYZONE-Ledger-App' },
       signal: AbortSignal.timeout(this.timeoutMs),
     }).catch((e) => { throw new Error(e && e.name === 'TimeoutError' ? '응답이 없습니다(시간 초과).' : '인터넷에 연결하지 못했습니다.'); });
-    if (!res.ok) throw new Error(`업데이트 정보를 받지 못했습니다 (${res.status})`);
+    if (!res.ok) throw Object.assign(new Error(`업데이트 정보를 받지 못했습니다 (${res.status})`), { status: res.status });
     return res.json();
+  }
+
+  /**
+   * 가장 새 버전: { version, manifest, zipUrl(file) }.
+   * 1) 고정 주소(ledger-updates/latest.json) 2) 없으면 릴리스 목록에서 ledger-v* 를 찾습니다(1.1.0 때 방식).
+   */
+  async findLatest() {
+    try {
+      const m = await this.getJson(this.latestUrl);
+      if (m && isVersion(m.version) && m.files) return { version: m.version, manifest: m, zipUrl: (file) => file.url };
+    } catch (e) {
+      if (e.status !== 404) throw e;
+    }
+    const releases = await this.getJson(this.api);
+    const best = releases
+      .filter((r) => !r.draft && !r.prerelease && String(r.tag_name).startsWith(TAG_PREFIX))
+      .map((r) => ({ r, v: r.tag_name.slice(TAG_PREFIX.length) }))
+      .filter((x) => isVersion(x.v))
+      .sort((a, b) => (newer(a.v, b.v) ? -1 : newer(b.v, a.v) ? 1 : 0))[0];
+    if (!best) return null;
+    const asset = (name) => (best.r.assets || []).find((a) => a.name === name);
+    const manifestAsset = asset('latest.json');
+    if (!manifestAsset) throw new Error('릴리스에 latest.json 이 없습니다.');
+    const manifest = newer(best.v, this.o.version) ? await this.getJson(manifestAsset.browser_download_url) : { version: best.v };
+    return { version: best.v, manifest, zipUrl: (file) => { const a = asset(file.name); return a && a.browser_download_url; } };
   }
 
   /** 새 버전이 있는지 봅니다. download=true 면 이어서 내려받습니다. 같은 일이 진행 중이면 그 결과를 기다립니다. */
@@ -89,30 +118,22 @@ class Updater {
   async run(download) {
     this.set({ status: 'checking', error: '' });
     try {
-      const releases = await this.getJson(this.api);
-      const best = releases
-        .filter((r) => !r.draft && !r.prerelease && String(r.tag_name).startsWith(TAG_PREFIX))
-        .map((r) => ({ r, v: r.tag_name.slice(TAG_PREFIX.length) }))
-        .filter((x) => isVersion(x.v))
-        .sort((a, b) => (newer(a.v, b.v) ? -1 : newer(b.v, a.v) ? 1 : 0))[0];
-      if (!best || !newer(best.v, this.o.version)) {
-        this.set({ status: 'none', latest: best ? best.v : this.o.version, checkedAt: Date.now() });
+      const found = await this.findLatest();
+      if (!found || !newer(found.version, this.o.version)) {
+        this.set({ status: 'none', latest: found ? found.version : this.o.version, checkedAt: Date.now() });
         return this.state;
       }
-      const asset = (name) => (best.r.assets || []).find((a) => a.name === name);
-      const manifestAsset = asset('latest.json');
-      if (!manifestAsset) throw new Error('릴리스에 latest.json 이 없습니다.');
-      const manifest = await this.getJson(manifestAsset.browser_download_url);
-      if (manifest.version !== best.v) throw new Error('릴리스 정보의 버전이 맞지 않습니다.');
+      const { manifest } = found;
+      if (manifest.version !== found.version) throw new Error('릴리스 정보의 버전이 맞지 않습니다.');
       const file = manifest.files && manifest.files[this.key()];
-      this.set({ status: 'available', latest: best.v, notes: String(manifest.notes || ''), checkedAt: Date.now() });
+      this.set({ status: 'available', latest: found.version, notes: String(manifest.notes || ''), checkedAt: Date.now() });
       if (!file) { this.set({ status: 'unsupported', error: '이 컴퓨터용 파일이 이번 버전에 없습니다.' }); return this.state; }
       if (!this.o.packaged) { this.set({ status: 'unsupported', error: '개발 실행에서는 업데이트를 설치하지 않습니다.' }); return this.state; }
       const t = this.target(); // 바꿔 넣을 수 없는 곳이면 받지도 않습니다.
       if (t.error) { this.set({ status: 'unsupported', error: t.error }); return this.state; }
-      const zipAsset = asset(file.name);
-      if (!zipAsset) throw new Error('릴리스에 ' + file.name + ' 이 없습니다.');
-      if (download) await this.download(best.v, zipAsset.browser_download_url, file);
+      const zipUrl = found.zipUrl(file);
+      if (!zipUrl) throw new Error('릴리스에 ' + file.name + ' 이 없습니다.');
+      if (download) await this.download(found.version, zipUrl, file);
       return this.state;
     } catch (e) {
       this.set({ status: 'error', error: e.message });
@@ -254,4 +275,4 @@ class Updater {
   }
 }
 
-module.exports = { Updater, newer, TAG_PREFIX, REPO };
+module.exports = { Updater, newer, TAG_PREFIX, FEED_TAG, REPO };

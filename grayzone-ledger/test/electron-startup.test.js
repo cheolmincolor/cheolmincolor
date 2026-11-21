@@ -15,8 +15,12 @@ const needsDisplay = process.platform === 'linux' && !process.env.DISPLAY;
 /** 가짜 릴리스 서버. latest: 올라가 있는 버전, delayMs: 응답 지연 */
 function feedServer({ latest, delayMs = 0 }) {
   const server = http.createServer((req, res) => {
+    server.requests = (server.requests || 0) + 1;
     const base = `http://127.0.0.1:${server.address().port}`;
-    const send = (body) => setTimeout(() => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); }, delayMs);
+    const send = (body) => setTimeout(() => {
+      server.answered = true;
+      if (!res.destroyed) { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); }
+    }, delayMs).unref(); // 시험이 끝난 뒤 이 타이머 때문에 기다리지 않도록
     const key = `${process.platform}-${process.arch}`;
     if (req.url === '/releases') {
       return send([{ tag_name: 'ledger-v' + latest, draft: false, prerelease: false, assets: [
@@ -47,7 +51,7 @@ async function waitMain(app) {
   for (let i = 0; i < 100; i++) {
     const ws = app.windows();
     for (const w of ws) {
-      if (await w.locator('.steps').count().catch(() => 0)) return { main: w, count: ws.length };
+      if (await w.locator('.steps').count().catch(() => 0)) return { main: w };
     }
     await new Promise((r) => setTimeout(r, 100));
   }
@@ -64,9 +68,10 @@ test('앱 열기: 업데이트 확인 창(고지 포함) → 최신이면 장부
     assert.match(await splash.locator('.notice').innerText(), /그레이존\(GRAYZONE\)의 매출 장부 전용 앱/);
     assert.equal(await splash.locator('#ver').innerText(), '버전 ' + VERSION);
     await splash.waitForFunction(() => /최신 버전입니다/.test(document.getElementById('msg').textContent));
-    const { count } = await waitMain(app);
-    for (let i = 0; i < 30 && app.windows().length > 1; i++) await new Promise((r) => setTimeout(r, 100));
-    assert.equal(app.windows().length, 1, `창이 ${count}개`);
+    const { main } = await waitMain(app);
+    if (!splash.isClosed()) await splash.waitForEvent('close', { timeout: 15000 }); // 장부 창이 뜨면 확인 창은 닫힘
+    assert.equal(app.windows().length, 1);
+    assert.equal(await main.title(), 'GRAYZONE 매출 장부');
   } finally { await done(); server.close(); }
 });
 
@@ -88,13 +93,12 @@ test('앱 열기: 인터넷이 안 되면 잠깐 알리고 장부를 엶', opts,
 });
 
 test('앱 열기: 확인이 늦으면 「업데이트 건너뛰고 열기」로 바로 엶', opts, async () => {
-  const server = await feedServer({ latest: VERSION, delayMs: 8000 });
+  const server = await feedServer({ latest: VERSION, delayMs: 60000 }); // 1분 동안 답하지 않는 서버
   const { app, splash, done } = await launch(`http://127.0.0.1:${server.address().port}`);
   try {
     await splash.waitForSelector('#skip');
-    const t0 = Date.now();
     await splash.click('#skip');
     await waitMain(app);
-    assert.ok(Date.now() - t0 < 4000, '건너뛰기가 바로 되지 않음');
+    assert.equal(server.answered, undefined, '서버가 답하기 전에 장부가 열려야 함');
   } finally { await done(); server.close(); }
 });

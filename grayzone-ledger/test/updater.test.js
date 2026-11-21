@@ -90,12 +90,44 @@ test('새 버전 확인 → 내려받기 → SHA-256 확인 → 풀기 (초안·
   assert.equal(u.fetch.calls.length, n);
 });
 
+test('고정 주소(ledger-updates)로 찾음: 같은 저장소에 다른 앱 릴리스가 많아도 됨', async () => {
+  const dir = tmp();
+  const zip = makeZip(dir, 'darwin', 'v1.3.0');
+  const name = 'GRAYZONE-Ledger-1.3.0-mac-arm64.zip';
+  const sha = crypto.createHash('sha256').update(zip).digest('hex');
+  const calls = [];
+  const f = async (url) => {
+    calls.push(url);
+    if (url === DL + 'ledger-updates/latest.json') {
+      return { ok: true, json: async () => ({ version: '1.3.0', notes: '- 고정 주소', files: { 'darwin-arm64': { name, size: zip.length, sha256: sha, url: DL + 'ledger-v1.3.0/' + name } } }) };
+    }
+    if (url === DL + 'ledger-v1.3.0/' + name) return { ok: true, body: (async function* () { yield zip; })() };
+    return { ok: false, status: 404 };
+  };
+  const u = updater({ workDir: path.join(dir, 'w'), fetch: f });
+  const s = await u.check();
+  assert.deepEqual([s.status, s.latest, s.notes], ['ready', '1.3.0', '- 고정 주소'], s.error);
+  assert.equal(calls.some((c) => c.startsWith('https://api.github.com/')), false); // 릴리스 목록은 보지 않음
+});
+
+test('고정 주소의 내려받을 주소가 이 저장소 릴리스가 아니면 받지 않음', async () => {
+  const f = async (url) => {
+    if (url === DL + 'ledger-updates/latest.json') {
+      return { ok: true, json: async () => ({ version: '1.3.0', files: { 'darwin-arm64': { name: 'x.zip', size: 1, sha256: '00', url: 'https://evil.example.com/x.zip' } } }) };
+    }
+    throw new Error('여기까지 오면 안 됨: ' + url);
+  };
+  const s = await updater({ workDir: path.join(tmp(), 'w'), fetch: f }).check();
+  assert.equal(s.status, 'error');
+  assert.match(s.error, /알 수 없는 주소/);
+});
+
 test('최신이면 아무것도 받지 않음', async () => {
   const dir = tmp();
   const zip = makeZip(dir, 'darwin', 'x');
   const u = updater({ version: '1.2.0', workDir: path.join(dir, 'work'), fetch: fakeGitHub({ zip }) });
   assert.equal((await u.check()).status, 'none');
-  assert.equal(u.fetch.calls.length, 1);
+  assert.deepEqual(u.fetch.calls.map((c) => c.replace(/\?.*/, '')), [DL + 'ledger-updates/latest.json', 'https://api.github.com/repos/cheolmincolor/cheolmincolor/releases']); // 고정 주소가 없으면(404) 목록으로
 });
 
 test('손상된 파일(SHA-256 불일치)은 설치하지 않음', async () => {
@@ -219,6 +251,9 @@ test('릴리스 정보: CHANGELOG 의 이번 버전 내용과 zip 3개의 SHA-25
   assert.doesNotMatch(out.notes, /^## /m);
   assert.deepEqual(Object.keys(out.files).sort(), ['darwin-arm64', 'darwin-x64', 'win32-x64']);
   assert.equal(out.files['win32-x64'].sha256, crypto.createHash('sha256').update('windows-x64').digest('hex'));
+  assert.equal(out.files['win32-x64'].url, undefined);
+  const withUrl = JSON.parse(execFileSync('node', [path.join(__dirname, '..', 'scripts', 'release-manifest.js'), dir, `${DL}ledger-v${v}/`]));
+  assert.equal(withUrl.files['darwin-arm64'].url, `${DL}ledger-v${v}/GRAYZONE-Ledger-${v}-mac-arm64.zip`);
   fs.rmSync(path.join(dir, `GRAYZONE-Ledger-${v}-mac-x64.zip`));
   assert.throws(() => execFileSync('node', [path.join(__dirname, '..', 'scripts', 'release-manifest.js'), dir], { stdio: 'pipe' }));
 });
