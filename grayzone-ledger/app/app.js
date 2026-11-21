@@ -1,7 +1,7 @@
 (function () {
 'use strict';
 
-var S = { jobs: [], today: '', sheetUrl: '', title: '', setup: false, status: null, vat: { basis: '부가세 별도', hasSheet: false }, checks: [], hiddenChecks: 0, years: null, update: { status: 'idle', current: '' }, year: null, tab: 'home', q: '', lf: 'all', open: loadOpen(), uf: 'all', us: 'old', loaded: false };
+var S = { jobs: [], today: '', sheetUrl: '', title: '', setup: false, status: null, vat: { basis: '부가세 별도', hasSheet: false }, checks: [], hiddenChecks: 0, years: null, update: { status: 'idle', current: '' }, year: null, tab: loadTab(), q: '', lf: 'all', open: loadOpen(), uf: 'all', us: 'old', loaded: false };
 var $ = function (s, el) { return (el || document).querySelector(s); };
 var app = $('#app'), modal = $('#modal'), toastEl = $('#toast');
 
@@ -223,6 +223,7 @@ function render() {
   badge.hidden = !open.length; badge.textContent = open.length;
   Array.prototype.forEach.call(document.querySelectorAll('nav button'), function (b) { b.classList.toggle('on', b.dataset.tab === S.tab); });
   app.innerHTML = S.tab === 'home' ? viewHome() : S.tab === 'ledger' ? viewLedger() : viewUnpaid();
+  saveTab();
   if (S.tab === 'home') bindChart();
 }
 
@@ -390,6 +391,10 @@ function ageTag(j) {
 }
 function chip(group, key, label, cur) { return '<button class="chip' + (cur === key ? ' on' : '') + '" data-' + group + '="' + key + '">' + label + '</button>'; }
 
+// 마지막에 보던 탭을 기억합니다.
+function loadTab() { try { var t = localStorage.getItem('gz.tab'); return /^(home|ledger|unpaid)$/.test(t) ? t : 'home'; } catch (e) { return 'home'; } }
+function saveTab() { try { localStorage.setItem('gz.tab', S.tab); } catch (e) { /* 기억 못 해도 동작 */ } }
+
 // ---------- 장부: 달마다 접고 펴기 ----------
 // 펼친 달은 이 컴퓨터에 기억합니다({ '2026-11': true, '2026-10': false }). 처음 보는 해는 가장 최근 달만 펼칩니다.
 function loadOpen() { try { return JSON.parse(localStorage.getItem('gz.open') || '{}') || {}; } catch (e) { return {}; } }
@@ -398,7 +403,7 @@ function monthKey(m) { return S.year + '-' + m; }
 function isOpen(m, first) { var k = monthKey(m); return k in S.open ? S.open[k] : first; }
 
 function viewLedger() {
-  return '<div class="tools"><input type="search" id="q" placeholder="거래처·내용·감독·PD 검색 (전체 연도)" value="' + esc(S.q) + '"></div>' +
+  return '<div class="tools"><input type="search" id="q" placeholder="거래처·내용·감독·PD 검색 (전체 연도) · ⌘F" value="' + esc(S.q) + '"></div>' +
     '<div class="chips">' + chip('lf', 'all', '전체', S.lf) + chip('lf', 'unpaid', '미수', S.lf) + chip('lf', 'noinv', '계산서 미발행', S.lf) +
     chip('lf', 'check', '점검' + (S.checks.length ? ' ' + S.checks.length : ''), S.lf) +
     (S.lf === 'all' && !S.q.trim() ? '<span class="gap"></span><button class="chip" data-months="open">모두 펼치기</button><button class="chip" data-months="close">모두 접기</button>' : '') + '</div>' +
@@ -735,7 +740,23 @@ window.addEventListener('resize', function () {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(function () { if (S.loaded && S.tab === 'home' && !modal.innerHTML) render(); }, 150);
 });
-document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeSheet(); });
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') { closeSheet(); return; }
+  var t = e.target, typing = /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName);
+  // Enter: 입력 창에서 저장·등록 (한글 조합 중이거나 메모 칸에서는 제외)
+  if (e.key === 'Enter' && !e.isComposing && modal.innerHTML && t.tagName === 'INPUT') {
+    var ok = $('.sheet [data-a=save], .sheet [data-a=ok]', modal);
+    if (ok && !ok.disabled) { e.preventDefault(); ok.click(); }
+    return;
+  }
+  // ⌘F(Ctrl+F) 또는 / : 장부 검색으로
+  if (((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') || (e.key === '/' && !typing)) {
+    if (!S.loaded || S.setup || modal.innerHTML) return;
+    e.preventDefault();
+    if (S.tab !== 'ledger') { S.tab = 'ledger'; render(); }
+    var q = $('#q'); q.focus(); q.select();
+  }
+});
 
 load();
 call('update:status').then(setUpdate).catch(function () {});

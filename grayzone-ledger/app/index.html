@@ -29,7 +29,7 @@ header h1 { font-size: 17px; letter-spacing: .04em; margin: 0; flex: 1; font-wei
 header h1 small { font-weight: 500; color: var(--muted); letter-spacing: 0; margin-left: 4px; }
 select, .icon-btn { height: 36px; border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 0 10px; }
 .icon-btn { width: 36px; padding: 0; display: grid; place-items: center; text-decoration: none; font-size: 16px; color: var(--ink); }
-.busy .icon-btn.refresh { animation: spin .8s linear infinite; }
+.busy .icon-btn.refresh i { animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin-bottom: 12px; }
@@ -183,6 +183,45 @@ body.setup nav, body.setup .fab, body.setup #year, body.setup #sheetLink, body.s
   .fab { bottom: 24px; }
   .toast { bottom: 90px; }
 }
+
+/* ---------- 인체공학: 크게 누르고, 크게 읽고, 덜 움직이게 ---------- */
+:root { --head: 64px; }
+:focus-visible { outline: 2px solid var(--s1); outline-offset: 2px; }
+/* 누르는 곳 */
+select, .icon-btn { height: 40px; }
+.icon-btn { width: 40px; }
+.icon-btn i { font-style: normal; display: inline-block; }
+.icon-btn .lbl { display: none; font-size: 13px; }
+.chip { height: 36px; padding: 0 14px; }
+.acts button { height: 38px; padding: 0 14px; font-size: 14px; }
+.tools input[type=search] { height: 44px; font-size: 15px; }
+.item { padding: 13px 14px; cursor: pointer; }
+.item:hover, button.kpi:hover { background: var(--fill); }
+.month-head { padding: 15px 14px; }
+/* 읽는 글씨 */
+.item .day, .item .s, .kpi .label, .kpi .sub, label.f, .legend, th { font-size: 13px; }
+.tag { font-size: 12px; line-height: 20px; padding: 0 7px; }
+table { font-size: 14px; }
+.note, table.vat td .cap, .hint { font-size: 12.5px; }
+/* 스크롤해도 어느 달인지 보이게: 달 머리줄이 위에 붙어 따라옵니다 */
+.month { overflow: visible; }
+.month-head { position: sticky; top: var(--head); z-index: 2; background: var(--surface); border-radius: 14px; }
+.month.open .month-head { border-radius: 14px 14px 0 0; }
+.month .list { border-radius: 0 0 14px 14px; }
+/* 긴 입력 창에서도 저장 버튼이 늘 보이게 */
+.sheet > .btns:has(+ .err), .sheet > .btns:last-child { position: sticky; bottom: -18px; background: var(--surface); padding: 10px 0 18px; margin-bottom: -18px; z-index: 1; }
+.sheet > .err { position: sticky; bottom: 60px; background: var(--surface); z-index: 1; }
+.sheet > .err:empty { position: static; }
+@media (min-width: 720px) {
+  :root { --head: 114px; }
+  /* 등록 버튼은 위쪽 탭 줄 오른쪽에: 목록을 가리지 않습니다 */
+  .fab { top: 6px; bottom: auto; height: 38px; padding: 0 16px; border-radius: 10px; box-shadow: none; font-size: 14px; }
+  .toast { top: 58px; bottom: auto; }  /* 아래쪽 저장 버튼을 가리지 않게 위에 */
+  .wrap { padding-bottom: 40px; }
+  /* 아이콘 옆에 이름 */
+  .icon-btn { width: auto; padding: 0 12px; display: inline-flex; align-items: center; gap: 6px; }
+  .icon-btn .lbl { display: inline; }
+}
 </style>
 </head>
 <body>
@@ -190,9 +229,9 @@ body.setup nav, body.setup .fab, body.setup #year, body.setup #sheetLink, body.s
   <header>
     <h1>GRAYZONE<small>매출 장부</small></h1>
     <select id="year" aria-label="연도"></select>
-    <a class="icon-btn" id="sheetLink" target="_blank" rel="noopener" title="시트 열기" aria-label="시트 열기">▦</a>
-    <button class="icon-btn refresh" id="refresh" title="새로 고침 (⌘R)" aria-label="새로 고침">↻</button>
-    <button class="icon-btn" id="settings" title="설정" aria-label="설정">⚙</button>
+    <a class="icon-btn" id="sheetLink" target="_blank" rel="noopener" title="시트 열기 (⌘⇧O)" aria-label="시트 열기"><i>▦</i><span class="lbl">시트</span></a>
+    <button class="icon-btn refresh" id="refresh" title="새로 고침 (⌘R)" aria-label="새로 고침"><i>↻</i><span class="lbl">새로 고침</span></button>
+    <button class="icon-btn" id="settings" title="설정 (⌘,)" aria-label="설정"><i>⚙</i><span class="lbl">설정</span></button>
   </header>
   <div id="updateBar" class="updatebar" role="status" hidden></div>
   <main id="app"><div class="loading">장부를 불러오는 중…</div></main>

@@ -303,6 +303,48 @@ test('화면', async (t) => {
     await close();
   });
 
+  await t.test('인체공학: 큰 버튼, 가리지 않는 등록 버튼, 붙는 달 머리줄, 키보드, 탭 기억', async () => {
+    const { page, errors, shot, close, google } = await open(browser);
+    const h = (sel) => page.locator(sel).first().evaluate((el) => el.getBoundingClientRect().height);
+    await page.click('nav [data-tab=ledger]');
+    assert.ok(await h('.chip') >= 36 && await h('.icon-btn') >= 40 && await h('#q') >= 44);
+    assert.equal(await page.locator('#refresh .lbl').isVisible(), true); // 넓은 창: 아이콘 옆 이름
+    // 등록 버튼은 탭 줄 안(위쪽)에 있어 목록과 겹치지 않음
+    const fab = await page.locator('#add').boundingBox();
+    assert.ok(fab.y + fab.height <= 50, 'fab y=' + fab.y);
+    // 긴 달을 스크롤해도 달 머리줄이 위에 붙어 있음
+    await page.click('[data-months=open]');
+    await page.evaluate(() => window.scrollTo(0, 500));
+    const tops = await page.locator('.month-head').evaluateAll((hs) => hs.map((x) => Math.round(x.getBoundingClientRect().top)));
+    assert.ok(tops.includes(114), '붙은 머리줄 없음: ' + tops.join());
+    await shot('16-sticky-month');
+    // ⌘F → 검색 칸, Enter → 저장
+    await page.click('nav [data-tab=home]');
+    await page.keyboard.press('Control+f');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'q');
+    await page.click('#add');
+    await page.fill('#fDate', '2026-11-21'); await page.fill('#fClient', 'A'); await page.fill('#fAmount', '5000');
+    await page.fill('#fTitle', '엔터로 저장');
+    await page.press('#fTitle', 'Enter');
+    await page.waitForSelector('.item:has-text("엔터로 저장")');
+    assert.ok(google.rowOf('엔터로 저장') > 0);
+    // 긴 수정 창: 저장 버튼이 스크롤 없이 보임
+    await page.setViewportSize({ width: 980, height: 560 });
+    await page.locator('.item:has-text("엔터로 저장")').click();
+    await page.click('[data-a=edit]');
+    const save = await page.locator('[data-a=save]').boundingBox();
+    assert.ok(save.y + save.height <= 560, '저장 버튼이 화면 밖: ' + save.y);
+    await shot('17-sticky-save');
+    await page.keyboard.press('Escape');
+    // 마지막 탭 기억
+    await page.click('nav [data-tab=unpaid]');
+    await page.reload();
+    await page.waitForSelector('.kpis');
+    assert.equal(await page.locator('nav button.on').innerText().then((x) => x.replace(/\d+/, '').trim()), '미수금');
+    assert.deepEqual(errors, []);
+    await close();
+  });
+
   await t.test('좁은 창·다크 모드에서 넘침 없음', async () => {
     const { page, shot, close, errors } = await open(browser, { ctx: { viewport: { width: 390, height: 844 }, colorScheme: 'dark' } });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
