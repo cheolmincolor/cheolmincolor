@@ -122,19 +122,26 @@ def register_dnd():
         log("drag and drop off:", traceback.format_exc())
 
 
+class AppError(RuntimeError):
+    """이 앱이 직접 쓴, 사용자에게 그대로 보여 줄 우리말 문구."""
+
+
 def friendly(e, doing):
-    """ffmpeg 등의 영어 오류 원문 대신, 원인과 할 일을 우리말로. 원문은 기록 파일에만 남김."""
+    """ffmpeg 등의 영어 오류 원문 대신, 원인과 할 일을 우리말로. 원문은 기록 파일에만 남김.
+
+    파일 이름·경로에 한글이 있어도 원문이 새어 나가지 않게, 원문 패턴을 먼저 본다.
+    그대로 보여 주는 것은 이 앱이 직접 쓴 문구(AppError, colortag 의 ValueError)뿐이다.
+    """
     raw = str(e).strip()
-    last = raw.splitlines()[-1] if raw else ""
-    if re.search(r"[가-힣]", last):  # 이 앱이 직접 쓴 문구
-        return last[:160]
     low = raw.lower()
-    if "no such file" in low:
+    if isinstance(e, FileNotFoundError) or "no such file" in low:
         return "파일을 찾을 수 없어요. 옮기거나 지우지 않았는지, 외장 디스크가 연결되어 있는지 확인해 주세요."
-    if "permission denied" in low or "read-only" in low or "operation not permitted" in low:
+    if isinstance(e, PermissionError) or "permission denied" in low or "read-only" in low or "operation not permitted" in low:
         return "이 폴더에는 저장할 수 없어요. 폴더의 쓰기 권한을 확인하거나 영상을 다른 폴더로 옮겨 주세요."
     if "no space left" in low:
         return "저장할 공간이 부족해요. 디스크를 비운 뒤 다시 저장해 주세요."
+    if isinstance(e, (AppError, ValueError)) and re.search(r"[가-힣]", raw):
+        return raw.splitlines()[-1][:160]
     if doing == "save":
         return "저장하지 못했어요. 파일이 깨졌거나 복사가 덜 끝났을 수 있어요. 계속되면 기록 파일을 보내 주세요."
     return "영상을 읽지 못했어요. 파일이 깨졌거나 복사가 덜 끝났을 수 있어요."
@@ -215,7 +222,7 @@ class Previews:
     def _build(self, key, job):
         f = self.files.get(job["fid"])
         if not f:
-            raise RuntimeError("목록에서 빠진 영상입니다")
+            raise AppError("목록에서 빠진 영상입니다")
         start = job["seg"] * SEG
         dur = SEG if not f["duration"] else max(0.05, min(SEG, f["duration"] - start))
         ext = ".mov"  # 1-2-1 미리보기에 감마 표시(gama)를 넣으려면 MOV 여야 함
@@ -238,6 +245,7 @@ class Core:
         self.lock = threading.RLock()
         self.files, self.order = {}, []
         self.saving, self.save_target, self.save_total = False, None, 0
+        self.last_save = {"done": 0, "error": 0, "skipped": 0}   # 방금 끝난 저장 한 번의 결과 (알림용)
         self.previews = Previews(root, self.files)
         self.last_seen = 0.0
         self.added_seq, self.last_added = 0, []
@@ -307,7 +315,7 @@ class Core:
                     "seg_len": SEG, "ffmpeg": bool(shutil.which("ffmpeg")), "app": APP_NAME, "subtitle": APP_SUBTITLE,
                     "version": APP_VERSION, "update": self.updater.state(),
                     "targets": {w: len(self.targets(w)) for w in TAGS},
-                    "save_total": self.save_total, "copyright": COPYRIGHT, "native": NV_STATE, "dnd": self.dnd,
+                    "save_total": self.save_total, "last_save": dict(self.last_save), "copyright": COPYRIGHT, "native": NV_STATE, "dnd": self.dnd,
                     "added_seq": self.added_seq, "last_added": self.last_added,
                     "skip_intro": bool(self.prefs.get("skip_intro"))}
 
@@ -362,7 +370,7 @@ class Core:
                     log("save", os.path.basename(f["path"]), "→", os.path.basename(out),
                         "| 원본:", ct.describe(f["path"]), "| 저장본:", ct.describe(out))
                     if got != want:
-                        raise RuntimeError(f"확인 결과 태그가 {got} 입니다")
+                        raise AppError(f"저장한 파일의 태그가 {got}로 확인됐어요. 기록 파일을 보내 주세요")
                     qt = None
                     if sys.platform == "darwin":  # 퀵타임과 같은 방식으로 다시 읽어 확인
                         try:
@@ -383,6 +391,8 @@ class Core:
                     log("save error", f["path"], e)
         finally:
             with self.lock:
+                st = [self.files[fid]["status"] for fid in ids if fid in self.files]
+                self.last_save = {k: st.count(k) for k in ("done", "error", "skipped")}
                 self.saving = False
 
     def reveal(self, fid):

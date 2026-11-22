@@ -207,7 +207,7 @@
   .intro-name .sub { font-size: 15px; font-weight: 600; color: #C1C1C1; margin-left: 4px; }
   .intro-by { color: var(--sub); font-size: 12.5px; margin-top: 1px; }
   .intro-card h3 { margin: 20px 0 6px; font-size: 14px; }
-  .intro-card > p { margin: 0; color: #C8C8C8; font-size: 13.5px; line-height: 1.6; }
+  .intro-body > p { margin: 0; color: #C8C8C8; font-size: 13.5px; line-height: 1.6; }
   .intro-key { margin-top: 14px; padding: 12px 16px; border-radius: 3px; background: rgba(175, 175, 175, .09);
     border: 1px solid rgba(175, 175, 175, .28); font-weight: 600; font-size: 14px; color: #F0F0F0; line-height: 1.55; }
   .intro-key span { display: block; font-weight: 400; font-size: 12.5px; color: #C1C1C1; margin-top: 2px; }
@@ -370,7 +370,7 @@
   body.fsmode #abBtn { display: none; }
   .item.bad .row2 .st { display: none; }
   .errmsg { margin-top: 5px; font-size: 12px; line-height: 1.4; color: #E8E8E8; font-weight: 700; white-space: normal;
-    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; overflow: hidden; overflow-wrap: anywhere; }
   .rowbar { margin-top: 7px; display: flex; align-items: center; gap: 8px; }
   .rowbar .bar { flex: 1; height: 6px; border-radius: 3px; background: #303030; overflow: hidden; }
   .rowbar .bar i { display: block; height: 100%; background: #ABABAB; border-radius: 3px; transition: width .2s; }
@@ -380,6 +380,8 @@
   .intro-card { display: flex; flex-direction: column; overflow: hidden; }
   .intro-body { overflow: auto; min-height: 0; flex: 1 1 auto; padding-right: 4px; }
   .intro-foot { flex: none; }
+  .intro-body::-webkit-scrollbar { width: 8px; } .intro-body::-webkit-scrollbar-thumb { background: #5E5E5E; border-radius: 4px; }
+  .intro-body::-webkit-scrollbar-track { background: #1B1B1B; }  /* 아래에 내용이 더 있음을 보이게 */
   .intro-top { flex: none; } .intro-top .gzmark { margin-left: auto; align-self: flex-start; }
   .icard.mac { border-color: #5E5E5E; }
   .icard .rec { margin-left: 8px; vertical-align: 2px; }
@@ -671,7 +673,7 @@ function renderSave() {
   const mp4 = choice === "mac" && S.files.some((f) => f.playable && /\.(mp4|m4v)$/i.test(f.name));
   const skip = choice ? n - tg : 0;   // 이미 그 상태이거나, 이미 저장했거나, 지원하지 않는 영상
   cn.textContent = !choice ? "" : savedAll ? "고른 상태로 모두 저장했어요. 다시 저장하지 않아도 됩니다."
-    : NOTES[choice][0] + (mp4 ? " MP4는 MOV 파일로 저장됩니다." : "") + (skip > 0 ? " " + skip + "개는 건너뜁니다 (이미 이 상태이거나 저장을 마친 영상)." : "");
+    : NOTES[choice][0] + (mp4 ? " MP4는 MOV 파일로 저장됩니다." : "") + (skip > 0 ? " " + skip + "개는 건너뜁니다 (이미 이 상태이거나, 저장을 마쳤거나, 지원하지 않는 영상)." : "");
   // 순서 표시: 1 영상 넣기 → 2 두 화면 비교 → 3 고르고 저장
   const cur = !n ? 1 : !choice ? 2 : savedAll ? 4 : 3;
   $$("#flow span").forEach((el) => {  // 끝난 단계는 색만이 아니라 ✓ 모양으로
@@ -696,10 +698,8 @@ function renderStage() {
 }
 
 function summary() {
-  const done = S.files.filter((f) => f.status === "done").length;
-  const skip = S.files.filter((f) => f.status === "skipped").length;
-  const err = S.files.filter((f) => f.status === "error").length;
-  toast("저장 완료 " + done + "개" + (skip ? " · 건너뜀 " + skip + "개" : "") + (err ? " · 실패 " + err + "개" : ""));
+  const r = S.last_save || {}, done = r.done || 0, skip = r.skipped || 0, err = r.error || 0;  // 이번 저장분만
+  toast((done ? "저장 완료 " + done + "개" : "저장하지 못했어요") + (skip ? " · 건너뜀 " + skip + "개" : "") + (err ? " · 실패 " + err + "개" : ""));
 }
 
 function selectFile(id) {
@@ -971,7 +971,8 @@ function makePlayer(native) {
     if (fsTag) $("#fsPick").textContent = choice === fsTag ? "✓ 고른 쪽" : "이쪽으로 고르기";
   }));
   document.addEventListener("keydown", (e) => {
-    if (e.code === "Space" && !e.repeat && (e.target === document.body || fsTag) && !playBtn.disabled && !introOpen && !updOpen) { e.preventDefault(); playing ? pause() : play(); }
+    const onPanel = e.target && e.target.closest && e.target.closest(".panel-head");  // 화면 이름 줄을 누른 직후에도 Space 는 재생
+    if (e.code === "Space" && !e.repeat && (e.target === document.body || fsTag || onPanel) && !playBtn.disabled && !introOpen && !updOpen) { e.preventDefault(); playing ? pause() : play(); }
   });
 
   return {
