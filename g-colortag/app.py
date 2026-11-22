@@ -423,6 +423,9 @@ class Core:
         if name == "launch_ready":  # 런치 화면: 글꼴 로드와 첫 내용 준비가 끝남 → 이제 창을 보임
             show_splash()
             return {"ok": True}
+        if name == "launch_poke":   # 런치 화면: 창이 보이는데 그려지지 않음 → 다시 깨움
+            poke_splash(str(data.get("info", ""))[:80])
+            return {"ok": True}
         if name == "launch_quit":   # 런치 화면이 오류로 멈춘 상태에서 클릭·키 입력
             if LAUNCH["error"]:
                 threading.Timer(0.1, lambda: os._exit(1)).start()
@@ -527,6 +530,33 @@ def show_splash():
     if SPLASH is not None and not LAUNCH["t_shown"]:
         LAUNCH["t_shown"] = time.time()
         SPLASH.show()
+
+
+def poke_splash(info=""):
+    """런치 창이 보이는데도 화면이 그려지지 않을 때(맥에서 가끔, 처음 켤 때): 창을 다시 앞으로 가져와 그리게 함."""
+    LAUNCH["pokes"] = LAUNCH.get("pokes", 0) + 1
+    log("launch poke", LAUNCH["pokes"], info)
+    if sys.platform != "darwin" or SPLASH is None:
+        return
+    try:
+        import AppKit
+        from PyObjCTools import AppHelper
+        from webview.platforms.cocoa import BrowserView
+
+        def go():
+            try:
+                bv = BrowserView.instances.get(SPLASH.uid)
+                if bv is None:
+                    return
+                AppKit.NSApp.activateIgnoringOtherApps_(True)
+                bv.window.orderFrontRegardless()
+                bv.webview.setNeedsDisplay_(True)
+                bv.window.display()
+            except Exception as e:
+                log("launch poke failed:", e)
+        AppHelper.callAfter(go)
+    except Exception as e:
+        log("launch poke failed:", e)
 
 
 def launch_sequence():

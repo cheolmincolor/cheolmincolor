@@ -62,11 +62,20 @@ const cells = GRAYS.map((g, i) => {
   return c;
 });
 let last = "", failed = false, shown = false;
-const post = (name) => fetch("/api/" + name, { method: "POST", headers: { "X-Token": TOKEN, "Content-Type": "application/json" }, body: "{}" }).catch(() => {});
+const post = (name, body) => fetch("/api/" + name, { method: "POST", headers: { "X-Token": TOKEN, "Content-Type": "application/json" }, body: JSON.stringify(body || {}) }).catch(() => {});
 function ready() {  // 글꼴이 로드되고 첫 내용이 들어간 뒤에 창을 보이게 알림 (빈 창이 먼저 보이지 않게)
   if (shown) return;
   shown = true;
   post("launch_ready");
+  // 창이 보인 뒤에도 화면이 그려지지 않는 경우가 있어(맥, 처음 켤 때), 그려진 것이 확인될 때까지 창을 다시 깨움
+  let painted = false, tries = 0;
+  requestAnimationFrame(() => { painted = true; });
+  const watch = setInterval(() => {
+    if (painted || tries >= 10) { clearInterval(watch); return; }
+    tries++;
+    post("launch_poke", { info: tries + " " + document.visibilityState });
+    requestAnimationFrame(() => { painted = true; });
+  }, 400);
 }
 // 오류로 멈춘 상태에서는 클릭하거나 키를 누르면 앱을 닫음 (요소를 더하지 않고 동작만)
 const quitIfFailed = () => { if (failed) post("launch_quit"); };

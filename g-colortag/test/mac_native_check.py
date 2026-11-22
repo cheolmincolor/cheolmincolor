@@ -253,7 +253,7 @@ def test():
             if app.LAUNCH["shown"] or app.LAUNCH["error"]:
                 break
             time.sleep(0.1)
-        step(f"런치 화면: {app.LAUNCH['cells']}칸, '{app.LAUNCH['status']}' {app.LAUNCH['error']}")
+        step(f"런치 화면: {app.LAUNCH['cells']}칸, '{app.LAUNCH['status']}' {app.LAUNCH['error']} · 다시 깨운 횟수 {app.LAUNCH.get('pokes', 0)}")
         if not app.LAUNCH["shown"]:
             raise RuntimeError("런치 화면에서 메인 창으로 넘어가지 않음: " + app.LAUNCH["error"])
         time.sleep(1)
