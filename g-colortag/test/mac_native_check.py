@@ -121,6 +121,7 @@ def launch_watch():
             sc = __import__("Quartz").CGImageGetWidth(img) / 640
             if abs(gray_at(img, 20 * sc, 200 * sc)[0] - 18) <= 3 and gray_at(img, 60 * sc, 341 * sc)[0] <= 3:
                 LAUNCH_SHOTS["start"] = (img, c, st)
+                LAUNCH_SHOTS["t_early"] = time.time() - app.LAUNCH["t_shown"]
                 break
         except Exception as e:
             step(f"런치 화면 중간 캡처 실패: {e}")
@@ -183,6 +184,7 @@ def launch_hook():
             break
         time.sleep(0.1)
     LAUNCH_SHOTS["t_paint"] = t_first
+    step(f"런치 창 표시 후 처음 내용이 찍힌 시점: {round(LAUNCH_SHOTS['t_early'], 2) if 't_early' in LAUNCH_SHOTS else '로딩 중에는 못 찍음'}초")
     step(f"런치 창 표시 후 내용이 찍히기까지: {t_first if t_first is None else round(t_first, 2)}초 (런치가 끝난 시점 {time.time() - app.LAUNCH['t_shown']:.2f}초) · "
          f"빈 대조 창이 찍히기까지: {round(CONTROL['sec'], 2) if 'sec' in CONTROL else '10초 넘음'}초")
     img, bg = diag("")

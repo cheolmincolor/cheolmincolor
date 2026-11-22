@@ -69,7 +69,7 @@ function ready() {  // 글꼴이 로드되고 첫 내용이 들어간 뒤에 창
   post("launch_ready");
   // 창이 보인 뒤에도 화면이 그려지지 않는 경우가 있어(맥, 처음 켤 때), 그려진 것이 확인될 때까지 창을 다시 깨움
   let painted = false, tries = 0;
-  requestAnimationFrame(() => { painted = true; });
+  requestAnimationFrame(() => requestAnimationFrame(() => { painted = true; post("launch_painted"); }));
   const watch = setInterval(() => {
     if (painted || tries >= 10) { clearInterval(watch); return; }
     tries++;

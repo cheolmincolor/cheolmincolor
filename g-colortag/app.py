@@ -423,6 +423,9 @@ class Core:
         if name == "launch_ready":  # 런치 화면: 글꼴 로드와 첫 내용 준비가 끝남 → 이제 창을 보임
             show_splash()
             return {"ok": True}
+        if name == "launch_painted":  # 런치 화면이 실제로 한 번 그려짐 → 이제 메인 화면을 불러와도 됨
+            LAUNCH["painted"] = True
+            return {"ok": True}
         if name == "launch_poke":   # 런치 화면: 창이 보이는데 그려지지 않음 → 다시 깨움
             poke_splash(str(data.get("info", ""))[:80])
             return {"ok": True}
@@ -504,6 +507,8 @@ class Core:
 
 # ---------------------------------------------------------------- 파일 선택 창
 WINDOW = None
+MAIN_URL = ""        # 메인 화면 주소 (런치 화면이 그려진 뒤에 불러옴)
+MAIN_STARTED = False
 SPLASH = None        # GRAYZONE 런치 화면 창 (640×400, 제목 표시줄 없음)
 LAUNCH_ZONE = 7      # 이 앱의 존 (웨지에서 외곽선 + 로마 숫자 VII)
 LAUNCH_CELLS = 11    # 웨지 칸 수 (존 0 … X)
@@ -607,7 +612,18 @@ def launch_sequence():
         return fail("앱 안의 ffmpeg를 실행할 수 없습니다. 앱을 다시 설치해 주세요")
     stage(3, "설정 불러오는 중")
     CORE.prefs = load_prefs()
+    # 런치 화면이 먼저 화면에 그려지게 한 뒤에 메인 화면을 불러오기 시작
+    t = time.time()
+    while not LAUNCH.get("painted") and time.time() - t < 5:
+        if LAUNCH["t_shown"] and time.time() - LAUNCH["t_shown"] > 1.5:
+            break
+        time.sleep(0.02)
     stage(4, "메인 화면 불러오는 중")
+    global MAIN_STARTED
+    WINDOW.events.loaded.wait(10)   # 빈 창 준비
+    WINDOW.events.loaded.clear()
+    MAIN_STARTED = True
+    WINDOW.load_url(MAIN_URL)
     if not WINDOW.events.loaded.wait(40):
         return fail("메인 화면을 불러오지 못했습니다")
     stage(7, "퀵타임 엔진 미리보기 준비 중")
@@ -820,7 +836,12 @@ def run_window(url):
     if sys.platform == "darwin":
         NV_STATE = "pending"  # 창이 뜨면 켬. 화면은 그때까지 기다림
     # 메인 창은 숨긴 채 불러오고, 그동안 런치 화면(640×400, 제목 표시줄 없음, 크기 고정, 화면 중앙)을 보여 줌
-    WINDOW = webview.create_window(f"{APP_NAME} {APP_SUBTITLE}", url, width=1240, height=820, min_size=(1020, 700),
+    # 메인 창은 빈 채로 만들어 두고, 런치 화면이 먼저 그려진 뒤에 메인 화면을 불러옴 (launch_sequence).
+    # 둘을 한꺼번에 불러오면 앱이 바빠서 런치 창이 몇 초 동안 그려지지 않는 일이 있었음.
+    global MAIN_URL
+    MAIN_URL = url
+    WINDOW = webview.create_window(f"{APP_NAME} {APP_SUBTITLE}", html="<html><body style='background:#121212'></body></html>",
+                                   width=1240, height=820, min_size=(1020, 700),
                                    background_color="#121212", text_select=False, hidden=True)
     SPLASH = webview.create_window(f"{APP_NAME} {APP_SUBTITLE}", url.replace("/?t=", "/launch?t="), width=640, height=400,
                                    resizable=False, frameless=True, easy_drag=True, background_color="#121212",
@@ -828,10 +849,10 @@ def run_window(url):
     # 숨긴 채 만들고, 화면이 글꼴 로드까지 끝냈다고 알리면 보임 (알림이 없으면 불러온 뒤 3초에 보임)
     SPLASH.events.loaded += lambda: threading.Timer(3, show_splash).start()
     threading.Thread(target=launch_sequence, daemon=True).start()
-    WINDOW.events.loaded += lambda: register_dnd() if not CORE.dnd else None
+    WINDOW.events.loaded += lambda: register_dnd() if MAIN_STARTED and not CORE.dnd else None
     if sys.platform == "darwin":
         def on_loaded():
-            if NV_STATE == "pending":
+            if MAIN_STARTED and NV_STATE == "pending":
                 try:
                     from PyObjCTools import AppHelper
                     AppHelper.callAfter(init_native)
@@ -839,11 +860,11 @@ def run_window(url):
                     globals()["NV_STATE"] = "off"
         WINDOW.events.loaded += on_loaded
 
-        def give_up():  # 15초 안에 못 켜면 웹 플레이어로 (화면이 멈추지 않게)
+        def give_up():  # 못 켜면 멈춰 있지 않게 (런치 화면이 실패를 알림)
             if NV_STATE == "pending":
                 globals()["NV_STATE"] = "off"
                 log("native player timeout")
-        threading.Timer(15, give_up).start()
+        threading.Timer(25, give_up).start()
     webview.start()
     return True
 
