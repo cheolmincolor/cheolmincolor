@@ -1,7 +1,7 @@
 (function () {
 'use strict';
 
-var S = { jobs: [], today: '', sheetUrl: '', title: '', setup: false, status: null, vat: { basis: '부가세 별도', hasSheet: false }, checks: [], hiddenChecks: 0, years: null, update: { status: 'idle', current: '' }, year: null, tab: loadTab(), q: '', lf: 'all', open: loadOpen(), uf: 'all', us: 'old', loaded: false };
+var S = { jobs: [], today: '', sheetUrl: '', title: '', setup: false, status: null, vat: { basis: '부가세 별도', hasSheet: false }, checks: [], hiddenChecks: 0, years: null, update: { status: 'idle', current: '' }, year: null, tab: loadTab(), q: '', lf: 'all', open: loadOpen(), uf: 'all', us: 'new', loaded: false };
 var $ = function (s, el) { return (el || document).querySelector(s); };
 var app = $('#app'), modal = $('#modal'), toastEl = $('#toast');
 
@@ -265,6 +265,8 @@ function viewHome() {
     '<div class="legend"><span><i style="background:var(--s1)"></i>' + y + '년</span><span><i style="background:var(--s2)"></i>' + (y - 1) + '년</span></div>' +
     '<div class="readout num" id="readout"></div>' + chart(cur, prev) + '</div>';
 
+  html += flowCard(y);
+
   html += '<div class="card"><h2>월별 표</h2><table class="num"><thead><tr><th>월</th><th>건수</th><th>' + y + '년 매출</th><th>미수금</th><th>전년 대비</th></tr></thead><tbody>';
   cur.forEach(function (r) {
     if (r.m === 0 && !r.count) return;
@@ -290,6 +292,45 @@ function viewHome() {
     }).join('') + '</div>';
   }
   return html;
+}
+/**
+ * 연간 흐름판: 가로 1~12월, 세로 1~5주(1~7일, 8~14일, …, 29일~). 칸이 밝을수록 그 주의 매출이 큽니다.
+ * 미수가 남은 주는 ⚠. 칸을 누르면 그 주의 작업이 아래에 열립니다.
+ */
+var FLOW_GRAYS = ['#3A3A3A', '#5E5E5E', '#8A8A8A', '#ABABAB', '#E0E0E0'];
+function flowCard(y) {
+  var cells = {}, max = 0;
+  S.jobs.forEach(function (j) {
+    if (j.year !== y || !isIso(j.date)) return;
+    var k = Number(j.date.slice(5, 7)) + '-' + Math.min(5, Math.ceil(Number(j.date.slice(8)) / 7));
+    var c = cells[k] || (cells[k] = { jobs: [], sales: 0, unpaid: 0 });
+    c.jobs.push(j); c.sales += num(j.amount); c.unpaid += j.unpaid;
+    if (c.sales > max) max = c.sales;
+  });
+  var html = '<div class="card"><h2>연간 흐름</h2>' +
+    '<div class="legend"><span>적음 ' + FLOW_GRAYS.map(function (g) { return '<i style="background:' + g + ';margin-right:2px"></i>'; }).join('') + ' 많음</span><span><span class="warn-mark"></span> 미수 있음</span></div>' +
+    '<div class="note" style="margin:0 0 8px">칸은 한 주(1~7일, 8~14일 …)입니다. 누르면 그 주의 작업이 보입니다.</div>' +
+    '<div class="flow" role="grid" aria-label="' + y + '년 주별 매출"><span></span>';
+  for (var m = 1; m <= 12; m++) html += '<span class="fh num">' + m + '</span>';
+  for (var w = 1; w <= 5; w++) {
+    html += '<span class="fw">' + w + '주</span>';
+    for (m = 1; m <= 12; m++) {
+      var k = m + '-' + w, c = cells[k], key = y + '-' + k;
+      if (!c) { html += '<span class="fc empty"></span>'; continue; }
+      var lv = c.sales > 0 && max ? Math.min(4, Math.floor(Math.sqrt(c.sales / max) * 5)) : -1;
+      html += '<button class="fc' + (S.flow === key ? ' on' : '') + '" data-flow="' + key + '" style="' + (lv >= 0 ? 'background:' + FLOW_GRAYS[lv] : '') + '"' +
+        ' aria-label="' + m + '월 ' + w + '주 ' + c.jobs.length + '건 ' + won(c.sales) + '원' + (c.unpaid ? ' 미수 ' + won(c.unpaid) + '원' : '') + '">' +
+        (c.unpaid ? '<span class="warn-mark' + (lv >= 2 ? ' dark' : '') + '"></span>' : '') + '</button>';
+    }
+  }
+  html += '</div>';
+  var sel = S.flow && S.flow.indexOf(y + '-') === 0 ? cells[S.flow.slice(String(y).length + 1)] : null;
+  if (sel) {
+    var p = S.flow.split('-');
+    html += '<div class="group"><b>' + p[1] + '월 ' + p[2] + '주</b><span class="num">' + sel.jobs.length + '건 · ' + won(sel.sales) + '원' + (sel.unpaid ? ' · 미수 ' + won(sel.unpaid) + '원' : '') + '</span></div>' +
+      '<div class="list">' + sel.jobs.sort(function (a, b) { return (a.date > b.date) - (a.date < b.date) || a.row - b.row; }).map(function (j) { return item(j); }).join('') + '</div>';
+  }
+  return html + '</div>';
 }
 /** 분기별 부가세 (납품일 기준). 시트 「부가세」 탭과 같은 표입니다. */
 function vatCard(y) {
@@ -483,7 +524,7 @@ function viewUnpaid() {
   var html = '<div class="kpis">' + kpi('미수금', won(total), list.length + '건' + (S.vat.basis === '부가세 포함' ? ' · 부가세 포함' : ' · 부가세 포함 ' + won(withVat) + '원')) +
     kpi('90일 넘은 미수', won(sum(list, function (j) { return daysSince(j.date) > 90 ? j.unpaid : 0; })), list.filter(function (j) { return daysSince(j.date) > 90; }).length + '건') + '</div>' +
     '<div class="chips">' + chip('uf', 'all', '전체', S.uf) + chip('uf', 'noinv', '계산서 미발행', S.uf) + chip('uf', 'wait', '입금 대기', S.uf) +
-    '<span class="gap"></span>' + chip('us', 'old', '월별', S.us) + chip('us', 'big', '금액순', S.us) + chip('us', 'client', '거래처별', S.us) + '</div>' +
+    '<span class="gap"></span>' + chip('us', 'new', '최신순', S.us) + chip('us', 'old', '월별', S.us) + chip('us', 'big', '금액순', S.us) + chip('us', 'client', '거래처별', S.us) + '</div>' +
     (S.us === 'old' && list.length ? '<div class="chips"><span class="gap"></span><button class="chip" data-umonths="open">모두 펼치기</button><button class="chip" data-umonths="close">모두 접기</button></div>' : '');
   if (!list.length) return html + '<div class="empty">미수금이 없습니다.</div>';
 
@@ -498,6 +539,10 @@ function viewUnpaid() {
           '<div class="list">' + c.jobs.map(unpaidItem).join('') + '</div>';
       });
     return html;
+  }
+  if (S.us === 'new') {
+    list.sort(function (a, b) { return -byDate(a, b); });
+    return html + '<div class="list">' + list.map(unpaidItem).join('') + '</div>';
   }
   if (S.us === 'big') {
     list.sort(function (a, b) { return b.unpaid - a.unpaid || byDate(a, b); });
@@ -754,7 +799,7 @@ app.addEventListener('click', function (e) {
   var s = e.target.closest('[data-setup]');
   if (s) { setupAction(s.dataset.setup, s); return; }
   if (e.target.closest('[data-retry]')) { app.innerHTML = '<div class="loading">장부를 불러오는 중…</div>'; load(); return; }
-  var t = e.target.closest('[data-act],[data-row],[data-lf],[data-uf],[data-us],[data-go],[data-month],[data-months],[data-umonth],[data-umonths]');
+  var t = e.target.closest('[data-act],[data-row],[data-lf],[data-uf],[data-us],[data-go],[data-flow],[data-month],[data-months],[data-umonth],[data-umonths]');
   if (!t) return;
   var d = t.dataset;
   if (d.lf) { S.lf = d.lf; render(); return; }
@@ -781,6 +826,7 @@ app.addEventListener('click', function (e) {
   }
   if (d.uf) { S.uf = d.uf; render(); return; }
   if (d.us) { S.us = d.us; render(); return; }
+  if (d.flow) { var top = window.scrollY; S.flow = S.flow === d.flow ? '' : d.flow; render(); window.scrollTo(0, top); return; }
   if (d.go) { var p = d.go.split(':'); S.tab = p[0]; if (p[0] === 'ledger') S.lf = p[1]; else S.uf = p[1]; render(); window.scrollTo(0, 0); return; }
   var j = jobAt(d.row);
   if (!j) return;

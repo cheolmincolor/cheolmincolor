@@ -68,6 +68,22 @@ test('화면', async (t) => {
     assert.match(await page.locator('#readout').innerText(), /8월 · 2026년 58,000,000원 \(4건\) · 2025년 8,000,000원 · \+625\.0%/);
     assert.match(await page.locator('tfoot').first().innerText(), /합계\s+32\s+144,700,000/);
     await shot('1-summary');
+    // 연간 흐름판: 12달 × 5주, 칸의 합 = 연 매출, 누르면 그 주의 작업
+    assert.equal(await page.locator('.flow .fc').count(), 60);
+    const labels = await page.locator('.flow button.fc').evaluateAll((els) => els.map((el) => el.getAttribute('aria-label')));
+    const totals = labels.map((l) => /(\d+)건 ([\d,]+)원/.exec(l)).reduce((a, m) => [a[0] + Number(m[1]), a[1] + Number(m[2].replace(/,/g, ''))], [0, 0]);
+    assert.deepEqual(totals, [32, 144700000]);
+    const cell = page.locator('.flow button.fc[aria-label^="8월"]').first();
+    const n = Number(/(\d+)건/.exec(await cell.getAttribute('aria-label'))[1]);
+    await cell.click();
+    assert.equal(await page.locator('.flow button.fc.on').count(), 1);
+    assert.equal(await page.locator('.flow ~ .list .item').count(), n);
+    await page.locator('.flow').scrollIntoViewIfNeeded();
+    await shot('49-flow');
+    await page.locator('.flow ~ .list .item').first().click();
+    await page.waitForSelector('.sheet'); await page.keyboard.press('Escape');
+    await page.locator('.flow button.fc.on').click();
+    assert.equal(await page.locator('.flow ~ .list').count(), 0);
     await page.selectOption('#year', '2025');
     assert.equal(await page.locator('.kpi .value').first().innerText(), '137,000,000원');
     assert.deepEqual(errors, []);
@@ -100,6 +116,13 @@ test('화면', async (t) => {
     await page.evaluate(() => window.__menu('tab:unpaid'));
     const total = () => page.locator('.kpi .value').first().innerText();
     assert.equal(await total(), '79,200,000원');
+    // 처음에는 최신순: 가장 최근에 납품한 미수금이 맨 위
+    assert.equal(await page.locator('.chip.on[data-us]').innerText(), '최신순');
+    const days = await page.locator('.item .day').allInnerTexts();
+    assert.equal(days.length, 11);
+    assert.deepEqual(days, [...days].sort().reverse());
+    await shot('48-unpaid-newest');
+    await page.click('[data-us=old]');
     // 월별로 접혀 있고 가장 오래된 달만 펼쳐 있음
     const heads = page.locator('.month-head');
     assert.equal(await heads.count(), 5); // 2024-12, 2026-08·09·10·11
@@ -384,6 +407,7 @@ test('화면', async (t) => {
     }, ACCENTS);
     for (const tab of ['home', 'ledger', 'unpaid']) {
       await page.click(`nav [data-tab=${tab}]`);
+      if (tab === 'unpaid') await page.click('[data-us=old]');
       if (tab !== 'home') await page.locator('[data-months=open], [data-umonths=open]').first().click();
       assert.deepEqual(await audit(), [], tab + ' 화면에 유채색');
       // 저작권 표기: 실제 글자, 우상단 버튼 왼쪽, 늘 보임
