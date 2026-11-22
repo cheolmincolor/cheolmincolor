@@ -309,6 +309,15 @@ test('화면', async (t) => {
     u.state = { status: 'ready', current: '1.1.0', latest: '1.2.0', notes: '- 새 기능 하나', progress: 100, error: '' };
     await page.evaluate((s) => window.__update(s), u.state);
     assert.match(await page.locator('#updateBar').innerText(), /새 버전 1\.2\.0[\s\S]*지금 다시 시작/);
+    // 안내 막대가 보일 때 오류 알림은 막대 아래에 (막대 문구를 덮지 않음)
+    env.google.failNext = { status: 500, body: { error: { message: '서버 오류' } } };
+    await page.click('#refresh');
+    await page.waitForSelector('.toast.error');
+    const barBottom = await page.locator('#updateBar').evaluate((el) => el.getBoundingClientRect().bottom);
+    const toastTop = await page.locator('.toast').evaluate((el) => el.getBoundingClientRect().top);
+    assert.ok(toastTop >= barBottom, `알림(${toastTop})이 안내 막대(${barBottom})를 덮음`);
+    await shot('47-toast-under-bar');
+    await page.evaluate(() => { document.querySelector('#toast').innerHTML = ''; });
     await shot('10-update');
     await page.click('#updateBar [data-update=install]');
     await page.waitForFunction(() => document.querySelector('#updateBar').hidden);
@@ -413,6 +422,7 @@ test('화면', async (t) => {
     assert.equal(await rgbOf('.sheet .btn.pri', 'backgroundColor'), 'rgb(224, 224, 224)');
     assert.equal(await rgbOf('.sheet .btn.pri', 'color'), 'rgb(18, 18, 18)');
     assert.equal(await rgbOf('#fTitle', 'color'), 'rgb(232, 232, 232)');
+    await page.focus('#fDate');
     await shot('40-form-primary');
     // 6. 오류 줄은 버튼 줄과 한 묶음으로 아래에, 입력하면 지워짐
     await page.click('[data-a=save]');
@@ -431,6 +441,17 @@ test('화면', async (t) => {
     await page.click('.sheet [data-a=close]');
     assert.equal(await page.locator('.sheet').count(), 0);
     assert.deepEqual(await page.evaluate(() => window.__asked), ['입력한 내용을 버릴까요?', '입력한 내용을 버릴까요?']);
+    // 메뉴 단축키(⌘1~3, ⌘,)도 입력 중이면 물어봄
+    await page.click('#add'); await page.fill('#fTitle', '쓰다 만 작업');
+    await page.evaluate(() => { window.__answer = false; window.__menu('tab:ledger'); window.__menu('settings'); });
+    assert.equal(await page.inputValue('#fTitle'), '쓰다 만 작업');
+    assert.equal(await page.evaluate(() => window.__asked.length), 4);
+    // 자동완성 목록이 있는 칸: 첫 Esc 는 목록 닫기, 창은 그대로
+    await page.fill('#fClient', '오'); await page.keyboard.press('Escape');
+    assert.equal(await page.evaluate(() => window.__asked.length), 4);
+    assert.equal(await page.locator('.sheet').count(), 1);
+    await page.evaluate(() => { window.__answer = true; window.__menu('tab:home'); window.__asked.length = 2; });
+    assert.equal(await page.locator('.sheet').count(), 0);
     // 바뀐 것이 없으면 묻지 않고 바로 닫힘
     await page.click('#add'); await page.keyboard.press('Escape');
     assert.equal(await page.locator('.sheet').count(), 0);
@@ -456,6 +477,8 @@ test('화면', async (t) => {
     const headBottom = await page.locator('nav').evaluate((el) => el.getBoundingClientRect().bottom);
     assert.ok(top >= headBottom, `알림(${top})이 머리줄(${headBottom})을 가림`);
     assert.equal(await page.locator('.toast span').evaluate((el) => getComputedStyle(el, '::before').content), '"✕ "');
+    assert.equal(await page.locator('.toast span').evaluate((el) => getComputedStyle(el, '::before').color), 'rgb(255, 107, 107)');
+    assert.deepEqual(await page.locator('.toast').evaluate((el) => { const s = getComputedStyle(el); return [s.backgroundColor, s.color, s.borderTopColor]; }), ['rgb(27, 27, 27)', 'rgb(232, 232, 232)', 'rgb(232, 232, 232)']);
     await shot('43-toast');
 
     // 10. 삭제: 첫 클릭에 무엇을 지우는지 알리고 0.6초 동안 버튼이 잠김

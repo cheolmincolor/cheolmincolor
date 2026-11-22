@@ -105,6 +105,10 @@ test('런치 화면: 규격 대조', async (t) => {
   assert.equal(await page.locator('#msg').innerText(), '장부 창 준비 실패(ERR_FILE_NOT_FOUND). 아무 곳이나 누르면 닫힙니다.');
   assert.equal(await page.locator('#msg').evaluate((el) => getComputedStyle(el).color), rgb('#E8E8E8'));
   await shot('23-launch-failed');
+  // 원인이 길어도 닫는 방법 안내는 잘리지 않음
+  await set({ version: '9.8.7', filled: 8, failed: true, text: '장부 창 준비 실패(' + '아주 긴 원인 설명 '.repeat(12) + '). 아무 곳이나 누르면 닫힙니다.' });
+  assert.match(await page.locator('#msg').innerText(), /^장부 창 준비 실패\(.+…\)\. 아무 곳이나 누르면 닫힙니다\.$/);
+  assert.equal(await page.locator('#msg').evaluate((el) => el.scrollWidth <= el.clientWidth), true);
   await page.click('body');
   assert.equal(await page.evaluate(() => window.__quit), 1);
   await page.keyboard.press('Enter');

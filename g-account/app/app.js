@@ -563,9 +563,10 @@ var sheetDirty = false;
 function closeSheet() { modal.innerHTML = ''; sheetDirty = false; }
 /** 취소·Esc: 입력한 내용이 있으면 한 번 확인합니다. */
 function requestClose() {
-  if (!modal.innerHTML) return;
-  if (sheetDirty && !confirm('입력한 내용을 버릴까요?')) return;
+  if (!modal.innerHTML) return true;
+  if (sheetDirty && !confirm('입력한 내용을 버릴까요?')) return false;
   closeSheet();
+  return true;
 }
 function jobAt(row) { return S.jobs.filter(function (j) { return j.row === Number(row); })[0]; }
 function submit(el, promise) {
@@ -633,6 +634,7 @@ function showPay(j) {
       mode = t.dataset.mode;
       Array.prototype.forEach.call(el.querySelectorAll('.seg button'), function (b) { b.classList.toggle('on', b === t); });
       $('#pAmtWrap', el).hidden = mode !== 'part';
+      $('.err', el).textContent = '';
       if (mode === 'part') $('#pAmt', el).focus();
     }
     if (t.dataset.a === 'close') requestClose();
@@ -799,21 +801,28 @@ if (window.gz && window.gz.onMenu) window.gz.onMenu(function (action) {
   if (S.setup) return;
   if (action === 'add' && S.loaded && !modal.innerHTML) showForm(null);
   if (action === 'refresh') load();
+  // 입력 중인 창이 있으면 단축키로도 확인 없이 닫히지 않습니다.
+  if ((action === 'settings' || action === 'update' || action.indexOf('tab:') === 0) && !requestClose()) return;
   if (action === 'settings') showSettings();
   if (action === 'update') { showSettings(); updateAction('check'); }
   if (action === 'sheet' && S.sheetUrl) window.open(S.sheetUrl, '_blank');
-  if (action.indexOf('tab:') === 0 && S.loaded) { closeSheet(); S.tab = action.slice(4); render(); window.scrollTo(0, 0); }
+  if (action.indexOf('tab:') === 0 && S.loaded) { S.tab = action.slice(4); render(); window.scrollTo(0, 0); }
 });
 document.addEventListener('keydown', function (e) {
   if (e.key === 'Enter' && e.target.id === 'sheetUrl') { var b = $('[data-setup=setSheet]'); if (b) setupAction('setSheet', b); }
 });
-var resizeTimer = null;
+var resizeTimer = null, escOn = null;
 window.addEventListener('resize', function () {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(function () { if (S.loaded && S.tab === 'home' && !modal.innerHTML) render(); }, 150);
 });
 document.addEventListener('keydown', function (e) {
-  if (e.key === 'Escape') { requestClose(); return; }
+  if (e.key === 'Escape') {
+    // 자동완성 목록이 있는 칸: 첫 Esc 는 목록을 닫는 데 쓰이므로 창은 그대로 둡니다(한 번 더 누르면 닫기).
+    if (e.target.getAttribute && e.target.getAttribute('list') && e.target.value && escOn !== e.target) { escOn = e.target; return; }
+    escOn = null; requestClose(); return;
+  }
+  escOn = null;
   var t = e.target, typing = /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName);
   // Enter: 입력 창에서 저장·등록 (한글 조합 중이거나 메모 칸에서는 제외)
   if (e.key === 'Enter' && !e.isComposing && modal.innerHTML && t.tagName === 'INPUT') {

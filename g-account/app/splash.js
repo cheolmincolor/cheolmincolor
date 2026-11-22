@@ -33,6 +33,14 @@
       document.addEventListener('click', quit);
       document.addEventListener('keydown', quit);
     }
+    // 오류 문구가 길어도 끝의 닫는 방법 안내는 항상 보이게, 괄호 안의 원인을 줄입니다.
+    if (s.failed) {
+      var m = /^(.*?\()(.*)(\)\. [^)]*)$/.exec(s.text || ''), el = $('msg');
+      for (var cause = m ? m[2] : ''; m && el.scrollWidth > el.clientWidth && cause.length > 1;) {
+        cause = cause.slice(0, -2);
+        el.textContent = m[1] + cause + '…' + m[3];
+      }
+    }
     var n = Math.max(0, Math.min(11, s.filled || 0));
     for (var i = 0; i < 11; i++) cells.children[i].classList.toggle('on', i < n);
   }
