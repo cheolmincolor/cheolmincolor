@@ -225,6 +225,24 @@ function startUpdater() {
   updater.start();
 }
 
+// checkAtLaunch is the update check every start makes (a GRAY ZONE rule):
+// it waits for the answer, but never more than 5 seconds, and a failed
+// check never stops the app — a site without internet must work as usual.
+const UPDATE_WAIT_MS = Number(process.env.GCOPY_UPDATE_WAIT_MS) || 5000;
+async function checkAtLaunch(ui) {
+  startUpdater();
+  if (!updater) { console.log('[update] skipped at launch: updates are disabled in this build'); return; }
+  const slow = new Promise((r) => setTimeout(() => r({ result: 'slow' }), UPDATE_WAIT_MS));
+  const out = await Promise.race([updater.launchCheck(), slow]);
+  if (out.result === 'skipped') console.log('[update] skipped at launch: ' + out.message);
+  else if (out.result === 'slow') console.log('[update] no answer within ' + UPDATE_WAIT_MS / 1000 + ' s: the check continues in the background');
+  else if (out.result === 'failed') {
+    console.log('[update] check at launch failed: ' + out.message);
+    ui.doing('Could not check for updates (continuing)');
+    await new Promise((r) => setTimeout(r, 1200)); // long enough to read
+  } else console.log('[update] at launch: ' + out.result + (out.version ? ' ' + out.version : ''));
+}
+
 // Only pages served by our own engine may call into the shell.
 function trusted(event) {
   try { return new URL(event.senderFrame.url).origin === engineOrigin; } catch { return false; }
@@ -362,9 +380,9 @@ async function launch() {
     await drawn;
     ui.done(10);                                  // 10 first frame is ready
 
-    ui.doing('Starting update checks');
-    startUpdater();
-    ui.done(11);                                  // 11 updater runs
+    ui.doing('Checking for updates');
+    await checkAtLaunch(ui);
+    ui.done(11);                                  // 11 it is known whether there is a newer version (or the check goes on behind)
     ui.doing('Ready');
 
     if (selfTest) await screen.capture(selfTest);

@@ -1279,6 +1279,11 @@ function renderUpdate(st) {
     pill.classList.remove('loading');
     $('update-pill-text').textContent = 'Update ' + st.version + ' ready';
     pill.setAttribute('aria-label', 'Update ' + st.version + ' ready'); pill.title = 'Update ' + st.version + ' ready';
+  } else if (st.status === 'available') { // found, not downloaded: automatic updates are switched off
+    pill.hidden = false;
+    pill.classList.remove('loading');
+    $('update-pill-text').textContent = 'Update ' + st.version + ' available';
+    pill.setAttribute('aria-label', $('update-pill-text').textContent); pill.title = 'Click to download it';
   } else if (st.status === 'downloading') {
     pill.hidden = false;
     pill.classList.add('loading');
@@ -1305,7 +1310,10 @@ function renderUpdateDialog() {
 }
 
 if (native && native.getUpdate) {
-  $('update-pill').addEventListener('click', () => { $('up-err').hidden = true; renderUpdateDialog(); $('update-dlg').showModal(); });
+  $('update-pill').addEventListener('click', () => {
+    if (updates.state && updates.state.status === 'available') { native.checkUpdate(); return; } // download it now
+    $('up-err').hidden = true; renderUpdateDialog(); $('update-dlg').showModal();
+  });
   $('up-install').addEventListener('click', async () => {
     $('up-install').disabled = true;
     const r = await native.installUpdate();

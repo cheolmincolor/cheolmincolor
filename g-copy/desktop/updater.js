@@ -85,10 +85,22 @@ class Updater {
     return { appPath, why: '' };
   }
 
+  // start keeps checking while the app runs. The first check is made by
+  // the launch screen (launchCheck), so this one only repeats it later.
   start() {
-    const delay = Number(process.env.GCOPY_UPDATE_DELAY_MS) || 15000;
-    setTimeout(() => { if (this.prefs.auto) this.check(false); }, delay);
     this.timer = setInterval(() => { if (this.prefs.auto) this.check(false); }, CHECK_EVERY);
+  }
+
+  // launchCheck is the check every start makes, on the launch screen. It
+  // resolves as soon as it is known whether there is a newer version:
+  //   { result: 'uptodate' | 'newer' | 'failed' | 'skipped', version?, message? }
+  // A newer version then keeps downloading in the background (or, with
+  // automatic updates switched off, is only announced).
+  launchCheck() {
+    return new Promise((resolve) => {
+      this.decide = (outcome) => { this.decide = null; resolve(outcome); };
+      this.check(false, { announceOnly: !this.prefs.auto }).then(() => { if (this.decide) this.decide({ result: 'failed', message: 'no answer' }); });
+    });
   }
 
   setAuto(on) {
@@ -104,19 +116,25 @@ class Updater {
 
   // check: look for a newer version and, if there is one, download it.
   // manual = the user asked; errors and "up to date" are then reported.
-  async check(manual) {
+  async check(manual, { announceOnly = false } = {}) {
     if (this.busy || this.ready) return this.state;
     this.busy = true;
+    const decided = (outcome) => { if (this.decide) this.decide(outcome); };
     try {
       const where = this.location();
-      if (where.why) { this.set({ status: 'unavailable', message: where.why }); return this.state; }
+      if (where.why) { this.set({ status: 'unavailable', message: where.why }); decided({ result: 'skipped', message: where.why }); return this.state; }
       this.set({ status: 'checking', message: '' });
 
       const [text, sig] = await Promise.all([this.fetchText(this.feed + '/latest.json'), this.fetchText(this.feed + '/latest.json.sig')]);
       const ok = crypto.verify(null, Buffer.from(text, 'utf8'), this.key, Buffer.from(sig.trim(), 'base64'));
       if (!ok) throw new Error('The update information is not signed by G-Copy. It was ignored.');
       const man = JSON.parse(text);
-      if (!newer(man.version, app.getVersion())) { this.set({ status: 'uptodate', latest: man.version }); return this.state; }
+      if (!newer(man.version, app.getVersion())) { this.set({ status: 'uptodate', latest: man.version }); decided({ result: 'uptodate', version: man.version }); return this.state; }
+      decided({ result: 'newer', version: man.version });
+      if (announceOnly) { // automatic updates are off: say that there is one, download when asked
+        this.set({ status: 'available', version: man.version, notes: String(man.notes || '') });
+        return this.state;
+      }
 
       const key = process.platform + '-' + process.arch;
       const file = man.files && man.files[key];
@@ -150,6 +168,7 @@ class Updater {
       this.log('update ready: ' + man.version);
     } catch (e) {
       this.log('update check failed: ' + e.message);
+      decided({ result: 'failed', message: e.message });
       await fsp.rm(this.dir, { recursive: true, force: true }).catch(() => {});
       this.set({ status: manual ? 'error' : 'idle', message: e.message });
     } finally {

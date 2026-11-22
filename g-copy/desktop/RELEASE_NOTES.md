@@ -1,10 +1,2 @@
-- Easier to read and use: the top bar stays in place, small windows keep every button and the Start button within reach, and failed destinations stand out without colour.
-- Verification is now one switch: "Verify every copied file" (on by default, xxHash64). Switched off, G-Copy says clearly that files are copied without verification and writes no checksum report for them. MD5 is no longer offered; schedules saved with it use xxHash64.
-- Copies made with verification off are remembered: the next run with verification on checks them by itself and copies again any that differ (the differing file is kept in _G-Copy_Replaced).
-- "Also re-check files copied earlier": a file that no longer matches the source is copied again, and the differing file is kept.
-- A destination that is too small for the source is flagged before you start.
-- History: "View Problems" reopens a failed or cancelled run with its list of problems.
-- After a failed or cancelled run, "Run Again" is the highlighted button.
-- Schedule times are picked in 24-hour form.
-- Clearer error messages that say what to do next.
-- Launch screen: a start-up problem is explained in one short line; a click closes G-Copy.
+- G-Copy now checks for updates every time it starts, on the launch screen. Without internet it says so in one line and opens as usual; it never waits more than 5 seconds.
+- With automatic updates switched off, a new version is announced by a button instead of being downloaded.
