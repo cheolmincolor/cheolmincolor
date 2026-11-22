@@ -62,8 +62,8 @@ function load() {
     return call('getData').then(setData);
   }).catch(function (e) {
     if (e.auth) return call('status').then(function (st) { showSetup(st, errText(e)); });
-    if (!S.loaded) app.innerHTML = '<div class="empty">' + esc(errText(e)) + '<div class="btns" style="justify-content:center;margin-top:14px"><button class="btn" style="flex:0 0 auto" data-retry>다시 시도</button></div></div>';
-    else toast(errText(e));
+    if (!S.loaded) app.innerHTML = '<div class="empty"><div class="errbox">' + esc(errText(e)) + '</div><div class="btns" style="justify-content:center;margin-top:14px"><button class="btn" style="flex:0 0 auto" data-retry>다시 시도</button></div></div>';
+    else toastError(errText(e));
   }).then(function () {
     // 첫 화면(장부·처음 설정·오류 안내)을 그렸다고 앱 본체에 알립니다.
     if (!firstPaint) { firstPaint = true; if (window.gz && window.gz.loaded) window.gz.loaded(); }
@@ -102,7 +102,7 @@ function updateBox() {
   var u = S.update;
   return '<dl class="facts"><dt>지금 버전</dt><dd class="num">' + esc(u.current || '-') + '</dd>' +
     (u.latest && u.latest !== u.current ? '<dt>새 버전</dt><dd class="num">' + esc(u.latest) + '</dd>' : '') + '</dl>' +
-    (updateText(u) ? '<p class="note">' + esc(updateText(u)) + '</p>' : '') +
+    (updateText(u) ? (u.status === 'error' ? '<div class="errbox">' + esc(updateText(u)) + '</div>' : '<p class="note">' + esc(updateText(u)) + '</p>') : '') +
     (u.notes && u.latest !== u.current ? '<div class="notes">' + esc(u.notes) + '</div>' : '') +
     '<div class="btns">' + (u.status === 'ready' ? '<button class="btn pri" data-update="install">지금 다시 시작</button>'
       : '<button class="btn" data-update="check"' + (/checking|downloading|installing/.test(u.status) ? ' disabled' : '') + '>업데이트 확인</button>') + '</div>';
@@ -110,8 +110,8 @@ function updateBox() {
 function updateAction(a, btn) {
   if (a === 'hide') { $('#updateBar').hidden = true; return; }
   if (btn) btn.disabled = true;
-  if (a === 'check') call('update:check').then(setUpdate).catch(function (e) { toast(errText(e)); setUpdate(); });
-  if (a === 'install') call('update:install').then(setUpdate).catch(function (e) { toast(errText(e)); if (btn) btn.disabled = false; });
+  if (a === 'check') call('update:check').then(setUpdate).catch(function (e) { toastError(errText(e)); setUpdate(); });
+  if (a === 'install') call('update:install').then(setUpdate).catch(function (e) { toastError(errText(e)); if (btn) btn.disabled = false; });
 }
 document.addEventListener('click', function (e) {
   var b = e.target.closest('[data-update]');
@@ -140,7 +140,7 @@ function showSetup(st, message) {
       '<p>브라우저에서 「GRAYZONE 매출 장부」를 열고 주소창의 주소를 복사해 붙여 넣습니다.</p>' +
       '<input id="sheetUrl" placeholder="https://docs.google.com/spreadsheets/d/…" autocomplete="off" spellcheck="false">' +
       '<div class="btns"><button class="btn pri" data-setup="setSheet">연결</button></div>', '') +
-    '<div class="err" style="text-align:center" id="setupErr">' + esc(message || '') + '</div>' +
+    '<div class="progress-note" id="setupNote"></div><div class="err" style="text-align:center" id="setupErr">' + esc(message || '') + '</div>' +
     (st.hasClient ? '<div class="btns" style="justify-content:center"><button class="btn" style="flex:0 0 auto" data-setup="reset">처음부터 다시</button></div>' : '') +
     '</div>';
   var u = $('#sheetUrl');
@@ -152,12 +152,15 @@ function setupAction(action, btn) {
   if (action === 'setSheet') args = [$('#sheetUrl').value];
   if (action === 'reset' && !confirm('클라이언트 파일·로그인·시트 연결을 모두 지우고 처음부터 할까요? 시트의 내용은 바뀌지 않습니다.')) return;
   btn.disabled = true;
-  err.textContent = action === 'signIn' ? '브라우저에서 로그인을 마쳐 주세요…' : '';
+  var note = $('#setupNote');
+  err.textContent = '';
+  note.textContent = action === 'signIn' ? '브라우저에서 로그인을 마쳐 주세요…' : '';
   call(action, args).then(function (st) {
     if (st.hasClient && st.signedIn && st.spreadsheetId) return load();
     showSetup(st);
   }).catch(function (e) {
     btn.disabled = false;
+    note.textContent = '';
     err.textContent = errText(e);
   });
 }
@@ -185,7 +188,7 @@ function showSettings() {
     });
     el.addEventListener('click', function (e) {
       var a = e.target.dataset.a;
-      if (a === 'close') closeSheet();
+      if (a === 'close') requestClose();
       if (a === 'sheet') submit(el, call('setSheet', [$('#newSheet', el).value]).then(function () { S.loaded = false; return load(); }));
       if (a === 'logout') submit(el, call('signOut').then(function (st2) { showSetup(st2); }));
       if (a === 'nextYear' && confirm(S.years.next + '년 연도·월 묶음(200행)을 시트의 ' + S.years.last + '년 묶음 아래에 만들까요?')) submit(el, call('createNextYear').then(setData));
@@ -205,7 +208,7 @@ function patchJob(j, patch, message) {
     if (!message) return;
     toast(message, '되돌리기', function () {
       var now = S.jobs.filter(function (x) { return x.row === j.row; })[0];
-      if (now) patchJob(now, undo, '되돌렸습니다').catch(function (e) { if (!failed(e).auth) toast(errText(e)); });
+      if (now) patchJob(now, undo, '되돌렸습니다').catch(function (e) { if (!failed(e).auth) toastError(errText(e)); });
     });
   });
 }
@@ -529,27 +532,53 @@ function unpaidItem(j) {
 
 // ---------- 알림·창 ----------
 var toastTimer = null;
-function toast(msg, action, fn) {
+function toastError(msg) { toast(msg, null, null, true); }
+function toast(msg, action, fn, isError) {
   clearTimeout(toastTimer);
-  toastEl.innerHTML = '<div class="toast" role="status"><span>' + esc(msg) + '</span>' + (action ? '<button>' + action + '</button>' : '') + '</div>';
+  toastEl.innerHTML = '<div class="toast' + (isError ? ' error' : '') + '" role="status"><span>' + esc(msg) + '</span>' + (action ? '<button>' + action + '</button>' : '') + '</div>';
   if (action) $('button', toastEl).onclick = function () { toastEl.innerHTML = ''; fn(); };
   toastTimer = setTimeout(function () { toastEl.innerHTML = ''; }, action ? 7000 : 4000);
 }
 function openSheet(html) {
   modal.innerHTML = '<div class="scrim"><div class="sheet" role="dialog" aria-modal="true">' + html + '</div></div>';
-  $('.scrim', modal).addEventListener('mousedown', function (e) { if (e.target === e.currentTarget) closeSheet(); });
-  return $('.sheet', modal);
+  var sheet = $('.sheet', modal);
+  sheetDirty = false;
+  // 오류 줄과 버튼 줄을 한 묶음으로 아래에 고정합니다(오류가 입력 칸을 덮지 않게).
+  var err = $(':scope > .err', sheet), btns = err && err.previousElementSibling;
+  if (err && btns && btns.classList.contains('btns')) {
+    var foot = document.createElement('div');
+    foot.className = 'foot';
+    sheet.insertBefore(foot, btns);
+    foot.appendChild(err); foot.appendChild(btns);
+  }
+  // 입력이 바뀌면: 남아 있던 오류를 지우고, 닫을 때 확인하도록 표시합니다.
+  var touched = function (e) { if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) { sheetDirty = true; if (err) err.textContent = ''; } };
+  sheet.addEventListener('input', touched);
+  sheet.addEventListener('change', touched);
+  // 바깥을 눌러 닫기: 입력한 것이 없을 때만
+  $('.scrim', modal).addEventListener('mousedown', function (e) { if (e.target === e.currentTarget && !sheetDirty) closeSheet(); });
+  return sheet;
 }
-function closeSheet() { modal.innerHTML = ''; }
+var sheetDirty = false;
+function closeSheet() { modal.innerHTML = ''; sheetDirty = false; }
+/** 취소·Esc: 입력한 내용이 있으면 한 번 확인합니다. */
+function requestClose() {
+  if (!modal.innerHTML) return;
+  if (sheetDirty && !confirm('입력한 내용을 버릴까요?')) return;
+  closeSheet();
+}
 function jobAt(row) { return S.jobs.filter(function (j) { return j.row === Number(row); })[0]; }
 function submit(el, promise) {
   var btns = el.querySelectorAll('button'), err = $('.err', el);
+  var main = $('[data-a=save], [data-a=ok]', el), label = main && main.textContent;
   Array.prototype.forEach.call(btns, function (b) { b.disabled = true; });
+  if (main) main.textContent = '저장하는 중…';
   if (err) err.textContent = '';
   return promise.then(function (r) { closeSheet(); return r; }, function (e) {
     if (e && e.auth) { failed(e); return; }
     Array.prototype.forEach.call(btns, function (b) { b.disabled = false; });
-    if (err) err.textContent = errText(e); else toast(errText(e));
+    if (main) main.textContent = label;
+    if (err) err.textContent = errText(e); else toastError(errText(e));
     throw e;
   }).catch(function () {});
 }
@@ -559,7 +588,7 @@ function showDetail(j) {
   var issues = checksOf(j);
   var el = openSheet('<h3>' + esc(j.title || '(내용 없음)') + '</h3><div class="sub">' + esc(j.client) + '</div><div>' + tags(j) + '</div>' +
     (issues.length ? '<div class="issues">' + issues.map(function (c) {
-      return '<div class="issue"><span>⚠ ' + esc(c.label) + '</span><button data-a="dismiss" data-key="' + esc(c.key) + '">문제없음</button></div>';
+      return '<div class="issue"><span>' + esc(c.label) + '</span><button data-a="dismiss" data-key="' + esc(c.key) + '">문제없음</button></div>';
     }).join('') + '</div>' : '') +
     '<dl class="facts num">' + fact('납품일', esc(j.date)) + fact('감독', esc(j.director)) + fact('PD', esc(j.pd)) +
     fact('견적금액', j.amount === '' ? '' : won(j.amount) + '원') +
@@ -575,7 +604,7 @@ function showDetail(j) {
     '<button class="btn" data-a="edit">수정</button><button class="btn" data-a="close">닫기</button></div><div class="err"></div>');
   el.addEventListener('click', function (e) {
     var a = e.target.dataset.a;
-    if (a === 'close') closeSheet();
+    if (a === 'close') requestClose();
     if (a === 'edit') showForm(j);
     if (a === 'pay') showPay(j);
     if (a === 'invoice') submit(el, patchJob(j, { invoice: '완료' }, '계산서 발행으로 표시했습니다'));
@@ -586,7 +615,7 @@ function showDetail(j) {
         var row = e.target.closest('.issue');
         if (row) row.remove();
         toast('점검 목록에서 숨겼습니다');
-      }).catch(function (err) { if (!failed(err).auth) toast(errText(err)); });
+      }).catch(function (err) { if (!failed(err).auth) toastError(errText(err)); });
     }
   });
 }
@@ -606,7 +635,7 @@ function showPay(j) {
       $('#pAmtWrap', el).hidden = mode !== 'part';
       if (mode === 'part') $('#pAmt', el).focus();
     }
-    if (t.dataset.a === 'close') closeSheet();
+    if (t.dataset.a === 'close') requestClose();
     if (t.dataset.a === 'ok') {
       var date = $('#pDate', el).value, patch;
       if (mode === 'full') patch = { paid: '완료', paidDate: date };
@@ -664,9 +693,20 @@ function showForm(j) {
   var armed = false;
   el.addEventListener('click', function (e) {
     var a = e.target.dataset.a;
-    if (a === 'close') closeSheet();
+    if (a === 'close') requestClose();
     if (a === 'del') {
-      if (!armed) { armed = true; e.target.textContent = '정말 삭제'; return; }
+      if (!armed) {
+        // 첫 클릭: 무엇을 지우는지 보여 주고, 더블클릭으로 바로 지워지지 않게 잠깐 막습니다. 5초 안에 다시 누르지 않으면 원래대로.
+        armed = true;
+        var delBtn = e.target, note = document.createElement('div');
+        note.className = 'confirm-note';
+        note.textContent = '「' + (j.title || '(내용 없음)') + '」(' + (j.amount === '' ? '금액 없음' : won(j.amount) + '원') + ')을 시트에서 지웁니다. 되돌릴 수 없습니다.';
+        delBtn.closest('.btns').parentNode.insertBefore(note, delBtn.closest('.btns'));
+        delBtn.textContent = '정말 삭제'; delBtn.disabled = true;
+        setTimeout(function () { delBtn.disabled = false; }, 600);
+        setTimeout(function () { if (document.body.contains(note)) { note.remove(); delBtn.textContent = '삭제'; armed = false; } }, 5000);
+        return;
+      }
       submit(el, call('deleteJob', [j.row, expectOf(j)]).then(function (d) { setData(d); toast('삭제했습니다'); }));
     }
     if (a !== 'save') return;
@@ -742,16 +782,16 @@ app.addEventListener('click', function (e) {
   if (d.go) { var p = d.go.split(':'); S.tab = p[0]; if (p[0] === 'ledger') S.lf = p[1]; else S.uf = p[1]; render(); window.scrollTo(0, 0); return; }
   var j = jobAt(d.row);
   if (!j) return;
-  if (d.act === 'invoice') patchJob(j, { invoice: '완료' }, '계산서 발행으로 표시했습니다').catch(function (err) { if (!failed(err).auth) toast(errText(err)); });
+  if (d.act === 'invoice') patchJob(j, { invoice: '완료' }, '계산서 발행으로 표시했습니다').catch(function (err) { if (!failed(err).auth) toastError(errText(err)); });
   else if (d.act === 'pay') showPay(j);
   else showDetail(j);
 });
 $('nav').addEventListener('click', function (e) {
   var b = e.target.closest('button');
-  if (!b) return;
+  if (!b || !S.loaded) return; // 불러오기 전(또는 실패한 화면)에서는 오류 안내를 지우지 않습니다
   S.tab = b.dataset.tab; render(); window.scrollTo(0, 0);
 });
-$('#year').addEventListener('change', function (e) { S.year = Number(e.target.value); render(); });
+$('#year').addEventListener('change', function (e) { if (!S.loaded) return; S.year = Number(e.target.value); render(); });
 $('#refresh').addEventListener('click', load);
 $('#settings').addEventListener('click', function () { if (S.setup) load(); else showSettings(); });
 $('#add').addEventListener('click', function () { if (S.loaded && !S.setup) showForm(null); });
@@ -773,7 +813,7 @@ window.addEventListener('resize', function () {
   resizeTimer = setTimeout(function () { if (S.loaded && S.tab === 'home' && !modal.innerHTML) render(); }, 150);
 });
 document.addEventListener('keydown', function (e) {
-  if (e.key === 'Escape') { closeSheet(); return; }
+  if (e.key === 'Escape') { requestClose(); return; }
   var t = e.target, typing = /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName);
   // Enter: 입력 창에서 저장·등록 (한글 조합 중이거나 메모 칸에서는 제외)
   if (e.key === 'Enter' && !e.isComposing && modal.innerHTML && t.tagName === 'INPUT') {

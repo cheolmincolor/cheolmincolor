@@ -20,9 +20,19 @@
   });
   zones.hidden = APP_ZONE === null;
 
+  var failed = false;
   function render(s) {
     if (s.version) $('ver').textContent = s.version;
     $('msg').textContent = s.text || '';
+    // 오류로 멈춘 상태: 문구를 #E8E8E8 로 올리고, 클릭하거나 키를 누르면 앱을 끝냅니다.
+    if (s.failed && !failed) {
+      failed = true;
+      $('msg').style.color = '#E8E8E8';
+      document.body.style.webkitAppRegion = 'no-drag'; // 끌기 영역은 클릭을 받지 못합니다
+      var quit = function () { if (window.gzSplash && window.gzSplash.quit) window.gzSplash.quit(); };
+      document.addEventListener('click', quit);
+      document.addEventListener('keydown', quit);
+    }
     var n = Math.max(0, Math.min(11, s.filled || 0));
     for (var i = 0; i < 11; i++) cells.children[i].classList.toggle('on', i < n);
   }

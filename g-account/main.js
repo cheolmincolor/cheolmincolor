@@ -69,7 +69,7 @@ function start() {
       if (launchProgress) launchProgress(state);
     },
   });
-  app.setAboutPanelOptions({ applicationName: DISPLAY_NAME, applicationVersion: app.getVersion(), copyright: 'GRAYZONE' });
+  app.setAboutPanelOptions({ applicationName: DISPLAY_NAME, applicationVersion: app.getVersion(), copyright: '© GRAY ZONE' });
   service = new Service({
     store,
     updater,
@@ -112,7 +112,13 @@ async function launch() {
   let state = { version: app.getVersion(), filled: 0, text: '시작하는 중…' };
   global.gzLaunchLog = []; // 보여 준 단계 기록(테스트가 읽습니다)
   const show = (patch) => { state = { ...state, ...patch }; global.gzLaunchLog.push({ filled: state.filled, text: state.text }); toSplash(state); };
-  const stop = (what, e) => { done = 'failed'; console.error(e); show({ text: `${what} 실패: ${e && e.message ? e.message : e}` }); };
+  // 오류로 멈춤: 무엇이 실패했는지 적고, 클릭하거나 키를 누르면 앱을 끝냅니다(창에 닫기 버튼이 없으므로).
+  const stop = (what, e) => {
+    done = 'failed';
+    console.error(e);
+    show({ failed: true, text: `${what} 실패(${e && e.message ? e.message : e}). 아무 곳이나 누르면 닫힙니다.` });
+  };
+  ipcMain.on('gz:splash-quit', () => { if (done === 'failed') app.quit(); });
 
   splash = new BrowserWindow({
     width: 640,
@@ -221,7 +227,7 @@ function createWindow(opts = {}) {
   win = new BrowserWindow({
     width: 980,
     height: 880,
-    minWidth: 380,
+    minWidth: 500,
     minHeight: 560,
     title: DISPLAY_NAME,
     backgroundColor: '#121212',

@@ -20,7 +20,7 @@
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; background: var(--bg); color: var(--ink); }
-body { font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", "Malgun Gothic", "Noto Sans KR", sans-serif; -webkit-text-size-adjust: 100%; }
+body { font: 15px/1.45 Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; word-break: keep-all; overflow-wrap: break-word; -webkit-text-size-adjust: 100%; }
 button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
 .num { font-variant-numeric: tabular-nums; }
@@ -235,14 +235,14 @@ body, button, input, select, textarea { font-family: Pretendard, -apple-system, 
 /* 버튼: 테두리로만. 주 버튼만 밝은 바탕 */
 .btn, .acts button, .chip, .icon-btn, select, .seg button, .issue button { background: none; border: 1px solid #5E5E5E; border-radius: 6px; color: #E8E8E8; font-weight: 500; }
 .btn:hover, .acts button:hover, .chip:hover, .icon-btn:hover, select:hover, .seg button:hover, .issue button:hover { border-color: #ABABAB; }
-.btn.pri, .fab, .updatebar button:not(.x) { background: #E0E0E0; color: #121212; border-color: #E0E0E0; font-weight: 600; border-radius: 6px; }
-.btn.pri:hover, .fab:hover, .updatebar button:not(.x):hover { background: #FFFFFF; border-color: #FFFFFF; }
+.btn.pri, .fab { background: #E0E0E0; color: #121212; border-color: #E0E0E0; font-weight: 600; border-radius: 6px; }
+.btn.pri:hover, .fab:hover { background: #FFFFFF; border-color: #FFFFFF; }
 .acts button.pri { background: none; color: #E8E8E8; border-color: #ABABAB; font-weight: 600; }
 .chip.on, .seg button.on { background: #303030; border-color: #E8E8E8; color: #E8E8E8; font-weight: 600; }
 .btn.danger::before { content: '✕ '; color: var(--a-fail); }
 .sheet { background: #1B1B1B; }
 .sheet > .btns:has(+ .err), .sheet > .btns:last-child, .sheet > .err { background: #1B1B1B; }
-.sheet .btn, label.f input, label.f select, label.f textarea, .step input, .tools input[type=search] { background: #121212; border-radius: 6px; }
+.sheet .btn:not(.pri), label.f input, label.f select, label.f textarea, .step input, .tools input[type=search] { background: #121212; border-radius: 6px; }
 /* 상태: 색이 아니라 기호·외곽선·굵기로. 기호에만 강조색 */
 .tag { background: none; border: 1px solid #333333; color: #9A9A9A; border-radius: 4px; }
 .tag.ok::before { content: '✓ '; color: var(--a-ok); }
@@ -260,7 +260,7 @@ nav button .badge { background: none; border: 1px solid #E8E8E8; color: #E8E8E8;
 table.vat td.warn { color: #E8E8E8; font-weight: 700; }
 table.vat td.warn::before { content: '⚠ '; color: var(--a-warn); font-weight: 400; }
 .step .no { background: none; border: 1px solid #333333; color: #9A9A9A; }
-.step.now .no { background: #E0E0E0; border-color: #E0E0E0; color: #121212; }
+.step.now .no { background: none; border-color: #E8E8E8; color: var(--a-now); }
 .step.done .no { background: none; color: var(--a-ok); }
 .step .ok { color: #9A9A9A; }
 .updatebar { border-color: #5E5E5E; border-radius: 6px; }
@@ -273,6 +273,34 @@ th { font-size: 11px; font-weight: 500; letter-spacing: .14em; color: #8A8A8A; }
 .month.open .month-head { border-radius: 8px 8px 0 0; }
 .month .list { border-radius: 0 0 8px 8px; }
 .toast { border-radius: 6px; }
+
+/* ---------- 사용성 검수 반영 ---------- */
+[hidden] { display: none !important; }
+:root { accent-color: #E0E0E0; }
+::selection { background: #5E5E5E; color: #FFFFFF; }
+input::-webkit-datetime-edit-year-field:focus, input::-webkit-datetime-edit-month-field:focus, input::-webkit-datetime-edit-day-field:focus { background: #5E5E5E; color: #FFFFFF; }
+label.f input, label.f textarea, label.f select, .step input, .tools input[type=search] { color: #E8E8E8; }
+::placeholder { color: #9A9A9A; opacity: 1; }
+header h1 { white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+body.setup header { top: 0; }
+.updatebar button:not(.x) { background: none; color: #E8E8E8; border: 1px solid #5E5E5E; border-radius: 6px; font-weight: 500; }
+.updatebar button:not(.x):hover { border-color: #ABABAB; }
+.issue span::before { content: '⚠ '; color: var(--a-warn); font-weight: 400; }
+/* 오류 행: 외곽선 + 바탕 + ✕ + 굵은 글자 */
+.errbox { border: 1px solid #E8E8E8; background: #1B1B1B; color: #E8E8E8; font-weight: 700; border-radius: 6px; padding: 10px 12px; font-size: 13px; text-align: left; }
+.errbox::before { content: '✕ '; color: var(--a-fail); }
+.empty .errbox { display: inline-block; margin-bottom: 4px; }
+.toast.error span { font-weight: 700; }
+.toast.error span::before { content: '✕ '; color: #C62828; }
+.progress-note { text-align: center; color: #E8E8E8; font-size: 13px; min-height: 18px; margin-top: 8px; }
+/* 대화상자 아래: 오류·확인 문구와 버튼을 한 묶음으로 고정 */
+.sheet > .foot { position: sticky; bottom: -18px; background: #1B1B1B; padding: 10px 0 18px; margin-bottom: -18px; z-index: 1; }
+.sheet > .foot .btns { position: static; margin: 0; padding: 0; background: none; }
+.sheet > .foot .err { position: static; min-height: 0; margin: 0 0 8px; background: none; }
+.sheet > .foot .err:empty { display: none; }
+.confirm-note { border: 1px solid #E8E8E8; background: #121212; border-radius: 6px; padding: 8px 10px; margin: 0 0 8px; font-size: 13px; font-weight: 700; color: #E8E8E8; }
+.confirm-note::before { content: '⚠ '; color: var(--a-warn); font-weight: 400; }
+@media (min-width: 720px) { .toast { top: 122px; bottom: auto; } }
 </style>
 </head>
 <body>

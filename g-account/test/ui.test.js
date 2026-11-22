@@ -26,7 +26,7 @@ async function open(browser, opts = {}) {
     window.confirm = () => true;
   });
   await page.goto(PAGE);
-  await page.waitForSelector(opts.ready === false ? '.steps' : '.kpis');
+  await page.waitForSelector(opts.wait || (opts.ready === false ? '.steps' : '.kpis'));
   const shot = async (name) => { if (SHOTS) await page.screenshot({ path: path.join(SHOTS, name + '.png') }); };
   return { ...env, page, errors, shot, close: () => ctx.close() };
 }
@@ -405,9 +405,103 @@ test('화면', async (t) => {
     await close();
   });
 
-  await t.test('좁은 창·다크 모드에서 넘침 없음', async () => {
-    const { page, shot, close, errors } = await open(browser, { ctx: { viewport: { width: 390, height: 844 }, colorScheme: 'dark' } });
+  await t.test('사용성: 주 버튼 글자, 숨김, 알림 위치, 탭·삭제·닫기 확인', async () => {
+    const rgbOf = (sel, prop) => page.locator(sel).first().evaluate((el, p) => getComputedStyle(el)[p], prop);
+    const { page, shot, close, errors, google } = await open(browser);
+    // 1. 대화상자의 주 버튼: 글자색 ≠ 바탕색
+    await page.click('#add');
+    assert.equal(await rgbOf('.sheet .btn.pri', 'backgroundColor'), 'rgb(224, 224, 224)');
+    assert.equal(await rgbOf('.sheet .btn.pri', 'color'), 'rgb(18, 18, 18)');
+    assert.equal(await rgbOf('#fTitle', 'color'), 'rgb(232, 232, 232)');
+    await shot('40-form-primary');
+    // 6. 오류 줄은 버튼 줄과 한 묶음으로 아래에, 입력하면 지워짐
+    await page.click('[data-a=save]');
+    assert.notEqual(await page.locator('.sheet .err').innerText(), '');
+    assert.equal(await page.evaluate(() => { const e = document.querySelector('.sheet .err').getBoundingClientRect(); return [...document.querySelectorAll('.sheet input')].some((i) => { const r = i.getBoundingClientRect(); return r.bottom > e.top && r.top < e.bottom && r.height > 0; }); }), false, '오류 줄이 입력 칸을 덮음');
+    await shot('41-form-error');
+    await page.fill('#fTitle', '쓰다 만 작업');
+    assert.equal(await page.locator('.sheet .err').innerText(), '');
+    // 20. 입력한 뒤: 바깥 클릭으로 닫히지 않고, Esc·취소는 한 번 물어봄
+    await page.mouse.click(5, 300);
+    assert.equal(await page.locator('.sheet').count(), 1);
+    await page.evaluate(() => { window.__asked = []; window.confirm = (m) => { window.__asked.push(m); return window.__answer; }; window.__answer = false; });
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('.sheet').count(), 1);
+    await page.evaluate(() => { window.__answer = true; });
+    await page.click('.sheet [data-a=close]');
+    assert.equal(await page.locator('.sheet').count(), 0);
+    assert.deepEqual(await page.evaluate(() => window.__asked), ['입력한 내용을 버릴까요?', '입력한 내용을 버릴까요?']);
+    // 바뀐 것이 없으면 묻지 않고 바로 닫힘
+    await page.click('#add'); await page.keyboard.press('Escape');
+    assert.equal(await page.locator('.sheet').count(), 0);
+    await page.click('#add'); await page.mouse.click(5, 300);
+    assert.equal(await page.locator('.sheet').count(), 0);
+    assert.equal(await page.evaluate(() => window.__asked.length), 2);
+
+    // 2. 전액 입금에서는 금액 칸이 숨겨지고, 미수금이 없으면 배지도 숨김
+    await page.click('nav [data-tab=unpaid]');
+    await page.locator('.item').first().click();
+    await page.click('[data-a=pay]');
+    await page.waitForSelector('#pAmtWrap', { state: 'attached' });
+    assert.equal(await page.isVisible('#pAmtWrap'), false);
+    await shot('42-pay-full');
+    await page.keyboard.press('Escape');
+    assert.equal(await page.evaluate(() => [...document.querySelectorAll('[hidden]')].every((el) => getComputedStyle(el).display === 'none')), true);
+
+    // 3. 넓은 창의 알림은 머리줄 아래, 오류 알림은 ✕ + 굵게
+    google.failNext = { status: 500, body: { error: { message: '서버 오류' } } };
+    await page.click('#refresh');
+    await page.waitForSelector('.toast.error');
+    const top = await page.locator('.toast').evaluate((el) => el.getBoundingClientRect().top);
+    const headBottom = await page.locator('nav').evaluate((el) => el.getBoundingClientRect().bottom);
+    assert.ok(top >= headBottom, `알림(${top})이 머리줄(${headBottom})을 가림`);
+    assert.equal(await page.locator('.toast span').evaluate((el) => getComputedStyle(el, '::before').content), '"✕ "');
+    await shot('43-toast');
+
+    // 10. 삭제: 첫 클릭에 무엇을 지우는지 알리고 0.6초 동안 버튼이 잠김
+    await page.click('nav [data-tab=ledger]');
+    const title = await page.locator('.item .t').first().innerText();
+    await page.locator('.item').first().click();
+    await page.click('[data-a=edit]');
+    await page.click('[data-a=del]');
+    assert.match(await page.locator('.confirm-note').innerText(), /^「.+」\(.+\)을 시트에서 지웁니다\. 되돌릴 수 없습니다\.$/);
+    assert.equal(await page.locator('[data-a=del]').isDisabled(), true);
+    await shot('44-delete-confirm');
+    await page.waitForFunction(() => !document.querySelector('[data-a=del]').disabled);
+    assert.equal(await page.locator('[data-a=del]').innerText(), '정말 삭제');
+    assert.ok(google.grid.length > 0 && title);
+    await page.evaluate(() => { window.confirm = () => true; });
+    await page.click('.sheet [data-a=close]');
+    assert.deepEqual(errors, []);
+    await close();
+  });
+
+  await t.test('사용성: 불러오기 실패 안내는 탭을 눌러도 남음, 설정 화면 안내는 가려지지 않음', async () => {
+    const { page, shot, close } = await open(browser, { wait: '.errbox', before: (g) => { g.failNext = { status: 500, body: { error: { message: '서버 오류' } } }; } });
+    const text = await page.locator('.errbox').innerText();
+    await shot('45-load-failed');
+    await page.click('nav [data-tab=ledger]');
+    await page.click('nav [data-tab=unpaid]');
+    assert.equal(await page.locator('.errbox').innerText(), text);
+    assert.equal(await page.locator('.empty', { hasText: '해당하는 작업이 없습니다' }).count(), 0);
+    await close();
+
+    const s = await open(browser, { ready: false });
+    // 5. 설정 화면의 첫 안내가 머리줄에 가려지지 않음
+    assert.equal(await s.page.evaluate(() => { const h = document.querySelector('header').getBoundingClientRect(); const f = document.querySelector('.steps').previousElementSibling || document.querySelector('.steps'); return f.getBoundingClientRect().top >= h.bottom - 1; }), true);
+    await s.shot('46-setup');
+    // 9. 로그인 대기 안내는 오류 줄이 아님
+    await s.page.click('[data-setup=pickClient]');
+    await s.page.waitForSelector('[data-setup=signIn]');
+    assert.equal(await s.page.locator('#setupNote').count(), 1);
+    assert.equal(await s.page.locator('#setupErr').innerText(), '');
+    await s.close();
+  });
+
+  await t.test('가장 작은 창(500)·다크 모드에서 넘침 없음', async () => {
+    const { page, shot, close, errors } = await open(browser, { ctx: { viewport: { width: 500, height: 700 }, colorScheme: 'dark' } });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+    assert.equal(await page.evaluate(() => { const h = document.querySelector('header'); const t = h.querySelector('h1'); return h.scrollWidth <= h.clientWidth && t.scrollWidth <= t.clientWidth && t.getBoundingClientRect().height < 30; }), true, '머리줄이 넘치거나 줄바꿈됨');
     await shot('7-narrow-dark');
     assert.deepEqual(errors, []);
     await close();

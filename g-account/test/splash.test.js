@@ -96,8 +96,19 @@ test('런치 화면: 규격 대조', async (t) => {
   await shot('22-launch-100');
 
   // 오류: 무엇이 실패했는지 한 줄
-  await set({ version: '9.8.7', filled: 8, text: '장부 창 준비 실패: ERR_FILE_NOT_FOUND' });
-  assert.equal(await page.locator('#msg').innerText(), '장부 창 준비 실패: ERR_FILE_NOT_FOUND');
+  await set({ version: '9.8.7', filled: 8, text: '업데이트 확인 실패(계속 진행): 연결 없음' });
+  await page.evaluate(() => { window.gzSplash = { quit: () => { window.__quit = (window.__quit || 0) + 1; } }; });
+  await page.click('body');
+  assert.equal(await page.evaluate(() => window.__quit), undefined, '멈추지 않은 화면은 눌러도 닫히지 않음');
+  // 오류로 멈춤: 문구가 #E8E8E8, 아무 곳이나 누르거나 키를 누르면 닫힘
+  await set({ version: '9.8.7', filled: 8, failed: true, text: '장부 창 준비 실패(ERR_FILE_NOT_FOUND). 아무 곳이나 누르면 닫힙니다.' });
+  assert.equal(await page.locator('#msg').innerText(), '장부 창 준비 실패(ERR_FILE_NOT_FOUND). 아무 곳이나 누르면 닫힙니다.');
+  assert.equal(await page.locator('#msg').evaluate((el) => getComputedStyle(el).color), rgb('#E8E8E8'));
+  await shot('23-launch-failed');
+  await page.click('body');
+  assert.equal(await page.evaluate(() => window.__quit), 1);
+  await page.keyboard.press('Enter');
+  assert.equal(await page.evaluate(() => window.__quit), 2);
 
   // 규격에 없는 요소가 없음: 버튼·진행 막대·스피너·유채색
   assert.equal(await page.locator('button, progress, a, input').count(), 0);

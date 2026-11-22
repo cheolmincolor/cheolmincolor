@@ -36,8 +36,8 @@ for target in $TARGETS; do
     --asar --icon=build/icon \
     --app-bundle-id=com.grayzone.ledger --app-version="$VERSION" \
     --app-category-type=public.app-category.finance --extend-info=build/mac-info.plist \
-    --win32metadata.ProductName="G-Account" --win32metadata.FileDescription="G-Account" --win32metadata.CompanyName="GRAYZONE" \
-    --app-copyright="GRAYZONE" \
+    --win32metadata.ProductName="G-Account" --win32metadata.FileDescription="G-Account" --win32metadata.CompanyName="GRAY ZONE" \
+    --app-copyright="© GRAY ZONE" \
     --ignore='^/(dist|test|scripts|node_modules|package\.sh|README\.md|\.gitignore)($|/)' --ignore='^/build/(icon\.svg|icon\.icns|icon\.ico|mac-info\.plist)$' --quiet
 
   dir="$OUT/$NAME-$os-$arch"
