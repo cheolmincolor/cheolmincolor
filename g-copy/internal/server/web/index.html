@@ -29,19 +29,19 @@
   <div class="brand">
     <img class="logo" src="icon.png" alt="" width="30" height="30">
     <h1>G-Copy</h1>
-    <span class="tagline">Copy · Verify · Incremental backup</span>
+    <span class="tagline">Copy · Verify · Copies only what is new</span>
   </div>
   <div class="top-actions">
     <span class="gz-mark">© GRAY ZONE</span>
-    <button class="btn update-pill" id="update-pill" type="button" hidden><span class="dot" aria-hidden="true"></span><span id="update-pill-text">Update ready</span></button>
-    <button class="btn ghost" id="btn-schedules" type="button"><svg class="ico"><use href="#i-cal"/></svg>Schedules<span class="next-run" id="next-run"></span></button>
-    <button class="btn ghost" id="btn-history" type="button"><svg class="ico"><use href="#i-clock"/></svg>History</button>
+    <button class="btn update-pill" id="update-pill" type="button" aria-label="Update ready" hidden><span class="dot" aria-hidden="true"></span><span class="lbl" id="update-pill-text">Update ready</span></button>
+    <button class="btn ghost" id="btn-schedules" type="button" aria-label="Schedules" title="Schedules"><svg class="ico" aria-hidden="true"><use href="#i-cal"/></svg><span class="lbl">Schedules<span class="next-run" id="next-run"></span></span></button>
+    <button class="btn ghost" id="btn-history" type="button" aria-label="History" title="History"><svg class="ico" aria-hidden="true"><use href="#i-clock"/></svg><span class="lbl">History</span></button>
   </div>
 </header>
 
 <main id="app" data-mode="setup">
   <div class="banner" id="sched-banner" role="status" hidden>
-    <svg class="ico"><use href="#i-cal"/></svg>
+    <svg class="ico" aria-hidden="true"><use id="sb-icon" href="#i-cal"/></svg>
     <span class="sb-text" id="sb-text"></span>
     <button class="link" id="sb-view" type="button">View</button>
     <button class="iconbtn" id="sb-close" type="button" aria-label="Dismiss" hidden><svg class="ico"><use href="#i-x"/></svg></button>
@@ -81,19 +81,15 @@
   <section class="panel setup-only" id="setup-bar">
     <div class="opts">
       <label class="check"><input type="checkbox" id="opt-subfolder" checked><span>Put files in a folder named after the source</span></label>
-      <label class="check"><input type="checkbox" id="opt-reverify"><span>Re-verify files already there</span></label>
+      <label class="check"><input type="checkbox" id="opt-reverify"><span>Also re-check files copied earlier (slower)<small id="reverify-why" hidden>Needs verification turned on</small></span></label>
       <label class="check"><input type="checkbox" id="opt-mirror"><span>Sync (clean up files no longer in the source)</span></label>
-      <label class="pick"><span>Checksum</span>
-        <select id="opt-algo">
-          <option value="xxh64">xxHash64 (fast)</option>
-          <option value="md5">MD5</option>
-        </select>
-      </label>
+      <label class="verify"><span class="switch"><input type="checkbox" id="opt-verify" checked><span></span></span><span>Verify every copied file (recommended)<small>xxHash64 checksum</small></span></label>
     </div>
     <div class="go">
       <button class="btn ghost" id="btn-save-sched" type="button" disabled>Save as Schedule…</button>
       <button class="btn primary big" id="btn-start" type="button" disabled>Start Backup</button>
     </div>
+    <p class="verify-warn" id="verify-warn" role="status" hidden><svg class="ico" aria-hidden="true"><use href="#i-alert"/></svg>Files will be copied without verification.</p>
     <p class="hint" id="hint"></p>
     <p class="hint mirror-hint" id="mirror-hint" hidden>Sync: files deleted from the source are not deleted from the destination but moved to its <b>_G-Copy_Removed</b> folder. You see the list before anything is moved.</p>
     <p class="formerr" id="start-err" role="alert" hidden></p>
@@ -106,7 +102,7 @@
         <ol class="steps" id="run-steps" aria-label="Progress">
           <li data-step="scanning">Scan</li>
           <li data-step="comparing">Compare</li>
-          <li data-step="copying">Copy &amp; verify</li>
+          <li data-step="copying" id="step-copy">Copy &amp; verify</li>
           <li data-step="report">Report</li>
         </ol>
         <strong id="run-phase">Preparing</strong>
@@ -228,7 +224,9 @@
     <div class="field" id="se-days-row"><span class="flabel">Days</span>
       <div class="days" id="se-days" role="group" aria-label="Days"></div>
     </div>
-    <label class="field" id="se-time-row"><span class="flabel">Time</span><input id="se-time" type="time" value="02:00" required></label>
+    <div class="field" id="se-time-row"><span class="flabel">Time</span>
+      <span class="timepick"><select id="se-hour" aria-label="Hour (0 to 23)"></select><span aria-hidden="true">:</span><select id="se-min" aria-label="Minute"></select></span>
+    </div>
     <label class="field" id="se-hours-row"><span class="flabel">Every</span>
       <select id="se-hours">
         <option value="1">1 hour</option><option value="2">2 hours</option><option value="3">3 hours</option>

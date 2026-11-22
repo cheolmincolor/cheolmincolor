@@ -334,9 +334,18 @@ func (w *destWork) reset() {
 // writes reports whether this destination receives a new copy.
 func (w *destWork) writes() bool { return w.act == actCopy || w.act == actReplace }
 
+// readsBack reports whether act ends with reading the destination: always,
+// except for new copies when verification is turned off.
+func (j *Job) readsBack(a action) bool {
+	return !(j.opts.NoVerify && (a == actCopy || a == actReplace))
+}
+
 // destWorkFor is the progress one try at act costs a destination.
-func destWorkFor(a action, size int64) int64 {
+func (j *Job) destWorkFor(a action, size int64) int64 {
 	if a == actCopy || a == actReplace {
+		if !j.readsBack(a) {
+			return size // written only
+		}
 		return 2 * size // written, then read back
 	}
 	return size // read back only
@@ -380,9 +389,11 @@ func (j *Job) processFile(i, weight int) {
 		if !a.active() {
 			continue
 		}
-		planned += f.size
+		if j.readsBack(a) {
+			planned += f.size
+		}
 		dr := j.dests[d]
-		w := &destWork{d: d, act: a, final: filepath.Join(dr.bases[f.src], f.rel), plan: destWorkFor(a, f.size)}
+		w := &destWork{d: d, act: a, final: filepath.Join(dr.bases[f.src], f.rel), plan: j.destWorkFor(a, f.size)}
 		works = append(works, w)
 	}
 	defer func() {
@@ -429,8 +440,10 @@ func (j *Job) processFile(i, weight int) {
 			// destinations' work again
 			extra := f.size
 			for _, w := range pending {
-				extra += f.size
-				more := destWorkFor(w.act, f.size)
+				if j.readsBack(w.act) {
+					extra += f.size
+				}
+				more := j.destWorkFor(w.act, f.size)
 				w.plan += more
 				j.dests[w.d].workTotal.Add(more)
 			}
@@ -517,6 +530,9 @@ func (j *Job) processFile(i, weight int) {
 				dr.skipped.Add(1)
 				dr.datesFixed.Add(1)
 				j.datesFixed.Add(1)
+			}
+			if !j.readsBack(w.act) {
+				continue // copied without verification: not for the checksum report
 			}
 			rel, _ := filepath.Rel(dr.bases[f.src], w.final)
 			j.record(dr, f.src, mhlEntry{
@@ -686,7 +702,7 @@ func (j *Job) copyPass(f *srcFile, works []*destWork, add func(int64)) []byte {
 func (j *Job) verifyPass(f *srcFile, works []*destWork, srcSum []byte, add func(int64)) {
 	var vg sync.WaitGroup
 	for _, w := range works {
-		if !w.alive() {
+		if !w.alive() || !j.readsBack(w.act) {
 			continue
 		}
 		vg.Add(1)

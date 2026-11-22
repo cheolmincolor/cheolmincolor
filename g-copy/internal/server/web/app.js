@@ -148,9 +148,10 @@ function options() {
   return {
     sources: state.sources.map((s) => s.path),
     destinations: state.dests.map((d) => d.path),
-    algo: $('opt-algo').value,
+    algo: 'xxh64',
+    noVerify: !$('opt-verify').checked,
     subfolder: $('opt-subfolder').checked,
-    reverify: $('opt-reverify').checked,
+    reverify: $('opt-verify').checked && $('opt-reverify').checked,
     mirror: $('opt-mirror').checked,
   };
 }
@@ -198,7 +199,7 @@ function card(item, kind, index) {
   } else {
     lead = h('span', { class: 'glyph' }, icon(item.isVolume ? 'disk' : 'folder'));
   }
-  return h('li', { class: 'card' },
+  return item.cardEl = h('li', { class: 'card' },
     lead,
     h('span', { class: 'name', title: item.path }, baseName(item.path)),
     h('span', { class: 'path', title: item.path }, tailPath(item.path)),
@@ -261,10 +262,14 @@ new ResizeObserver(() => drawFlow()).observe($('stage'));
 // The rings and lines follow the job.
 function renderDestProgress(job) {
   const finished = FINISHED.includes(job.status);
+  const unverified = !!job.options.noVerify;
   flowState = state.dests.map((d, i) => {
     const s = job.dests[i];
     if (!s) return '';
+    if (d.cardEl) d.cardEl.classList.toggle('failed', finished && job.status === 'failed' && !s.complete);
     if (finished) {
+      // copied but not verified: complete, yet never shown with the "verified" tick
+      if (s.complete && unverified && s.copied > 0) { setRing(d, 1, 'warn', '#alert'); return ''; }
       if (s.complete) { setRing(d, 1, 'ok', '#check'); return 'ok'; }
       if (job.status === 'cancelled') { setRing(d, s.workTotal ? s.workDone / s.workTotal : 0, 'warn', '#stop'); return ''; }
       setRing(d, s.workTotal ? s.workDone / s.workTotal : 0, 'bad', '#alert');
@@ -282,9 +287,19 @@ function renderDestProgress(job) {
 function renderSetup() {
   flowState = []; // plain lines until something runs
   renderLanes();
+  const need = sourceNeed();
   for (const d of state.dests) {
-    if (d.free != null) d.extraEl.replaceChildren(h('span', {}, fmtBytes(d.free) + ' free' + (d.total > 0 ? ' of ' + fmtBytes(d.total) : '')));
+    if (d.free == null) continue;
+    const kids = [h('span', {}, fmtBytes(d.free) + ' free' + (d.total > 0 ? ' of ' + fmtBytes(d.total) : ''))];
+    if (need.checking) kids.push(h('span', {}, 'Checking size…'));
+    else if (need.known && need.bytes > d.free) kids.push(h('span', { class: 'space', title: 'The source holds ' + fmtBytes(need.bytes) + '. Files already on this destination are not copied again, so it may still fit.' }, icon('alert'), 'Not enough space for this source'));
+    d.extraEl.replaceChildren(...kids);
   }
+  const verify = $('opt-verify').checked;
+  $('verify-warn').hidden = verify;
+  const rv = $('opt-reverify');
+  rv.disabled = !verify;
+  $('reverify-why').hidden = verify;
 
   const many = state.sources.length > 1;
   const sub = $('opt-subfolder');
@@ -309,6 +324,29 @@ function renderSetup() {
   $('mirror-hint').hidden = !$('opt-mirror').checked;
 }
 
+// ── how big the sources are, to warn about a destination that is too small ──
+
+const sizes = new Map(); // source path → { bytes } | { pending } | { failed }
+
+function sourceNeed() {
+  let bytes = 0, checking = false, known = state.sources.length > 0;
+  for (const s of state.sources) {
+    let e = sizes.get(s.path);
+    if (!e) {
+      e = { pending: true };
+      sizes.set(s.path, e);
+      const path = s.path;
+      api('/api/size?path=' + encodeURIComponent(path))
+        .then((r) => sizes.set(path, { bytes: r.bytes }), () => sizes.set(path, { failed: true }))
+        .then(() => { if (state.mode === 'setup') renderSetup(); });
+    }
+    if (e.pending) checking = true;
+    else if (e.failed) known = false;
+    else bytes += e.bytes;
+  }
+  return { bytes, checking, known: known && !checking };
+}
+
 function destExtra(job, i) {
   const d = job.dests[i];
   const out = [];
@@ -320,12 +358,15 @@ function destExtra(job, i) {
       ? h('span', { class: 'warnc' }, plural(d.toRemove, 'file') + ' to clean up · ' + fmtBytes(d.toRemoveBytes))
       : h('span', {}, 'Nothing to clean up')];
   }
-  if (d.complete) {
-    out.push(h('span', { class: 'ok' }, d.copied > 0 ? '✓ ' + plural(d.copied, 'file') + ' copied & verified' : d.reverified > 0 ? '✓ ' + plural(d.reverified, 'file') + ' re-verified' : '✓ Up to date'));
+  const copiedText = job.options.noVerify ? ' copied, not verified' : ' copied & verified';
+  if (d.complete && job.options.noVerify && d.copied > 0) {
+    out.push(h('span', { class: 'unverified' }, plural(d.copied, 'file') + copiedText));
+  } else if (d.complete) {
+    out.push(h('span', { class: 'ok' }, d.copied > 0 ? '✓ ' + plural(d.copied, 'file') + copiedText : d.reverified > 0 ? '✓ ' + plural(d.reverified, 'file') + ' re-checked' : '✓ Up to date'));
   } else {
-    out.push(h('span', {}, plural(d.copied, 'file') + ' copied & verified'));
+    out.push(h('span', {}, plural(d.copied, 'file') + copiedText));
   }
-  if (d.copied > 0 && d.reverified > 0) out.push(h('span', {}, num(d.reverified) + ' re-verified'));
+  if (d.copied > 0 && d.reverified > 0) out.push(h('span', {}, num(d.reverified) + ' re-checked'));
   if (d.skipped > 0) out.push(h('span', {}, num(d.skipped) + ' skipped'));
   if (d.replaced > 0) out.push(h('span', {}, num(d.replaced) + ' replaced'));
   if (d.datesFixed > 0) out.push(h('span', {}, num(d.datesFixed) + ' dates fixed'));
@@ -358,7 +399,7 @@ function renderRun(job) {
   } else if (job.status === 'comparing') {
     phase = 'Comparing with the destinations'; stats = scanned;
   } else {
-    phase = 'Copying and verifying';
+    phase = job.options.noVerify ? 'Copying (not verifying)' : 'Copying and verifying';
     const p = job.workTotal > 0 ? Math.min(99, Math.floor((job.workDone / job.workTotal) * 100)) : 0;
     pct = p + '%';
     $('run-fill').style.width = (job.workTotal > 0 ? (job.workDone / job.workTotal) * 100 : 0) + '%';
@@ -366,7 +407,7 @@ function renderRun(job) {
     parts.push(fmtLeft(job));
     parts.push(num(job.filesCopied) + ' copied');
     if (job.filesSkipped) parts.push(num(job.filesSkipped) + ' skipped');
-    if (job.filesVerified) parts.push(num(job.filesVerified) + ' re-verified');
+    if (job.filesVerified) parts.push(num(job.filesVerified) + ' re-checked');
     if (job.filesFailed) parts.push(num(job.filesFailed) + ' failed');
     stats = parts.join(' · ');
     if (job.current.length) file = job.current[0] + (job.current.length > 1 ? '  and ' + (job.current.length - 1) + ' more' : '');
@@ -378,6 +419,7 @@ function renderRun(job) {
     const k = order.indexOf(li.dataset.step);
     li.className = k < at ? 'done' : k === at ? 'now' : '';
   }
+  $('step-copy').textContent = job.options.noVerify ? 'Copy' : 'Copy & verify';
   $('run-phase').textContent = phase;
   $('run-pct').textContent = pct;
   $('run-stats').textContent = stats;
@@ -389,16 +431,21 @@ function renderRun(job) {
 
 // ── finished ────────────────────────────────────────────────────────────
 
-function fact(label, value, small) {
-  return h('div', {}, h('dt', {}, label), h('dd', {}, value, small ? ' ' : null, small ? h('small', {}, small) : null));
+function fact(label, value, small, under) {
+  return h('div', {}, h('dt', {}, label, under ? h('small', {}, under) : null), h('dd', {}, value, small ? ' ' : null, small ? h('small', {}, small) : null));
 }
 
 function renderResult(job) {
   const algo = job.options.algo === 'md5' ? 'MD5' : 'xxHash64';
+  const unverified = !!job.options.noVerify;
   let tone = 'ok', ico = 'check', title, sub, retry = false;
 
   if (job.status === 'done') {
-    if (job.filesCopied > 0) {
+    if (job.filesCopied > 0 && unverified) {
+      tone = 'warn'; ico = 'alert';
+      title = 'Copied, not verified';
+      sub = plural(job.filesCopied, 'file') + (job.filesCopied === 1 ? ' was' : ' were') + ' copied. Verification was turned off, so the copies were not read back and compared with the source. To check them, turn verification on, tick "Also re-check files copied earlier" and run this backup again.';
+    } else if (job.filesCopied > 0) {
       title = 'Backup complete';
       sub = 'All ' + plural(job.filesCopied, 'copied file') + ' were read back from the destination and match the source (' + algo + ').';
     } else if (job.filesVerified > 0) {
@@ -414,7 +461,7 @@ function renderResult(job) {
   } else if (job.status === 'cancelled') {
     tone = 'warn'; ico = 'stop'; retry = true;
     title = 'Cancelled';
-    sub = plural(job.filesCopied, 'verified file') + ' stay on the destination. "Run Again" copies only the rest.';
+    sub = plural(job.filesCopied, unverified ? 'copied file' : 'verified file') + ' stay on the destination. "Run Again" copies only the rest.';
   } else {
     tone = 'bad'; ico = 'alert'; retry = true;
     const short = job.dests.filter((d) => d.failed > 0 || d.stopped);
@@ -429,10 +476,10 @@ function renderResult(job) {
       sub = names(whole) + ' has every file. Fix the problem below, then "Run Again" copies only the missing files.';
     } else if (job.filesFailed > 0) {
       title = plural(job.filesFailed, 'file') + ' could not be backed up';
-      sub = 'Everything else was copied and verified. Fix the problem below, then "Run Again" copies only the failed files.';
+      sub = 'Everything else was copied' + (unverified ? ' (not verified)' : ' and verified') + '. Fix the problem below, then "Run Again" copies only the failed files.';
     } else {
       title = plural(job.errorCount, 'problem') + ' to check';
-      sub = 'The copied files are verified, but the items below need a look.';
+      sub = (unverified ? 'The files were copied (not verified)' : 'The copied files are verified') + ', but the items below need a look.';
     }
   }
 
@@ -441,14 +488,23 @@ function renderResult(job) {
   $('res-title').textContent = title;
   $('res-sub').textContent = sub;
   $('btn-retry').hidden = !retry;
+  // The bright button is the one the text recommends: after a failure or a
+  // cancel that is "Run Again" ("New Backup" clears the source list).
+  $('btn-retry').classList.toggle('primary', retry);
+  $('btn-retry').classList.toggle('ghost', !retry);
+  $('btn-new').classList.toggle('primary', !retry);
+  $('btn-new').classList.toggle('ghost', retry);
+  // A run that never started (not enough space, a missing folder) has no figures.
+  if (job.status === 'failed' && job.message) $('result').dataset.norun = ''; else delete $('result').dataset.norun;
 
   const multi = job.dests.length > 1; // then a file can succeed in one place and fail in another
+  const failedOn = job.dests.filter((d) => d.failed > 0 || d.stopped).map((d) => baseName(d.path)).join(', ');
   $('res-facts').replaceChildren(
-    fact(multi ? 'Copied & verified (all destinations)' : 'Copied & verified', num(job.filesCopied), fmtBytes(job.bytesCopied)),
+    fact(unverified ? 'Copied, not verified' : 'Copied & verified', num(job.filesCopied), fmtBytes(job.bytesCopied), multi ? 'on every destination' : ''),
     job.filesVerified > 0
-      ? fact('Re-verified', num(job.filesVerified), num(job.filesSkipped) + ' skipped')
+      ? fact('Re-checked', num(job.filesVerified), num(job.filesSkipped) + ' skipped')
       : fact('Skipped', num(job.filesSkipped), 'already up to date'),
-    fact(multi ? 'Failed (somewhere)' : 'Failed', num(job.filesFailed)),
+    fact('Failed', num(job.filesFailed), '', multi && failedOn ? 'on ' + failedOn : ''),
     fact('Time', fmtDur(job.seconds), job.workDone > 0 ? 'avg ' + fmtBytes(job.speed) + '/s' : ''),
   );
 
@@ -458,8 +514,9 @@ function renderResult(job) {
   if (job.mirror === 'approved' && removed > 0) notes.push(h('li', {}, 'Sync: ' + plural(removed, 'file') + ' no longer in the source were moved (not deleted) to each destination\'s _G-Copy_Removed folder.'));
   if (job.mirror === 'declined') notes.push(h('li', {}, 'Sync: ' + plural(listed, 'file') + ' no longer in the source were left where they are.'));
   if (job.options.label) notes.unshift(h('li', {}, 'Scheduled run: ' + job.options.label));
+  if (unverified && job.filesCopied > 0) notes.unshift(h('li', { class: 'warn' }, 'Verification was off: no checksum report (MHL) was written for the files copied in this run.'));
   if (job.datesFixed > 0) notes.push(h('li', {}, plural(job.datesFixed, 'file') + ' had the same size but a different date on the destination. Their content was read back and matches the source, so only the date was corrected — nothing was copied again.'));
-  if (job.retried > 0) notes.push(h('li', {}, plural(job.retried, 'copy', 'copies') + ' needed a second try after a temporary problem (a read error or a checksum mismatch). Every file listed as copied was verified on its final try.'));
+  if (job.retried > 0) notes.push(h('li', {}, plural(job.retried, 'copy', 'copies') + ' needed a second try after a temporary problem (a read error or a checksum mismatch).' + (unverified ? '' : ' Every file listed as copied was verified on its final try.')));
   if (job.mirror === 'nothing') notes.push(h('li', {}, 'Sync: the destinations had nothing that is not in the source.'));
   const left = [];
   if (job.excluded > 0) left.push(plural(job.excluded, 'system file') + ' such as .DS_Store');
@@ -472,11 +529,11 @@ function renderResult(job) {
   $('res-errors-title').textContent = plural(job.errorCount, 'problem') +
     (job.errorCount > job.errors.length ? ' (first ' + job.errors.length + ' shown)' : '');
   $('res-errors').replaceChildren(...job.errors.map((e) => h('li', {},
-    h('p', { class: 'where' }, [e.path, e.dest].filter(Boolean).join('  →  ')),
     h('p', { class: 'why' }, e.message),
+    h('p', { class: 'where' }, [e.path, e.dest].filter(Boolean).join('  →  ')),
   )));
 
-  document.title = (job.status === 'done' ? '✓ Done' : job.status === 'cancelled' ? 'Cancelled' : '⚠ Check needed') + ' — G-Copy';
+  document.title = (job.status === 'done' ? (tone === 'warn' ? 'Copied, not verified' : '✓ Done') : job.status === 'cancelled' ? 'Cancelled' : '⚠ Check needed') + ' — G-Copy';
   if (native) {
     native.setProgress(-1, false);
     if (announce !== job.id) return;
@@ -619,8 +676,9 @@ function renderBanner(job) {
     announceSched = job.id;
     if (native) native.setProgress(copying ? job.workDone / job.workTotal : 2, true);
   } else {
-    const verdict = job.status === 'done' ? 'complete' : job.status === 'cancelled' ? 'cancelled' : 'needs a look';
-    tone = job.status === 'done' ? 'ok' : 'bad';
+    const loose = job.options.noVerify && job.filesCopied > 0;
+    const verdict = job.status === 'done' ? (loose ? 'copied, not verified' : 'complete') : job.status === 'cancelled' ? 'cancelled' : 'needs a look';
+    tone = job.status === 'done' ? (loose ? 'warn' : 'ok') : job.status === 'cancelled' ? 'warn' : 'bad';
     text = 'Scheduled run ' + verdict + ' · ' + job.options.label + ' · ' + num(job.filesCopied) + ' copied' +
       (job.filesFailed ? ', ' + num(job.filesFailed) + ' failed' : '');
     if (native) native.setProgress(-1, false);
@@ -633,6 +691,7 @@ function renderBanner(job) {
   const b = $('sched-banner');
   b.hidden = false;
   b.dataset.tone = tone;
+  $('sb-icon').setAttribute('href', '#i-' + (tone === 'ok' ? 'check' : tone === 'bad' ? 'alert' : tone === 'warn' ? (job.status === 'cancelled' ? 'stop' : 'alert') : 'cal'));
   $('sb-text').textContent = text;
   $('sb-view').textContent = finished ? 'View Result' : 'View';
   $('sb-close').hidden = !finished;
@@ -669,7 +728,7 @@ async function startJob(opts) {
   $('btn-start').disabled = true;
   try {
     const job = await api('/api/job', opts);
-    store.set('opts', { algo: opts.algo, subfolder: opts.subfolder, reverify: opts.reverify, mirror: !!opts.mirror });
+    store.set('opts', { verify: !opts.noVerify, subfolder: opts.subfolder, reverify: $('opt-reverify').checked, mirror: !!opts.mirror });
     $('run-fill').style.width = '0%';
     $('run-pct').textContent = ''; // not the last run's number
     applyJob(job);
@@ -708,6 +767,7 @@ $('btn-retry').addEventListener('click', async () => {
 $('btn-new').addEventListener('click', async () => {
   try { await api('/api/job/dismiss', { id: state.job && state.job.id }); } catch { return; }
   state.job = null;
+  sizes.clear();
   if (state.saved) { // back to what was being set up before looking at a scheduled run
     state.sources = state.saved.sources.map(item);
     state.dests = state.saved.dests.map(item);
@@ -722,7 +782,7 @@ $('btn-new').addEventListener('click', async () => {
   refreshDests();
 });
 
-for (const id of ['opt-subfolder', 'opt-reverify', 'opt-mirror', 'opt-algo']) $(id).addEventListener('change', renderSetup);
+for (const id of ['opt-subfolder', 'opt-reverify', 'opt-mirror', 'opt-verify']) $(id).addEventListener('change', renderSetup);
 
 // ── folder picker ───────────────────────────────────────────────────────
 
@@ -856,6 +916,7 @@ $('mkdir-form').addEventListener('submit', async (e) => {
 function addFolder(kind, path, free, total) {
   const list = kind === 'src' ? state.sources : state.dests;
   if (!list.some((x) => x.path === path)) list.push({ ...item(path), free, total });
+  if (kind === 'src') sizes.delete(path); // measure it afresh
   const key = 'recent.' + kind;
   store.set(key, [path, ...store.get(key, []).filter((p) => p !== path)].slice(0, 6));
   saveDests();
@@ -949,19 +1010,37 @@ $('btn-history').addEventListener('click', async () => {
   }
   const df = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
   list.replaceChildren(...items.map((j) => {
-    const tone = j.status === 'done' ? 'ok' : j.status === 'cancelled' ? 'warn' : 'bad';
-    const ico = icon(j.status === 'done' ? 'check' : j.status === 'cancelled' ? 'stop' : 'alert');
+    const loose = j.options.noVerify && j.filesCopied > 0;
+    const tone = j.status === 'done' ? (loose ? 'warn' : 'ok') : j.status === 'cancelled' ? 'warn' : 'bad';
+    const ico = icon(j.status === 'done' ? (loose ? 'alert' : 'check') : j.status === 'cancelled' ? 'stop' : 'alert');
     ico.classList.add(tone);
     const what = j.options.sources.map(baseName).join(', ') + '  →  ' + j.options.destinations.map(baseName).join(', ');
     let detail = num(j.filesCopied) + ' copied · ' + fmtBytes(j.bytesCopied) + ' · ' + num(j.filesSkipped) + ' skipped · ' + fmtDur(j.seconds);
     const gone = (j.dests || []).reduce((n, d) => n + (d.removed || 0), 0);
     if (gone > 0) detail += ' · ' + num(gone) + ' cleaned up';
+    if (loose) detail = 'Not verified · ' + detail;
     if (j.options.label) detail = 'Scheduled · ' + j.options.label + ' · ' + detail;
     if (j.status === 'cancelled') detail = 'Cancelled · ' + detail;
     if (j.status === 'failed') detail = (j.message || num(j.filesFailed) + ' failed · ' + plural(j.errorCount, 'problem')) + (j.message ? '' : ' · ' + detail);
-    return h('li', {}, ico, h('span', { class: 'what', title: what }, what), h('span', { class: 'when' }, df.format(new Date(j.startedAt))), h('span', { class: 'detail' }, detail));
+    // A run that failed or was cancelled can be opened again, with its list of problems.
+    const view = j.status === 'done' ? null : h('button', { class: 'btn small view', type: 'button', onclick: () => viewPast(j) }, 'View Problems');
+    return h('li', {}, ico, h('span', { class: 'what', title: what }, what), h('span', { class: 'when' }, df.format(new Date(j.startedAt))), view, h('span', { class: 'detail' }, detail));
   }));
 });
+
+// viewPast shows an earlier run's result again, the way "View Result" does
+// for a scheduled run. Not while a backup is running in this window.
+function viewPast(job) {
+  if (state.mode === 'running' || state.mode === 'confirm') return;
+  $('history').close();
+  if (state.mode === 'finished' && state.job) api('/api/job/dismiss', { id: state.job.id }).catch(() => {}); // the result on screen makes way
+  if (state.mode === 'setup') { // come back to these after looking
+    state.saved = { sources: state.sources.map((x) => x.path), dests: state.dests.map((x) => x.path) };
+  }
+  state.job = null;
+  applyJob(job);
+  window.scrollTo(0, 0);
+}
 
 // ── schedules ───────────────────────────────────────────────────────────
 
@@ -992,7 +1071,7 @@ function fmtWhen(w) {
 }
 
 function fmtWhat(o) {
-  const extras = [o.mirror && 'sync', o.reverify && 're-verify', o.algo === 'md5' && 'MD5'].filter(Boolean);
+  const extras = [o.mirror && 'sync', o.reverify && 're-check', o.noVerify && 'not verified'].filter(Boolean);
   return o.sources.map(baseName).join(', ') + '  →  ' + o.destinations.map(baseName).join(', ') + (extras.length ? '  ·  ' + extras.join(' · ') : '');
 }
 
@@ -1090,6 +1169,18 @@ $('btn-save-sched').addEventListener('click', () => openEditor(null));
 $('se-days').replaceChildren(...WEEK_ORDER.map((d) => h('label', {},
   h('input', { type: 'checkbox', value: String(d), 'aria-label': WEEK[d] }), h('span', {}, WEEK[d]))));
 
+// Time of day: 24-hour, like everywhere else on the screen. Minutes in
+// steps of five; a schedule saved with another minute keeps it.
+$('se-hour').replaceChildren(...Array.from({ length: 24 }, (_, i) => h('option', { value: two(i) }, two(i))));
+function setTime(hhmm) {
+  const [hh, mm] = /^\d{1,2}:\d{2}$/.test(hhmm) ? hhmm.split(':').map((x) => two(Number(x))) : ['02', '00'];
+  const mins = Array.from({ length: 12 }, (_, i) => two(i * 5));
+  if (!mins.includes(mm)) { mins.push(mm); mins.sort(); }
+  $('se-min').replaceChildren(...mins.map((m) => h('option', { value: m }, m)));
+  $('se-hour').value = hh;
+  $('se-min').value = mm;
+}
+
 function editorKind() { return document.querySelector('input[name="se-kind"]:checked').value; }
 
 function renderEditorRows() {
@@ -1107,7 +1198,7 @@ function openEditor(sc) {
   $('se-title').textContent = sc ? 'Edit Schedule' : 'Save as Schedule';
   $('se-name').value = sc ? sc.name : opts.sources.map(baseName).join(', ') + ' → ' + opts.destinations.map(baseName).join(', ');
   document.querySelector('input[name="se-kind"][value="' + w.kind + '"]').checked = true;
-  $('se-time').value = w.time || '02:00';
+  setTime(w.time || '02:00');
   $('se-hours').value = String(w.hours || 6);
   const days = w.days && w.days.length ? w.days : [1, 2, 3, 4, 5];
   for (const c of $('se-days').querySelectorAll('input')) c.checked = days.includes(Number(c.value));
@@ -1115,13 +1206,14 @@ function openEditor(sc) {
 
   $('se-what').replaceChildren(
     h('b', {}, 'Source '), opts.sources.map(baseName).join(', '), '  →  ', h('b', {}, 'Destination '), opts.destinations.map(baseName).join(', '),
-    [opts.subfolder && ' · folder named after source', opts.mirror && ' · sync', opts.reverify && ' · re-verify', opts.algo === 'md5' && ' · MD5'].filter(Boolean).join(''),
+    [opts.subfolder && ' · folder named after source', opts.mirror && ' · sync', opts.reverify && ' · re-check earlier copies', opts.noVerify && ' · not verified'].filter(Boolean).join(''),
   );
   const notes = [
     h('li', {}, native ? 'Runs while G-Copy is open. Closing the window keeps G-Copy running in the menu bar.' : 'Runs only while G-Copy is running.'),
     h('li', {}, 'A run missed because the Mac was asleep or G-Copy was closed is made up once, as soon as possible.'),
     h('li', {}, 'If a disk is not connected at that time, that run is skipped and noted.'),
   ];
+  if (opts.noVerify) notes.push(h('li', { class: 'warn' }, 'Verification is off: these runs copy files without checking them, and write no checksum report.'));
   if (opts.mirror) {
     notes.push(h('li', { class: 'warn' }, 'Sync: scheduled runs move files no longer in the source to _G-Copy_Removed without asking — except when the source is empty or more than 25% of a destination would be moved; then nothing is moved and it is noted.'));
   }
@@ -1136,7 +1228,7 @@ $('se-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const kind = editorKind();
   const when = { kind };
-  if (kind !== 'hours') when.time = $('se-time').value;
+  if (kind !== 'hours') when.time = $('se-hour').value + ':' + $('se-min').value;
   if (kind === 'weekly') when.days = [...$('se-days').querySelectorAll('input:checked')].map((c) => Number(c.value));
   if (kind === 'hours') when.hours = Number($('se-hours').value);
   const body = { name: $('se-name').value, when };
@@ -1152,7 +1244,7 @@ $('se-form').addEventListener('submit', async (e) => {
     return;
   }
   $('sched-edit').close();
-  if (!sc) store.set('opts', { algo: body.options.algo, subfolder: body.options.subfolder, reverify: body.options.reverify, mirror: !!body.options.mirror });
+  if (!sc) store.set('opts', { verify: !body.options.noVerify, subfolder: body.options.subfolder, reverify: $('opt-reverify').checked, mirror: !!body.options.mirror });
   await loadSchedules();
   $('schedules').showModal();
   renderSchedules();
@@ -1169,6 +1261,7 @@ function renderUpdate(st) {
     pill.hidden = false;
     pill.classList.remove('loading');
     $('update-pill-text').textContent = 'Update ' + st.version + ' ready';
+    pill.setAttribute('aria-label', 'Update ' + st.version + ' ready'); pill.title = 'Update ' + st.version + ' ready';
   } else if (st.status === 'downloading') {
     pill.hidden = false;
     pill.classList.add('loading');
@@ -1233,7 +1326,7 @@ async function refreshDests() {
   await store.load();
   const o = store.get('opts', null);
   if (o) {
-    $('opt-algo').value = o.algo === 'md5' ? 'md5' : 'xxh64';
+    $('opt-verify').checked = o.verify !== false; // settings from versions with a checksum menu (xxHash64 / MD5): on
     $('opt-subfolder').checked = o.subfolder !== false;
     $('opt-reverify').checked = !!o.reverify;
     $('opt-mirror').checked = !!o.mirror;

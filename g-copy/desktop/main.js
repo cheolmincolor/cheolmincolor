@@ -300,6 +300,18 @@ function pingEngine(origin) {
   });
 }
 
+// launchProblem says in one short line what stopped the start-up and what
+// to do. The technical text goes to the log only.
+function launchProblem(e) {
+  const m = String(e && e.message || e);
+  if (/ENOENT/.test(m)) return 'The backup engine is missing. Reinstall G-Copy.';
+  if (/EACCES|EPERM/.test(m)) return 'The backup engine is not allowed to run. Reinstall G-Copy.';
+  if (/did not respond|does not answer|no answer/.test(m)) return 'The backup engine did not respond. Open G-Copy again.';
+  if (/exited right after starting/.test(m)) return 'The backup engine stopped while starting. Open G-Copy again.';
+  if (/interface could not be loaded/.test(m)) return 'The G-Copy window could not be loaded. Open G-Copy again.';
+  return 'G-Copy could not start. Open it again, or reinstall it.';
+}
+
 // launch starts everything, one step per cell of the launch screen's wedge.
 async function launch() {
   // Opened at login: G-Copy starts quietly in the menu bar, without windows.
@@ -368,7 +380,7 @@ async function launch() {
       app.quit();
       return;
     }
-    screen.failed(e.message); // stays on screen; Quit (Cmd+Q) closes G-Copy
+    screen.failed(launchProblem(e)); // stays on screen until a click or a key closes G-Copy
     if (selfTest) { await screen.capture(selfTest); app.exit(1); }
   }
 }

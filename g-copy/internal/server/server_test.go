@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -229,5 +230,85 @@ func TestLoopbackHost(t *testing.T) {
 		if got := loopbackHost(host); got != want {
 			t.Errorf("loopbackHost(%q) = %v, want %v", host, got, want)
 		}
+	}
+}
+
+// The screen offers one checksum and a switch for verification. Requests
+// and saved schedules from earlier versions (MD5) are brought in line.
+func TestOptionsAreBroughtToWhatTheScreenOffers(t *testing.T) {
+	s, _, c := setup(t)
+	tmp := t.TempDir()
+	src, dst := filepath.Join(tmp, "A001"), filepath.Join(tmp, "NAS")
+	os.MkdirAll(src, 0o755)
+	os.MkdirAll(dst, 0o755)
+	os.WriteFile(filepath.Join(src, "clip.mov"), bytes.Repeat([]byte("x"), 1000), 0o644)
+	wait := func() map[string]any {
+		t.Helper()
+		deadline := time.Now().Add(10 * time.Second)
+		for {
+			_, out := c.do("GET", "/api/job", nil, nil)
+			if out["status"] == "done" || out["status"] == "failed" {
+				return out
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("job did not finish: %v", out)
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+	// MD5 asked for (an old window, an old script): xxHash64 is used.
+	c.do("POST", "/api/job", map[string]any{"sources": []string{src}, "destinations": []string{dst}, "subfolder": true, "algo": "md5"}, nil)
+	out := wait()
+	if o := out["options"].(map[string]any); o["algo"] != "xxh64" {
+		t.Errorf("algo %v", o["algo"])
+	}
+	data, _ := os.ReadFile(out["dests"].([]any)[0].(map[string]any)["reports"].([]any)[0].(string))
+	if !strings.Contains(string(data), "<xxhash64be>") || strings.Contains(string(data), "<md5>") {
+		t.Errorf("report: %s", data)
+	}
+	c.do("POST", "/api/job/dismiss", map[string]any{}, nil)
+
+	// Verification off: "re-check earlier copies" is switched off with it, and no report is written.
+	dst2 := filepath.Join(tmp, "DAS")
+	os.MkdirAll(dst2, 0o755)
+	c.do("POST", "/api/job", map[string]any{"sources": []string{src}, "destinations": []string{dst2}, "subfolder": true, "noVerify": true, "reverify": true}, nil)
+	out = wait()
+	o := out["options"].(map[string]any)
+	if o["noVerify"] != true || o["reverify"] != false || len(out["dests"].([]any)[0].(map[string]any)["reports"].([]any)) != 0 {
+		t.Errorf("options %v, dests %v", o, out["dests"])
+	}
+	if got, _ := os.ReadFile(filepath.Join(dst2, "A001", "clip.mov")); len(got) != 1000 {
+		t.Errorf("copy: %d bytes", len(got))
+	}
+	c.do("POST", "/api/job/dismiss", map[string]any{}, nil)
+
+	// A schedule saved with MD5 by an earlier version loads as xxHash64.
+	old := `[{"id":"abc","name":"old","options":{"sources":["` + src + `"],"destinations":["` + dst + `"],"algo":"md5","subfolder":true,"reverify":true,"mirror":false},"when":{"kind":"daily","time":"02:07"},"enabled":true,"created":"2026-11-01T00:00:00Z"}]`
+	os.WriteFile(s.schedulesPath(), []byte(old), 0o644)
+	s.sched.mu.Lock()
+	s.loadSchedules()
+	s.sched.mu.Unlock()
+	_, out = c.do("GET", "/api/schedules", nil, nil)
+	sc := out["schedules"].([]any)[0].(map[string]any)
+	if so := sc["options"].(map[string]any); so["algo"] != "xxh64" || so["reverify"] != true || sc["when"].(map[string]any)["time"] != "02:07" {
+		t.Errorf("loaded schedule: %v", sc)
+	}
+}
+
+func TestFolderSize(t *testing.T) {
+	_, _, c := setup(t)
+	src := filepath.Join(t.TempDir(), "A001")
+	os.MkdirAll(filepath.Join(src, "CLIPS"), 0o755)
+	os.MkdirAll(filepath.Join(src, ".Spotlight-V100"), 0o755)
+	os.WriteFile(filepath.Join(src, "CLIPS", "a.mov"), make([]byte, 3000), 0o644)
+	os.WriteFile(filepath.Join(src, "b.mov"), make([]byte, 500), 0o644)
+	os.WriteFile(filepath.Join(src, ".DS_Store"), make([]byte, 99), 0o644)            // not part of a backup
+	os.WriteFile(filepath.Join(src, ".Spotlight-V100", "x"), make([]byte, 99), 0o644) // nor this
+	code, out := c.do("GET", "/api/size?path="+url.QueryEscape(src), nil, nil)
+	if code != 200 || out["bytes"].(float64) != 3500 || out["files"].(float64) != 2 {
+		t.Errorf("size: %d %v", code, out)
+	}
+	if code, _ := c.do("GET", "/api/size?path=relative", nil, nil); code != http.StatusBadRequest {
+		t.Errorf("relative path: %d", code)
 	}
 }

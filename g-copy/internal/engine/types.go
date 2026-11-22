@@ -37,6 +37,11 @@ type Options struct {
 	Reverify     bool     `json:"reverify"`  // re-hash files that are already up to date
 	Mirror       bool     `json:"mirror"`    // sync: move aside destination files the source no longer has
 
+	// NoVerify copies without reading the copies back. Such copies are not
+	// verified: they get no entry in a checksum report, and the screen says
+	// so. The default (false) verifies every copy.
+	NoVerify bool `json:"noVerify,omitempty"`
+
 	// Set by the scheduler, not by the screen.
 	Label      string `json:"label,omitempty"`      // name of the schedule that started the run
 	Unattended bool   `json:"unattended,omitempty"` // nobody is there to answer questions

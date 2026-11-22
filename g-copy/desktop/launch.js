@@ -54,11 +54,17 @@ class Launch {
   // done marks start-up step n (1…11) as finished.
   done(n) { this.state.done = Math.max(this.state.done, n); this.push(); }
 
-  // failed says what went wrong and leaves the screen up.
+  // failed says what went wrong and leaves the screen up. A click or a
+  // key then closes the app: the screen has no buttons of its own.
   failed(what) {
-    this.state.status = String(what).split('\n')[0].slice(0, 110);
+    this.state.status = String(what).split('\n')[0].slice(0, 80) + ' Click to close.';
+    this.state.failed = true;
     console.log('[launch] failed: ' + what);
     this.push();
+    if (!this.win || this.win.isDestroyed()) return;
+    const wc = this.win.webContents;
+    const onClose = (e) => { if (e.sender === wc && this.state.failed) { ipcMain.off('splash-close', onClose); app.quit(); } };
+    ipcMain.on('splash-close', onClose);
   }
 
   // capture saves a picture of the screen as it is now (the build's self-test).

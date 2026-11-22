@@ -121,10 +121,10 @@ func resolveDir(p, role string) (string, os.FileInfo, error) {
 	}
 	fi, err := os.Stat(abs)
 	if err != nil {
-		return "", nil, missingError{fmt.Sprintf("%s folder not found: %s", role, p)}
+		return "", nil, missingError{fmt.Sprintf("%s folder not found: %s. Check that its disk or NAS is connected.", role, p)}
 	}
 	if !fi.IsDir() {
-		return "", nil, fmt.Errorf("%s is not a folder: %s", role, p)
+		return "", nil, fmt.Errorf("%s is not a folder: %s. Choose a folder instead.", role, p)
 	}
 	return abs, fi, nil
 }
@@ -164,6 +164,9 @@ func (j *Job) prepare() error {
 		return err
 	}
 	o.Algo = algo
+	if o.NoVerify {
+		o.Reverify = false // re-checking earlier copies is verification too
+	}
 	if len(o.Sources) == 0 {
 		return errors.New("Choose at least one source")
 	}
@@ -201,7 +204,7 @@ func (j *Job) prepare() error {
 		}
 		for _, other := range destInfos {
 			if os.SameFile(fi, other) {
-				return fmt.Errorf("The same destination is selected twice: %s", d)
+				return fmt.Errorf("The same destination is selected twice: %s. Remove one of them.", d)
 			}
 		}
 		dr := &destRun{path: p, shown: d, entries: make([][]mhlEntry, len(j.srcRoots)), network: isNetworkFS(p)}
@@ -211,7 +214,7 @@ func (j *Job) prepare() error {
 				base = filepath.Join(p, j.srcNames[s])
 			}
 			if sameOrInside(base, srcInfos[s]) {
-				return fmt.Errorf("The destination is the source itself or inside it: %s → %s", o.Sources[s], d)
+				return fmt.Errorf("%s is the source %s itself or inside it, so the backup would copy into itself. Choose a folder on another disk.", filepath.Base(p), j.srcNames[s])
 			}
 			dr.bases = append(dr.bases, base)
 		}
@@ -221,7 +224,7 @@ func (j *Job) prepare() error {
 	// Only now, with every selection known to be sane, touch the destinations.
 	for i, dr := range j.dests {
 		if err := checkWritable(dr.path); err != nil {
-			return fmt.Errorf("Cannot write to the destination: %s (%s)", o.Destinations[i], osMsg(err))
+			return fmt.Errorf("Cannot write to %s (%s). Check that the disk is not read-only and that you may write to this folder.", filepath.Base(o.Destinations[i]), osMsg(err))
 		}
 	}
 	return nil
@@ -361,15 +364,17 @@ func (j *Job) compare() error {
 	var total int64
 	for i := range j.files {
 		f := &j.files[i]
-		active := int64(0)
+		active, reads := int64(0), int64(0)
 		for d, dr := range j.dests {
 			switch a := j.acts[i*nd+d]; a {
 			case actCopy, actReplace:
 				dr.need += f.size
-				dr.workTotal.Add(2 * f.size) // written, then read back
+				dr.workTotal.Add(j.destWorkFor(a, f.size)) // written, then read back
+				reads += boolInt(j.readsBack(a))
 				active++
 			case actReverify, actCheck:
 				dr.workTotal.Add(f.size) // read back only
+				reads++
 				active++
 			case actNone:
 				dr.skipped.Add(1)
@@ -378,7 +383,7 @@ func (j *Job) compare() error {
 			}
 		}
 		if active > 0 {
-			total += f.size * (1 + active) // one source read + one read-back per destination
+			total += f.size * (1 + reads) // one source read + one read-back per verified destination
 		}
 	}
 	j.workTotal.Store(total)
@@ -391,8 +396,8 @@ func (j *Job) compare() error {
 		}
 		dr.free = free
 		if dr.need > free {
-			return fmt.Errorf("Not enough free space on the destination: %s — needs %s, has %s",
-				dr.shown, humanBytes(dr.need), humanBytes(free))
+			return fmt.Errorf("%s needs %s but has %s free. Free up space on it or choose another destination.",
+				filepath.Base(dr.shown), humanBytes(dr.need), humanBytes(free))
 		}
 	}
 	return nil
@@ -490,6 +495,13 @@ func osMsg(err error) string {
 		return inner.Error()
 	}
 	return plain + " (" + inner.Error() + ")"
+}
+
+func boolInt(b bool) int64 {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 func humanBytes(n int64) string {

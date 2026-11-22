@@ -79,6 +79,7 @@ func (s *Server) Handler() http.Handler {
 	api := http.NewServeMux()
 	api.HandleFunc("GET /api/volumes", s.handleVolumes)
 	api.HandleFunc("GET /api/browse", s.handleBrowse)
+	api.HandleFunc("GET /api/size", s.handleSize)
 	api.HandleFunc("POST /api/mkdir", s.handleMkdir)
 	api.HandleFunc("GET /api/job", s.handleJobGet)
 	api.HandleFunc("POST /api/job", s.handleJobStart)
@@ -240,12 +241,12 @@ func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
 	p = filepath.Clean(p)
 	fi, err := os.Stat(p)
 	if err != nil || !fi.IsDir() {
-		writeErr(w, http.StatusNotFound, "Folder not found: "+p)
+		writeErr(w, http.StatusNotFound, "Folder not found: "+p+". Check the spelling, or that the disk or NAS is connected.")
 		return
 	}
 	entries, err := os.ReadDir(p)
 	if err != nil {
-		writeErr(w, http.StatusForbidden, "Cannot open the folder (permission denied): "+p)
+		writeErr(w, http.StatusForbidden, "Cannot open the folder (permission denied): "+p+". Allow G-Copy to use it in System Settings › Privacy & Security, or choose another folder.")
 		return
 	}
 	dirs := []dirEntry{}
@@ -320,6 +321,57 @@ func (s *Server) handleJobGet(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, j.Snapshot())
 }
 
+// screenOptions brings options to what the screen offers today: one
+// checksum (xxHash64; MD5 could be chosen in earlier versions), and no
+// re-check of earlier copies while verification is off.
+func screenOptions(o *engine.Options) {
+	o.Algo = "xxh64"
+	if o.NoVerify {
+		o.Reverify = false
+	}
+}
+
+// handleSize adds up the files a backup of this folder would copy, so the
+// screen can warn about a destination that is too small before starting.
+func (s *Server) handleSize(w http.ResponseWriter, r *http.Request) {
+	p := r.URL.Query().Get("path")
+	if p == "" || !filepath.IsAbs(p) {
+		writeErr(w, http.StatusBadRequest, "Enter a full path (for example /Volumes/NAS/Project)")
+		return
+	}
+	root := filepath.Clean(p)
+	var bytes, files int64
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if cerr := r.Context().Err(); cerr != nil {
+			return cerr // the screen moved on
+		}
+		if err != nil {
+			if d != nil && d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if path != root && engine.IsJunk(d.Name()) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.Type().IsRegular() {
+			if fi, err := d.Info(); err == nil {
+				bytes += fi.Size()
+				files++
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		writeErr(w, http.StatusServiceUnavailable, "The size could not be worked out")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int64{"bytes": bytes, "files": files})
+}
+
 func (s *Server) handleJobStart(w http.ResponseWriter, r *http.Request) {
 	var opts engine.Options
 	if !readJSON(w, r, &opts) {
@@ -336,6 +388,7 @@ func (s *Server) handleJobStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	opts.Label, opts.Unattended = "", false // a person started this one
+	screenOptions(&opts)
 	opts.HintSpeed = s.speedHint(opts.Destinations)
 	j, err := engine.Start(opts, s.jobFinished)
 	if err != nil {

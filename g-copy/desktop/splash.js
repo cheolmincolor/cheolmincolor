@@ -24,7 +24,14 @@ function render(s) {
   }
   if (Number.isInteger(s.done)) cells.forEach((c, i) => c.classList.toggle('on', i < s.done));
   if (s.status != null) document.getElementById('status').textContent = s.status;
+  document.body.classList.toggle('failed', !!s.failed);
+  failed = !!s.failed;
 }
+// After a failed start, a click or a key closes the app.
+let failed = false;
+const closeIfFailed = () => { if (failed && window.splash) window.splash.close(); };
+window.addEventListener('click', closeIfFailed);
+window.addEventListener('keydown', closeIfFailed);
 window.renderSplash = render; // also used by the tests
 // Say "ready" (the window is shown then) only once the embedded fonts are
 // in, so the screen never appears in a fallback font first.

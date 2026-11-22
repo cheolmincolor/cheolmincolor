@@ -158,6 +158,9 @@ func (s *Server) loadSchedules() {
 	}
 	var list []*Schedule
 	if json.Unmarshal(data, &list) == nil {
+		for _, sc := range list {
+			screenOptions(&sc.Options) // schedules saved with MD5 now use xxHash64
+		}
 		s.sched.list = list
 	}
 }
@@ -369,6 +372,7 @@ func (s *Server) handleScheduleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	opts := *in.Options
 	opts.Label, opts.Unattended = "", false
+	screenOptions(&opts)
 	if err == nil {
 		err = engine.Check(opts) // the same checks as a manual start
 	}

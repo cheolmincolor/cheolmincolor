@@ -375,3 +375,75 @@ func TestTwoSourceDisks(t *testing.T) {
 		}
 	}
 }
+
+// Verification turned off: files are copied but not read back, and nothing
+// claims they were verified (no checksum report, no journal).
+func TestCopyWithoutVerification(t *testing.T) {
+	tmp := t.TempDir()
+	src, dst := filepath.Join(tmp, "A001"), filepath.Join(tmp, "NAS")
+	makeSource(t, src)
+	os.MkdirAll(dst, 0o755)
+	o := Options{Sources: []string{src}, Destinations: []string{dst}, Subfolder: true, NoVerify: true, Reverify: true}
+
+	var bytes int64
+	filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
+		if err == nil && d.Type().IsRegular() {
+			if rel, _ := filepath.Rel(src, p); !isSrcJunk(rel) {
+				fi, _ := d.Info()
+				bytes += fi.Size()
+			}
+		}
+		return nil
+	})
+	st := runJob(t, o, nil)
+	if st.Status != StatusDone || st.FilesCopied != 45 || st.FilesVerified != 0 {
+		t.Fatalf("status %s copied %d verified %d errors %+v", st.Status, st.FilesCopied, st.FilesVerified, st.Errors)
+	}
+	if st.Options.Reverify {
+		t.Error("re-verify stayed on although verification is off")
+	}
+	// the work is one read of the source and one write per destination: no read-back
+	if st.WorkTotal != bytes || st.Dests[0].WorkTotal != bytes || st.WorkDone != st.WorkTotal {
+		t.Errorf("work %d/%d, destination %d, source bytes %d", st.WorkDone, st.WorkTotal, st.Dests[0].WorkTotal, bytes)
+	}
+	sameTree(t, "destination", treeDigest(t, src, isSrcJunk), treeDigest(t, filepath.Join(dst, "A001"), isReportOrKept))
+	if m, _ := filepath.Glob(filepath.Join(dst, "A001", "*.mhl")); len(m) != 0 || len(st.Dests[0].Reports) != 0 {
+		t.Errorf("an unverified run wrote a checksum report: %v %v", m, st.Dests[0].Reports)
+	}
+	if m, _ := filepath.Glob(filepath.Join(dst, "A001", ".*"+journalSuffix)); len(m) != 0 {
+		t.Errorf("journal left: %v", m)
+	}
+	noPartials(t, dst)
+
+	// Damage on the way is NOT noticed without verification…
+	dst2 := filepath.Join(tmp, "NAS2")
+	os.MkdirAll(dst2, 0o755)
+	hook, flipped := damageHook(t, dst2, 1)
+	o2 := o
+	o2.Destinations = []string{dst2}
+	st = runJob(t, o2, hook)
+	if *flipped != 1 || st.Status != StatusDone || st.Retried != 0 {
+		t.Fatalf("flipped %d status %s retried %d", *flipped, st.Status, st.Retried)
+	}
+	// …and a later run with "re-check earlier copies" finds it.
+	o2.NoVerify, o2.Reverify = false, true
+	time.Sleep(1100 * time.Millisecond)
+	st = runJob(t, o2, nil)
+	if st.Status != StatusFailed || st.FilesFailed != 1 || st.FilesVerified != 44 {
+		t.Fatalf("re-check: status %s failed %d verified %d", st.Status, st.FilesFailed, st.FilesVerified)
+	}
+
+	// Same size, other date: the content is still compared before deciding,
+	// and only that comparison goes into a report.
+	victim := filepath.Join(dst, "A001", "CLIPS", "A001C002.mov")
+	os.Chtimes(victim, day.Add(time.Hour), day.Add(time.Hour))
+	time.Sleep(1100 * time.Millisecond)
+	st = runJob(t, o, nil)
+	if st.Status != StatusDone || st.DatesFixed != 1 || st.FilesCopied != 0 {
+		t.Fatalf("date check: status %s dates fixed %d copied %d", st.Status, st.DatesFixed, st.FilesCopied)
+	}
+	r := readMHL(t, findOne(t, filepath.Join(dst, "A001", "*.mhl")))
+	if len(r.Hashes) != 1 || r.Hashes[0].File != "CLIPS/A001C002.mov" {
+		t.Errorf("report lists %+v, want only the compared file", r.Hashes)
+	}
+}
