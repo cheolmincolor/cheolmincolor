@@ -2,7 +2,7 @@
 /**
  * 자동 업데이트.
  *
- * 1. 앱을 켤 때(그리고 6시간마다) GitHub 릴리스에서 「ledger-v1.2.3」 꼴의 새 버전이 있는지 봅니다.
+ * 1. 앱을 켤 때(그리고 6시간마다) GitHub 릴리스에서 「g-account-v1.10.0」(1.9.0 까지는 「ledger-v1.2.3」) 꼴의 새 버전이 있는지 봅니다.
  * 2. 있으면 이 컴퓨터용 zip 을 뒤에서 내려받고, 릴리스에 함께 올린 latest.json 의 SHA-256 과 맞는지 확인한 뒤 풉니다.
  * 3. 「지금 다시 시작」을 누르거나 앱을 끌 때, 작은 스크립트가 앱이 끝나기를 기다렸다가 새 앱으로 바꿉니다.
  *
@@ -15,7 +15,9 @@ const path = require('path');
 const crypto = require('crypto');
 
 const REPO = 'cheolmincolor/cheolmincolor';
-const TAG_PREFIX = 'ledger-v';
+const TAG_PREFIX = 'g-account-v';            // 1.10.0 부터의 릴리스 태그
+const OLD_TAG_PREFIX = 'ledger-v';          // 1.9.0 까지의 태그(이미 올라간 릴리스)
+const tagVersion = (tag) => { const t = String(tag); const p = [TAG_PREFIX, OLD_TAG_PREFIX].find((x) => t.startsWith(x)); return p ? t.slice(p.length) : null; };
 // 늘 최신 버전의 latest.json 을 담아 두는 릴리스. 같은 저장소에 다른 앱 릴리스가 많아도 바로 찾습니다.
 const FEED_TAG = 'ledger-updates';
 // Windows 실행 파일 이름: 새 이름과, 이름을 바꾸기 전(1.4.0 까지)의 이름
@@ -88,7 +90,7 @@ class Updater {
 
   /**
    * 가장 새 버전: { version, manifest, zipUrl(file) }.
-   * 1) 고정 주소(ledger-updates/latest.json) 2) 없으면 릴리스 목록에서 ledger-v* 를 찾습니다(1.1.0 때 방식).
+   * 1) 고정 주소(ledger-updates/latest.json) 2) 없으면 릴리스 목록에서 g-account-v*·ledger-v* 를 찾습니다(1.1.0 때 방식).
    */
   async findLatest() {
     try {
@@ -99,8 +101,8 @@ class Updater {
     }
     const releases = await this.getJson(this.api);
     const best = releases
-      .filter((r) => !r.draft && !r.prerelease && String(r.tag_name).startsWith(TAG_PREFIX))
-      .map((r) => ({ r, v: r.tag_name.slice(TAG_PREFIX.length) }))
+      .filter((r) => !r.draft && !r.prerelease && tagVersion(r.tag_name) !== null)
+      .map((r) => ({ r, v: tagVersion(r.tag_name) }))
       .filter((x) => isVersion(x.v))
       .sort((a, b) => (newer(a.v, b.v) ? -1 : newer(b.v, a.v) ? 1 : 0))[0];
     if (!best) return null;
@@ -315,4 +317,4 @@ class Updater {
   }
 }
 
-module.exports = { Updater, newer, TAG_PREFIX, FEED_TAG, REPO };
+module.exports = { Updater, newer, TAG_PREFIX, OLD_TAG_PREFIX, FEED_TAG, REPO };

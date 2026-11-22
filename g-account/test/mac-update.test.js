@@ -23,11 +23,11 @@ test('Mac: 진짜 앱으로 업데이트 → 서명 유지', { skip: !(ZIP && TA
   execFileSync('/usr/bin/ditto', ['-x', '-k', ZIP, TARGET_DIR]);
   fs.writeFileSync(path.join(bundle, 'Contents', 'OLD_VERSION_MARKER'), 'old');
 
-  const DL = 'https://github.com/cheolmincolor/cheolmincolor/releases/download/ledger-v99.0.0/';
+  const DL = 'https://github.com/cheolmincolor/cheolmincolor/releases/download/g-account-v99.0.0/';
   const manifest = { version: '99.0.0', notes: '', files: { 'darwin-arm64': { name, size: zip.length, sha256: crypto.createHash('sha256').update(zip).digest('hex') } } };
   const fakeFetch = async (url) => {
     if (url.startsWith('https://api.github.com/')) {
-      return { ok: true, json: async () => [{ tag_name: 'ledger-v99.0.0', draft: false, prerelease: false,
+      return { ok: true, json: async () => [{ tag_name: 'g-account-v99.0.0', draft: false, prerelease: false,
         assets: [{ name: 'latest.json', browser_download_url: DL + 'latest.json' }, { name, browser_download_url: DL + name }] }] };
     }
     if (url === DL + 'latest.json') return { ok: true, json: async () => manifest };

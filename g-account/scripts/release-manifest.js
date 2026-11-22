@@ -1,6 +1,6 @@
 'use strict';
 // 릴리스에 함께 올릴 latest.json 을 만듭니다: 버전, 바뀐 점(CHANGELOG.md), 컴퓨터별 zip 의 크기·SHA-256.
-//   node scripts/release-manifest.js dist [https://github.com/…/releases/download/ledger-v1.2.0/] > latest.json
+//   node scripts/release-manifest.js dist [https://github.com/…/releases/download/g-account-v1.10.0/] > latest.json
 // 두 번째 인자(내려받을 주소의 앞부분)를 주면 파일마다 url 을 넣습니다. 고정 주소(ledger-updates)의 latest.json 에 필요합니다.
 const fs = require('fs');
 const path = require('path');

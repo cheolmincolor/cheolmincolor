@@ -251,7 +251,7 @@ npm run icons              # build/icon.svg 로 아이콘 다시 만들기
 GitHub에 올리면 Actions가 테스트하고 Mac·Windows용 zip을 만듭니다(`.github/workflows/g-account.yml`).
 
 **새 버전 내기**: `package.json`의 `version`을 올리고 `CHANGELOG.md` 맨 위에 그 버전의 바뀐 점을 적어 올리면,
-Actions가 테스트·빌드 뒤 릴리스 `ledger-v버전`을 만들고 zip 3개와 `latest.json`(크기·SHA-256·바뀐 점)을 올립니다.
+Actions가 테스트·빌드 뒤 릴리스 `g-account-v버전`(1.9.0까지는 `ledger-v버전`)을 만들고 zip 3개와 `latest.json`(크기·SHA-256·바뀐 점)을 올립니다.
 설치된 앱은 이 릴리스를 보고 스스로 업데이트합니다. 버전을 올리지 않으면 릴리스는 만들지 않습니다.
 
 | 위치 | 내용 |
