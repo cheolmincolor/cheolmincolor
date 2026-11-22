@@ -110,6 +110,7 @@ def launch_watch():
     while app.SPLASH is None or not app.LAUNCH["t_shown"]:
         time.sleep(0.01)
     num = BrowserView.instances[app.SPLASH.uid].window.windowNumber()
+    threading.Thread(target=control_window, daemon=True).start()
     for _ in range(60):  # 화면이 실제로 그려진 뒤(배경 #121212)의 로딩 중간 모습
         time.sleep(0.05)
         if app.LAUNCH["done"]:
@@ -126,6 +127,38 @@ def launch_watch():
             break
 
 
+CONTROL = {}
+
+
+def control_window():
+    """대조 실험: 런치 창이 보이는 순간, 웹뷰가 없는 빈 회색 창을 띄워 화면에 찍히기까지 걸리는 시간을 잼.
+    이 창도 늦게 찍히면 앱이 아니라 이 맥(가상 머신)의 화면 처리 지연이다."""
+    import AppKit
+    from PyObjCTools import AppHelper
+
+    def make():
+        w = AppKit.NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
+            AppKit.NSMakeRect(40, 40, 200, 120), AppKit.NSWindowStyleMaskBorderless, AppKit.NSBackingStoreBuffered, False)
+        w.setBackgroundColor_(AppKit.NSColor.colorWithSRGBRed_green_blue_alpha_(0.5, 0.5, 0.5, 1))
+        w.setReleasedWhenClosed_(False)
+        w.orderFrontRegardless()
+        CONTROL["win"], CONTROL["t0"] = w, time.time()
+    AppHelper.callAfter(make)
+    while "win" not in CONTROL:
+        time.sleep(0.01)
+    num = CONTROL["win"].windowNumber()
+    for _ in range(100):
+        try:
+            img = capture_window(num, os.path.join(OUT, "control.png"))
+            if abs(gray_at(img, 100, 60)[0] - 128) <= 12:
+                CONTROL["sec"] = time.time() - CONTROL["t0"]
+                break
+        except Exception:
+            pass
+        time.sleep(0.1)
+    AppHelper.callAfter(lambda: CONTROL["win"].close())
+
+
 def launch_hook():
     from webview.platforms.cocoa import BrowserView
     w = BrowserView.instances[app.SPLASH.uid].window
@@ -140,6 +173,18 @@ def launch_hook():
         step(f"런치 캡처{tag}: 배경 {bg}, 창 보임 {bool(w.isVisible())}, 가려짐 없음 {bool(w.occlusionState() & 2)}, "
              f"앱 활성 {bool(AppKit.NSApp.isActive())}, 맨 앞 앱 {front.localizedName() if front else None}, 창 층 {w.level()}")
         return img, bg
+    # 런치 창이 보인 뒤 내용이 실제로 화면에 찍히기까지 걸린 시간 (최대 10초 기다리며 0.1초마다 확인)
+    t_first = None
+    for _ in range(100):
+        im_ = capture_window(w.windowNumber(), os.path.join(OUT, "launch_probe.png"))
+        s_ = Quartz.CGImageGetWidth(im_) / 640
+        if gray_at(im_, (40 + 10 * (530 / 11 + 3) + 265 / 11) * s_, 341 * s_)[0] >= 250:
+            t_first = time.time() - app.LAUNCH["t_shown"]
+            break
+        time.sleep(0.1)
+    LAUNCH_SHOTS["t_paint"] = t_first
+    step(f"런치 창 표시 후 내용이 찍히기까지: {t_first if t_first is None else round(t_first, 2)}초 (런치가 끝난 시점 {time.time() - app.LAUNCH['t_shown']:.2f}초) · "
+         f"빈 대조 창이 찍히기까지: {round(CONTROL['sec'], 2) if 'sec' in CONTROL else '10초 넘음'}초")
     img, bg = diag("")
     sc_ = Quartz.CGImageGetWidth(img) / 640
     white = gray_at(img, (40 + 10 * (530 / 11 + 3) + 265 / 11) * sc_, 341 * sc_)[0]  # 존 X 칸(#FFFFFF)이 그려졌는지
