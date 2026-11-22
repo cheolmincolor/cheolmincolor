@@ -529,6 +529,26 @@ def show_splash():
     """런치 창을 보이게 함. 글꼴이 로드되고 화면 내용이 준비된 뒤에 부름 (빈 창이 먼저 보이지 않게)."""
     if SPLASH is not None and not LAUNCH["t_shown"]:
         LAUNCH["t_shown"] = time.time()
+        if sys.platform == "darwin":
+            # 웹 화면의 첫 프레임이 창에 올라오기 전에는 웹뷰가 검은 바탕을 그림 → 바탕을 투명하게 해서
+            # 그동안에도 창 배경(#121212)이 보이게 함 (검은 화면이 번쩍이지 않게)
+            try:
+                from PyObjCTools import AppHelper
+                from webview.platforms.cocoa import BrowserView
+
+                def clear_bg():
+                    try:
+                        wv = BrowserView.instances[SPLASH.uid].webview
+                        for key, val in (("drawsBackground", False), ("drawsTransparentBackground", True)):
+                            try:
+                                wv.setValue_forKey_(val, key)
+                            except Exception:
+                                pass
+                    except Exception as e:
+                        log("launch background:", e)
+                AppHelper.callAfter(clear_bg)
+            except Exception as e:
+                log("launch background:", e)
         SPLASH.show()
 
 

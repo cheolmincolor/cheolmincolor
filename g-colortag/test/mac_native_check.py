@@ -141,7 +141,10 @@ def launch_hook():
              f"앱 활성 {bool(AppKit.NSApp.isActive())}, 맨 앞 앱 {front.localizedName() if front else None}, 창 층 {w.level()}")
         return img, bg
     img, bg = diag("")
-    if abs(bg - 18) > 3:  # 검게 찍힘: 전체 화면도 남기고, 앱을 앞으로 가져온 뒤 다시 찍어 원인 확인
+    sc_ = Quartz.CGImageGetWidth(img) / 640
+    white = gray_at(img, (40 + 10 * (530 / 11 + 3) + 265 / 11) * sc_, 341 * sc_)[0]  # 존 X 칸(#FFFFFF)이 그려졌는지
+    step(f"런치 캡처: 존 X 칸 밝기 {white} (내용이 그려졌으면 255)")
+    if abs(bg - 18) > 3 or white < 250:  # 검게 찍혔거나 내용이 아직 안 그려짐: 전체 화면도 남기고, 앱을 앞으로 가져온 뒤 다시 찍어 원인 확인
         subprocess.run(["screencapture", "-x", os.path.join(OUT, "launch_fullscreen_when_black.png")])
         from PyObjCTools import AppHelper
         AppHelper.callAfter(lambda: AppKit.NSApp.activateIgnoringOtherApps_(True))
