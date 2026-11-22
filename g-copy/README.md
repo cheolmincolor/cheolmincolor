@@ -108,7 +108,7 @@ go build -o gcopy .
 | Put files in a folder named after the source | 켜짐 | `대상/원본이름/` 안에 복사합니다. 끄면 대상 폴더에 바로 복사합니다. 원본이 둘 이상이면 항상 켜집니다 |
 | Also re-check files copied earlier (slower) | 꺼짐 | 건너뛸 파일도 원본과 대상을 모두 읽어 체크섬을 비교합니다. 다르면 보고만 하고 덮어쓰지 않습니다. 검증 스위치가 꺼져 있으면 함께 꺼집니다 |
 | Sync | 꺼짐 | 원본에 없는 파일을 대상에서 정리해, 대상이 원본과 똑같아지게 합니다 |
-| Verify every copied file (recommended) | 켜짐 | 복사한 파일을 대상 디스크에서 다시 읽어 체크섬(xxHash64)으로 확인합니다. **끄면 검증 없이 복사합니다**: 화면에 주의 표시가 뜨고, 결과는 "Copied, not verified"로 표시되며, 그 파일들은 체크섬 리포트(MHL)에 들어가지 않습니다. 나중에 스위치를 켜고 "Also re-check…"를 선택해 다시 실행하면 확인됩니다. 체크섬 방식은 xxHash64 하나입니다 (이전 버전에서 MD5로 저장한 예약·설정은 xxHash64로 넘어갑니다) |
+| Verify every copied file (recommended) | 켜짐 | 복사한 파일을 대상 디스크에서 다시 읽어 체크섬(xxHash64)으로 확인합니다. **끄면 검증 없이 복사합니다**: 화면에 주의 표시가 뜨고, 결과는 "Copied, not verified"로 표시되며, 그 파일들은 체크섬 리포트(MHL)에 들어가지 않습니다. 검증 없이 복사한 파일은 대상 폴더의 숨은 목록(`.gcopy-unverified`)에 기억해 둡니다. 스위치를 켜고 다시 실행하면 그 파일들을 자동으로 다시 읽어 확인하고, 원본과 다른 파일은 다시 복사합니다(다른 파일은 지우지 않고 `_G-Copy_Replaced`에 보관). 확인되지 않은 파일이 남아 있는 동안에는 "Up to date" 대신 주의 표시가 나옵니다. 체크섬 방식은 xxHash64 하나입니다 (이전 버전에서 MD5로 저장한 예약·설정은 xxHash64로 넘어갑니다) |
 
 ## 동기화
 

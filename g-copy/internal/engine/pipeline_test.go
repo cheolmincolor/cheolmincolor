@@ -415,35 +415,119 @@ func TestCopyWithoutVerification(t *testing.T) {
 	}
 	noPartials(t, dst)
 
-	// Damage on the way is NOT noticed without verification…
-	dst2 := filepath.Join(tmp, "NAS2")
-	os.MkdirAll(dst2, 0o755)
-	hook, flipped := damageHook(t, dst2, 1)
-	o2 := o
-	o2.Destinations = []string{dst2}
-	st = runJob(t, o2, hook)
-	if *flipped != 1 || st.Status != StatusDone || st.Retried != 0 {
-		t.Fatalf("flipped %d status %s retried %d", *flipped, st.Status, st.Retried)
+	// The destination remembers that these copies were never verified.
+	if st.Dests[0].Unverified != 45 {
+		t.Errorf("unverified count %d, want 45", st.Dests[0].Unverified)
 	}
-	// …and a later run with "re-check earlier copies" finds it.
-	o2.NoVerify, o2.Reverify = false, true
-	time.Sleep(1100 * time.Millisecond)
-	st = runJob(t, o2, nil)
-	if st.Status != StatusFailed || st.FilesFailed != 1 || st.FilesVerified != 44 {
-		t.Fatalf("re-check: status %s failed %d verified %d", st.Status, st.FilesFailed, st.FilesVerified)
+	if _, err := os.Stat(filepath.Join(dst, "A001", unverifiedName)); err != nil {
+		t.Errorf("no list of unverified copies: %v", err)
+	}
+	// Another unverified run: nothing to copy, and still not "verified".
+	st = runJob(t, o, nil)
+	if st.Status != StatusDone || st.FilesSkipped != 45 || st.Dests[0].Unverified != 45 {
+		t.Fatalf("second unverified run: %s skipped %d unverified %d", st.Status, st.FilesSkipped, st.Dests[0].Unverified)
 	}
 
 	// Same size, other date: the content is still compared before deciding,
-	// and only that comparison goes into a report.
+	// and only that comparison goes into a report. That file is verified now.
 	victim := filepath.Join(dst, "A001", "CLIPS", "A001C002.mov")
 	os.Chtimes(victim, day.Add(time.Hour), day.Add(time.Hour))
 	time.Sleep(1100 * time.Millisecond)
 	st = runJob(t, o, nil)
-	if st.Status != StatusDone || st.DatesFixed != 1 || st.FilesCopied != 0 {
-		t.Fatalf("date check: status %s dates fixed %d copied %d", st.Status, st.DatesFixed, st.FilesCopied)
+	if st.Status != StatusDone || st.DatesFixed != 1 || st.FilesCopied != 0 || st.Dests[0].Unverified != 44 {
+		t.Fatalf("date check: status %s dates fixed %d copied %d unverified %d", st.Status, st.DatesFixed, st.FilesCopied, st.Dests[0].Unverified)
 	}
 	r := readMHL(t, findOne(t, filepath.Join(dst, "A001", "*.mhl")))
 	if len(r.Hashes) != 1 || r.Hashes[0].File != "CLIPS/A001C002.mov" {
 		t.Errorf("report lists %+v, want only the compared file", r.Hashes)
+	}
+}
+
+// A copy made without verification that is not what the source holds is
+// found by the next run with verification on (no extra option needed),
+// replaced by a good copy, and the bad file is kept, not destroyed.
+func TestUnverifiedCopiesAreCheckedByTheNextVerifiedRun(t *testing.T) {
+	tmp := t.TempDir()
+	src, dst := filepath.Join(tmp, "A001"), filepath.Join(tmp, "NAS")
+	makeSource(t, src)
+	os.MkdirAll(dst, 0o755)
+	o := Options{Sources: []string{src}, Destinations: []string{dst}, Subfolder: true, NoVerify: true}
+	// one copy is damaged on the way, unnoticed
+	hook, flipped := damageHook(t, dst, 1)
+	st := runJob(t, o, hook)
+	if *flipped != 1 || st.Status != StatusDone || st.Retried != 0 || st.Dests[0].Unverified != 45 {
+		t.Fatalf("unverified run: flipped %d status %s retried %d unverified %d", *flipped, st.Status, st.Retried, st.Dests[0].Unverified)
+	}
+	bad := filepath.Join(dst, "A001", "CLIPS", "A001C001.mov")
+	damaged, _ := os.ReadFile(bad)
+	good, _ := os.ReadFile(filepath.Join(src, "CLIPS", "A001C001.mov"))
+	if bytes.Equal(damaged, good) {
+		t.Fatal("test setup: the copy is not damaged")
+	}
+
+	// verification on, nothing else ticked
+	o.NoVerify = false
+	time.Sleep(1100 * time.Millisecond)
+	st = runJob(t, o, nil)
+	if st.Status != StatusDone || st.FilesCopied != 1 || st.FilesVerified != 44 || st.FilesSkipped != 0 || st.Dests[0].Unverified != 0 || st.Dests[0].Replaced != 1 {
+		t.Fatalf("verified run: status %s copied %d re-checked %d skipped %d unverified %d replaced %d errors %+v",
+			st.Status, st.FilesCopied, st.FilesVerified, st.FilesSkipped, st.Dests[0].Unverified, st.Dests[0].Replaced, st.Errors)
+	}
+	if len(st.Warnings) != 1 || !strings.Contains(st.Warnings[0], "1 file copied earlier without verification differed from the source and was copied again. The differing file was kept") {
+		t.Errorf("warnings: %v", st.Warnings)
+	}
+	// the destination is now identical to the source…
+	sameTree(t, "destination", treeDigest(t, src, isSrcJunk), treeDigest(t, filepath.Join(dst, "A001"), isReportOrKept))
+	// …the differing file was kept aside…
+	kept := findOne(t, filepath.Join(dst, ReplacedDirName, "*", "A001", "CLIPS", "A001C001.mov"))
+	if got, _ := os.ReadFile(kept); !bytes.Equal(got, damaged) {
+		t.Error("the kept file is not the one that was there")
+	}
+	// …every file is in the report, and the list of unverified copies is gone.
+	if n := len(readMHL(t, findOne(t, filepath.Join(dst, "A001", "*.mhl"))).Hashes); n != 45 {
+		t.Errorf("report lists %d files, want 45", n)
+	}
+	if _, err := os.Stat(filepath.Join(dst, "A001", unverifiedName)); !os.IsNotExist(err) {
+		t.Errorf("the list of unverified copies is still there: %v", err)
+	}
+	// From here on it is an ordinary, verified backup.
+	time.Sleep(1100 * time.Millisecond)
+	st = runJob(t, o, nil)
+	if st.WorkTotal != 0 || st.FilesSkipped != 45 || st.Dests[0].Unverified != 0 {
+		t.Errorf("third run: work %d skipped %d unverified %d", st.WorkTotal, st.FilesSkipped, st.Dests[0].Unverified)
+	}
+}
+
+// The list survives the app being killed, and sync mode leaves it alone.
+func TestUnverifiedListSurvivesAndIsNotBackedUp(t *testing.T) {
+	tmp := t.TempDir()
+	src, dst := filepath.Join(tmp, "A001"), filepath.Join(tmp, "NAS")
+	writeFile(t, filepath.Join(src, "a.mov"), []byte("aaaa"), day)
+	writeFile(t, filepath.Join(src, "b.mov"), []byte("bbbb"), day)
+	os.MkdirAll(dst, 0o755)
+	testNoReports = true // ends like a crash: nothing is tidied up at the end
+	st := runJob(t, Options{Sources: []string{src}, Destinations: []string{dst}, Subfolder: true, NoVerify: true}, nil)
+	testNoReports = false
+	if st.FilesCopied != 2 {
+		t.Fatalf("copied %d", st.FilesCopied)
+	}
+	l := loadUnverified(filepath.Join(dst, "A001"))
+	if len(l.items) != 2 {
+		t.Fatalf("list after a crash: %v", l.items)
+	}
+	// a file that was replaced by hand since is no longer listed
+	os.WriteFile(filepath.Join(dst, "A001", "b.mov"), []byte("longer now"), 0o644)
+	if l := loadUnverified(filepath.Join(dst, "A001")); len(l.items) != 1 {
+		t.Errorf("list after the file changed: %v", l.items)
+	}
+	// backing the destination up elsewhere does not carry the list along
+	other := filepath.Join(tmp, "OTHER")
+	os.MkdirAll(other, 0o755)
+	runJob(t, Options{Sources: []string{filepath.Join(dst, "A001")}, Destinations: []string{other}, Subfolder: true}, nil)
+	if _, err := os.Stat(filepath.Join(other, "A001", unverifiedName)); !os.IsNotExist(err) {
+		t.Error("the list was copied as if it were media")
+	}
+	if !IsJunk(unverifiedName) {
+		t.Error("not treated as a housekeeping file")
 	}
 }

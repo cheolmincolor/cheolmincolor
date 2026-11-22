@@ -46,6 +46,8 @@ type LastRun struct {
 	Copied  int64     `json:"copied"`
 	Failed  int64     `json:"failed"`
 	Removed int64     `json:"removed"`
+	// Unverified: files were copied with verification turned off.
+	Unverified bool `json:"unverified,omitempty"`
 }
 
 // Schedule is one saved, repeating backup.
@@ -296,7 +298,8 @@ func (s *Server) jobFinished(st engine.State) {
 			s.sched.running = ""
 		}
 		if sc := s.findSchedule(id); sc != nil {
-			last := &LastRun{At: s.now(), Status: string(st.Status), Message: st.Message, JobID: st.ID, Copied: st.FilesCopied, Failed: st.FilesFailed}
+			last := &LastRun{At: s.now(), Status: string(st.Status), Message: st.Message, JobID: st.ID, Copied: st.FilesCopied, Failed: st.FilesFailed,
+				Unverified: st.Options.NoVerify && st.FilesCopied > 0}
 			for _, d := range st.Dests {
 				last.Removed += d.Removed
 			}

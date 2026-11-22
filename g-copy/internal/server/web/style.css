@@ -174,7 +174,8 @@ body:not(.native) .native-only { display: none; }
 #app[data-mode="finished"] :is(.setup-only, .run-only, .confirm-only) { display: none; }
 
 #setup-bar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px 24px; align-items: center; }
-#setup-bar .go { display: flex; gap: 8px; align-items: center; }
+#setup-bar .go { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; align-items: center; }
+#setup-bar .go .verify-warn { flex: 1 1 100%; }
 .opts { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center; color: var(--muted); }
 .check { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
 .check input { width: 15px; height: 15px; margin: 0; accent-color: #E0E0E0; }
@@ -380,6 +381,7 @@ dialog::backdrop { background: rgba(0, 0, 0, .6); }
   .lane-gap .ico { transform: rotate(90deg); }
   #setup-bar { grid-template-columns: minmax(0, 1fr); }
   #setup-bar .go { flex-direction: column-reverse; align-items: stretch; }
+  #setup-bar .go .verify-warn { order: 3; flex: none; } /* column-reverse: the highest order is on top, above Start */
   .verdict { flex-wrap: wrap; }
   .verdict-actions { width: 100%; }
   .verdict-actions .btn { flex: 1; }

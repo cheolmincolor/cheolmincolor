@@ -85,7 +85,7 @@ async function stopEngine() {
 
 function engineDied(code) {
   if (shuttingDown) return;
-  dialog.showErrorBox('G-Copy', 'The backup engine stopped unexpectedly (code ' + code + ').\nPlease open G-Copy again. Files that were already verified are safe on the destination.');
+  dialog.showErrorBox('G-Copy', 'The backup engine stopped unexpectedly (code ' + code + ').\nPlease open G-Copy again. Files that were already copied completely stay on the destination.');
   shuttingDown = true;
   app.quit();
 }
@@ -143,7 +143,7 @@ function askStopBackup() {
     defaultId: 0,
     cancelId: 0,
     message: 'A backup is in progress',
-    detail: 'Quitting now stops the copy. Files already verified stay on the destination, and running the same backup again continues where it left off.',
+    detail: 'Quitting now stops the copy. Files that are already complete stay on the destination, and running the same backup again continues where it left off.',
   };
   return (win ? dialog.showMessageBoxSync(win, box) : dialog.showMessageBoxSync(box)) === 1;
 }
@@ -380,7 +380,15 @@ async function launch() {
       app.quit();
       return;
     }
-    screen.failed(launchProblem(e)); // stays on screen until a click or a key closes G-Copy
+    // Stays on screen until a click or a key. Then G-Copy ends at once: an
+    // engine that hangs must not keep the app (and its single-instance
+    // lock) alive, or "open it again" would do nothing.
+    screen.onFailedClose = () => {
+      shuttingDown = true;
+      try { if (engine && engine.exitCode === null) engine.kill('SIGKILL'); } catch { /* already gone */ }
+      app.exit(1);
+    };
+    screen.failed(launchProblem(e));
     if (selfTest) { await screen.capture(selfTest); app.exit(1); }
   }
 }

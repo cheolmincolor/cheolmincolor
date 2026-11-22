@@ -100,7 +100,7 @@ func isSrcJunk(rel string) bool {
 }
 
 func isReportOrKept(rel string) bool {
-	return strings.HasSuffix(rel, ".mhl") || strings.HasPrefix(filepath.ToSlash(rel), ReplacedDirName+"/")
+	return strings.HasSuffix(rel, ".mhl") || strings.HasPrefix(filepath.ToSlash(rel), ReplacedDirName+"/") || filepath.Base(rel) == unverifiedName
 }
 
 func sameTree(t *testing.T, what string, want, got map[string]string) {

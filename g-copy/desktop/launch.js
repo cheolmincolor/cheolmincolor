@@ -63,7 +63,11 @@ class Launch {
     this.push();
     if (!this.win || this.win.isDestroyed()) return;
     const wc = this.win.webContents;
-    const onClose = (e) => { if (e.sender === wc && this.state.failed) { ipcMain.off('splash-close', onClose); app.quit(); } };
+    const onClose = (e) => {
+      if (e.sender !== wc || !this.state.failed) return;
+      ipcMain.off('splash-close', onClose);
+      if (this.onFailedClose) this.onFailedClose(); else app.exit(1);
+    };
     ipcMain.on('splash-close', onClose);
   }
 

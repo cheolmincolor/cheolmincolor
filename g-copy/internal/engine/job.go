@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -31,6 +32,10 @@ type destRun struct {
 	datesFixed                                           atomic.Int64
 	consecFails                                          atomic.Int32
 	dead                                                 atomic.Bool
+
+	unverified []*unvList   // per source: copies made without verification (see unverified.go)
+	pending    atomic.Int64 // how many such copies are on this destination, still unchecked
+	healed     atomic.Int64 // of those, how many differed and were copied again
 
 	dirs         sync.Map    // folders known to exist on this destination
 	noExclRename atomic.Bool // the volume cannot rename-unless-exists
@@ -340,6 +345,18 @@ func cleanMsg(err error) string {
 // writeReports stores one hash list per destination and source, covering
 // the files this run copied or re-verified.
 func (j *Job) writeReports() {
+	for _, dr := range j.dests {
+		seen := map[*unvList]bool{}
+		for _, l := range dr.unverified {
+			if l != nil && !seen[l] {
+				seen[l] = true
+				l.save()
+			}
+		}
+		if n := dr.healed.Load(); n > 0 {
+			j.warnOnce("healed:"+dr.path, fmt.Sprintf("%s: %s copied earlier without verification differed from the source and %s copied again. The differing %s kept in %s.", dr.shown, countFiles(n), wasWere(n), map[bool]string{true: "file was", false: "files were"}[n == 1], ReplacedDirName))
+		}
+	}
 	if testNoReports {
 		// a test simulating a crash: the run ends without its reports
 		for _, dr := range j.dests {
@@ -467,7 +484,7 @@ func (j *Job) Snapshot() State {
 		ds := DestState{
 			Path: dr.shown, Copied: dr.copied.Load(), Reverified: dr.reverified.Load(),
 			Replaced: dr.replaced.Load(), Failed: dr.failed.Load(), Bytes: dr.bytes.Load(),
-			DatesFixed: dr.datesFixed.Load(), Network: dr.network,
+			DatesFixed: dr.datesFixed.Load(), Network: dr.network, Unverified: dr.pending.Load(),
 			Stopped: dr.dead.Load(), Reports: []string{}, Folders: append([]string{}, dr.bases...),
 		}
 		ds.RemoveList = []string{}
@@ -490,4 +507,18 @@ func (j *Job) Snapshot() State {
 		st.Dests = append(st.Dests, ds)
 	}
 	return st
+}
+
+func countFiles(n int64) string {
+	if n == 1 {
+		return "1 file"
+	}
+	return fmt.Sprintf("%d files", n)
+}
+
+func wasWere(n int64) string {
+	if n == 1 {
+		return "was"
+	}
+	return "were"
 }

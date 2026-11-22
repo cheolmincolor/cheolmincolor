@@ -29,7 +29,7 @@
   <div class="brand">
     <img class="logo" src="icon.png" alt="" width="30" height="30">
     <h1>G-Copy</h1>
-    <span class="tagline">Copy · Verify · Copies only what is new</span>
+    <span class="tagline" id="tagline">Copy · Verify · Copies only what is new</span>
   </div>
   <div class="top-actions">
     <span class="gz-mark">© GRAY ZONE</span>
@@ -86,10 +86,10 @@
       <label class="verify"><span class="switch"><input type="checkbox" id="opt-verify" checked><span></span></span><span>Verify every copied file (recommended)<small>xxHash64 checksum</small></span></label>
     </div>
     <div class="go">
+      <p class="verify-warn" id="verify-warn" role="status" hidden><svg class="ico" aria-hidden="true"><use href="#i-alert"/></svg>Files will be copied without verification.</p>
       <button class="btn ghost" id="btn-save-sched" type="button" disabled>Save as Schedule…</button>
       <button class="btn primary big" id="btn-start" type="button" disabled>Start Backup</button>
     </div>
-    <p class="verify-warn" id="verify-warn" role="status" hidden><svg class="ico" aria-hidden="true"><use href="#i-alert"/></svg>Files will be copied without verification.</p>
     <p class="hint" id="hint"></p>
     <p class="hint mirror-hint" id="mirror-hint" hidden>Sync: files deleted from the source are not deleted from the destination but moved to its <b>_G-Copy_Removed</b> folder. You see the list before anything is moved.</p>
     <p class="formerr" id="start-err" role="alert" hidden></p>

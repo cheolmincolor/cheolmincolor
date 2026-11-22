@@ -99,8 +99,9 @@ type DestState struct {
 	Failed        int64    `json:"failed"`
 	Bytes         int64    `json:"bytes"`
 	Stopped       bool     `json:"stopped"`
-	Network       bool     `json:"network"`  // a network share
-	ToRemove      int64    `json:"toRemove"` // sync: files found that the source no longer has
+	Network       bool     `json:"network"`    // a network share
+	Unverified    int64    `json:"unverified"` // files here that were copied without verification and not checked since
+	ToRemove      int64    `json:"toRemove"`   // sync: files found that the source no longer has
 	ToRemoveBytes int64    `json:"toRemoveBytes"`
 	RemoveList    []string `json:"removeList"` // their names (at most maxRemoveList)
 	Removed       int64    `json:"removed"`    // moved to _G-Copy_Removed

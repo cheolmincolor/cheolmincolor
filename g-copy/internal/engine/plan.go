@@ -37,10 +37,11 @@ const (
 	actReverify               // up to date, re-hash requested
 	actBlocked                // cannot be written (reported as an error)
 	actCheck                  // same size, different date: compare the content
+	actPending                // looks up to date, but was copied without verification: compare the content
 )
 
 func (a action) active() bool {
-	return a == actCopy || a == actReplace || a == actReverify || a == actCheck
+	return a == actCopy || a == actReplace || a == actReverify || a == actCheck || a == actPending
 }
 
 var junkNames = map[string]bool{
@@ -63,7 +64,8 @@ func IsJunk(name string) bool {
 		strings.HasPrefix(name, "._") ||
 		strings.HasPrefix(name, ".Trash-") ||
 		strings.HasSuffix(name, partialSuffix) ||
-		strings.HasSuffix(name, journalSuffix)
+		strings.HasSuffix(name, journalSuffix) ||
+		name == unverifiedName
 }
 
 // tempName is the name a file carries while it is copied and verified.
@@ -330,9 +332,16 @@ func (j *Job) compare() error {
 
 	for d, dr := range j.dests {
 		baseExists := make([]bool, len(dr.bases))
+		dr.unverified = make([]*unvList, len(dr.bases))
+		lists := map[string]*unvList{} // without subfolders, sources share one folder and one list
 		for s, b := range dr.bases {
 			_, err := os.Stat(b)
 			baseExists[s] = err == nil
+			if lists[b] == nil {
+				lists[b] = loadUnverified(b)
+				dr.pending.Add(int64(len(lists[b].items)))
+			}
+			dr.unverified[s] = lists[b]
 		}
 		var next atomic.Int64
 		var wg sync.WaitGroup
@@ -372,7 +381,7 @@ func (j *Job) compare() error {
 				dr.workTotal.Add(j.destWorkFor(a, f.size)) // written, then read back
 				reads += boolInt(j.readsBack(a))
 				active++
-			case actReverify, actCheck:
+			case actReverify, actCheck, actPending:
 				dr.workTotal.Add(f.size) // read back only
 				reads++
 				active++
@@ -424,6 +433,9 @@ func (j *Job) decide(dr *destRun, f *srcFile) action {
 	case fi.Size() != f.size:
 		return actReplace
 	case diff <= mtimeTolerance:
+		if !j.opts.NoVerify && dr.unverified[f.src].has(filepath.ToSlash(f.rel), f.size, f.modTime) {
+			return actPending // never verified: do it now, and replace it if it differs
+		}
 		if j.opts.Reverify {
 			return actReverify
 		}

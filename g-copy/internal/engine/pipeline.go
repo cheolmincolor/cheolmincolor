@@ -496,9 +496,14 @@ func (j *Job) processFile(i, weight int) {
 					w.tmp = ""
 				}
 				switch {
-				case w.act == actCheck && isMismatch(w.err):
-					// Same size, different date and different content:
-					// the file was edited. Copy it, keeping the old one.
+				case (w.act == actCheck || w.act == actPending) && isMismatch(w.err):
+					// actCheck: same size, different date and different content:
+					// the file was edited. actPending: a copy that was never
+					// verified is not what the source holds. Either way: copy
+					// it, keeping the file that is there.
+					if w.act == actPending {
+						dr.healed.Add(1)
+					}
 					w.act = actReplace
 					w.reset()
 					again = append(again, w)
@@ -523,7 +528,7 @@ func (j *Job) processFile(i, weight int) {
 				dr.copied.Add(1)
 				dr.replaced.Add(1)
 				copied = true
-			case actReverify:
+			case actReverify, actPending:
 				dr.reverified.Add(1)
 				verified = true
 			case actCheck:
@@ -531,8 +536,16 @@ func (j *Job) processFile(i, weight int) {
 				dr.datesFixed.Add(1)
 				j.datesFixed.Add(1)
 			}
+			lrel := filepath.ToSlash(f.rel)
 			if !j.readsBack(w.act) {
-				continue // copied without verification: not for the checksum report
+				// copied without verification: remembered, and not for the checksum report
+				if dr.unverified[f.src].add(unvEntry{File: lrel, Size: f.size, Mod: f.modTime}) {
+					dr.pending.Add(1)
+				}
+				continue
+			}
+			if dr.unverified[f.src].clear(lrel) {
+				dr.pending.Add(-1) // read back and equal to the source: verified now
 			}
 			rel, _ := filepath.Rel(dr.bases[f.src], w.final)
 			j.record(dr, f.src, mhlEntry{
@@ -722,8 +735,8 @@ func (j *Job) verifyPass(f *srcFile, works []*destWork, srcSum []byte, add func(
 				w.err = fmt.Errorf("Verification read error: %w", err)
 			case n == f.size && bytes.Equal(sum, srcSum):
 			case w.act == actReverify:
-				w.err = &mismatchError{fmt.Sprintf("The existing copy differs from the source (same size and date) — source %x, destination %x", srcSum, sum)}
-			case w.act == actCheck:
+				w.err = &mismatchError{fmt.Sprintf("The existing copy differs from the source (same size and date) — source %x, destination %x. Nothing was changed. If the source is the good one, move or delete that file on the destination, then \"Run Again\" copies it afresh.", srcSum, sum)}
+			case w.act == actCheck || w.act == actPending:
 				w.err = &mismatchError{"the content differs"} // replaced, not reported
 			default:
 				w.err = &mismatchError{fmt.Sprintf("Checksum mismatch — the copy was discarded (source %x, destination %x)", srcSum, sum)}
@@ -788,5 +801,9 @@ func createMode(m fs.FileMode) fs.FileMode {
 }
 
 func (j *Job) noDates(dr *destRun) {
-	j.warnOnce("chtimes:"+dr.path, dr.shown+": this volume does not keep modification dates. Copies are verified, but the next run has to read these files again to check them.")
+	msg := ": this volume does not keep modification dates. Copies are verified, but the next run has to read these files again to check them."
+	if j.opts.NoVerify {
+		msg = ": this volume does not keep modification dates, so the next run has to read these files again to compare them."
+	}
+	j.warnOnce("chtimes:"+dr.path, dr.shown+msg)
 }
