@@ -35,6 +35,7 @@
     font-size: 10px; line-height: 1; color: #E8E8E8; }
   .under { display: flex; justify-content: space-between; align-items: baseline; margin-top: 10px; font-size: 11px; line-height: 1;
     color: #8A8A8A; }
+  #status.err { color: #E8E8E8; }  /* 오류로 멈춘 상태: 문구를 밝게 */
   #status { flex: 1; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 12px; }
 </style>
 </head>
@@ -60,10 +61,23 @@ const cells = GRAYS.map((g, i) => {
   wedge.appendChild(c);
   return c;
 });
-let last = "";
+let last = "", failed = false, shown = false;
+const post = (name) => fetch("/api/" + name, { method: "POST", headers: { "X-Token": TOKEN, "Content-Type": "application/json" }, body: "{}" }).catch(() => {});
+function ready() {  // 글꼴이 로드되고 첫 내용이 들어간 뒤에 창을 보이게 알림 (빈 창이 먼저 보이지 않게)
+  if (shown) return;
+  shown = true;
+  post("launch_ready");
+}
+// 오류로 멈춘 상태에서는 클릭하거나 키를 누르면 앱을 닫음 (요소를 더하지 않고 동작만)
+const quitIfFailed = () => { if (failed) post("launch_quit"); };
+document.addEventListener("click", quitIfFailed);
+document.addEventListener("keydown", quitIfFailed);
 function render(st) {  // st: {cells 0–11, status, error, version, name, zone}
   cells.forEach((c, i) => { c.classList.toggle("on", i < st.cells); c.classList.toggle("mine", i === st.zone); });
-  document.getElementById("status").textContent = st.error || st.status || "";
+  const s = document.getElementById("status");
+  s.textContent = st.error || st.status || "";
+  s.classList.toggle("err", !!st.error);
+  failed = !!st.error;
   document.getElementById("ver").textContent = st.version ? "v" + st.version : "";
   document.getElementById("appName").textContent = st.name || "";
 }
@@ -73,8 +87,9 @@ async function tick() {
     const st = await r.json();
     const js = JSON.stringify(st);
     if (js !== last) { last = js; render(st); }
+    if (!shown) { Promise.race([document.fonts.ready, new Promise((r) => setTimeout(r, 1500))]).then(ready); }
     if (st.done && !st.seen) {  // 11칸이 다 채워진 화면이 실제로 그려진 뒤에 메인 창으로 넘어가게 알림
-      requestAnimationFrame(() => fetch("/api/launch_seen", { method: "POST", headers: { "X-Token": TOKEN, "Content-Type": "application/json" }, body: "{}" }).catch(() => {}));
+      requestAnimationFrame(() => post("launch_seen"));
     }
     if (st.error) return;  // 오류: 무엇이 실패했는지 적고 멈춤
   } catch (e) { /* 다음 주기에 다시 */ }

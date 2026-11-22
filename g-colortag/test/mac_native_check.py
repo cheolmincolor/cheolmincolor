@@ -258,6 +258,12 @@ def test():
             raise RuntimeError("런치 화면에서 메인 창으로 넘어가지 않음: " + app.LAUNCH["error"])
         time.sleep(1)
         INTRO_CHECKS.extend(launch_checks())
+        if os.environ.get("GCT_LAUNCH_ONLY") == "1":  # 런치 화면만 여러 번 확인할 때
+            RESULT["checks"] = INTRO_CHECKS
+            RESULT["ok"] = all(c[1] for c in INTRO_CHECKS)
+            for name, good in INTRO_CHECKS:
+                step(("✅ " if good else "❌ ") + name)
+            return
         for _ in range(100):
             if app.NV_STATE != "pending":
                 break
@@ -379,6 +385,11 @@ def test():
         step("오류: " + traceback.format_exc())
     finally:
         json.dump(RESULT, open(os.path.join(OUT, "result.json"), "w"), ensure_ascii=False, indent=2)
+        try:
+            if not app.LAUNCH["shown"] and app.SPLASH is not None:
+                app.SPLASH.destroy()
+        except Exception:
+            pass
         app.WINDOW.destroy()
 
 

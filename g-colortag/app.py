@@ -38,7 +38,19 @@ import qtplayer  # noqa: E402
 APP_NAME = "G-Retag"
 APP_SUBTITLE = "for QuickTime"
 APP_VERSION = "3.9.0"
-COPYRIGHT = "© 2026 GRAYZONE. All rights reserved."
+
+
+def build_year():
+    """저작권 연도: 코드에 적지 않고 빌드 날짜에서 읽음 (번들의 GZBuildDate, 번들 밖에서는 이 파일의 날짜)."""
+    try:
+        import plistlib as _pl
+        with open(os.path.join(HERE, "..", "Info.plist"), "rb") as f:
+            return str(_pl.load(f)["GZBuildDate"])[:4]
+    except Exception:
+        return time.strftime("%Y", time.localtime(os.path.getmtime(__file__)))
+
+
+COPYRIGHT = f"© {build_year()} GRAY ZONE. All rights reserved."
 TAGS = {"mac": (1, 2, 1), "std": (1, 1, 1)}
 SEG = 10.0          # 미리보기 구간 길이(초)
 PREVIEW_H = 720     # 미리보기 최대 세로 해상도
@@ -110,6 +122,24 @@ def register_dnd():
         log("drag and drop off:", traceback.format_exc())
 
 
+def friendly(e, doing):
+    """ffmpeg 등의 영어 오류 원문 대신, 원인과 할 일을 우리말로. 원문은 기록 파일에만 남김."""
+    raw = str(e).strip()
+    last = raw.splitlines()[-1] if raw else ""
+    if re.search(r"[가-힣]", last):  # 이 앱이 직접 쓴 문구
+        return last[:160]
+    low = raw.lower()
+    if "no such file" in low:
+        return "파일을 찾을 수 없어요. 옮기거나 지우지 않았는지, 외장 디스크가 연결되어 있는지 확인해 주세요."
+    if "permission denied" in low or "read-only" in low or "operation not permitted" in low:
+        return "이 폴더에는 저장할 수 없어요. 폴더의 쓰기 권한을 확인하거나 영상을 다른 폴더로 옮겨 주세요."
+    if "no space left" in low:
+        return "저장할 공간이 부족해요. 디스크를 비운 뒤 다시 저장해 주세요."
+    if doing == "save":
+        return "저장하지 못했어요. 파일이 깨졌거나 복사가 덜 끝났을 수 있어요. 계속되면 기록 파일을 보내 주세요."
+    return "영상을 읽지 못했어요. 파일이 깨졌거나 복사가 덜 끝났을 수 있어요."
+
+
 def check_709(tag):
     """Rec.709 계열인지. (변환해도 되는 영상인지)"""
     if tag is None:
@@ -178,7 +208,7 @@ class Previews:
                 self._build(key, job)
                 job["state"] = "done"
             except Exception as e:  # 미리보기 실패는 화면에 표시
-                job["error"] = str(e).strip().splitlines()[-1][:200] if str(e).strip() else "미리보기 실패"
+                job["error"] = friendly(e, "preview")
                 job["state"] = "error"
                 log("preview error", key, e)
 
@@ -207,7 +237,7 @@ class Core:
     def __init__(self, root):
         self.lock = threading.RLock()
         self.files, self.order = {}, []
-        self.saving, self.save_target = False, None
+        self.saving, self.save_target, self.save_total = False, None, 0
         self.previews = Previews(root, self.files)
         self.last_seen = 0.0
         self.added_seq, self.last_added = 0, []
@@ -228,7 +258,7 @@ class Core:
                 if p in known or not os.path.isfile(p):
                     continue
                 f = {"id": uuid.uuid4().hex[:10], "path": p, "gamma": None, "name": os.path.basename(p), "codec": "", "tag": None,
-                     "duration": 0.0, "ok": False, "note": "", "status": "", "result": "", "out": None, "progress": 0}
+                     "duration": 0.0, "ok": False, "note": "", "status": "", "result": "", "out": None, "progress": 0, "saved": []}
                 try:
                     tr = ct.read_tracks(p)
                 except Exception:
@@ -238,7 +268,8 @@ class Core:
                     f["duration"] = ct.read_duration(p)
                     f["ok"], f["note"] = check_709(f["tag"])
                 else:
-                    f["note"] = "MOV · MP4 영상만 열 수 있습니다"
+                    f["note"] = ("영상을 읽지 못했어요. 파일이 깨졌거나 복사가 덜 끝났을 수 있어요."
+                                 if p.lower().endswith(VIDEO_EXT) else "MOV · MP4 영상만 열 수 있습니다")
                 self.files[f["id"]] = f
                 self.order.append(f["id"])
                 known.add(p)
@@ -275,21 +306,33 @@ class Core:
             return {"files": files, "saving": self.saving, "save_target": self.save_target,
                     "seg_len": SEG, "ffmpeg": bool(shutil.which("ffmpeg")), "app": APP_NAME, "subtitle": APP_SUBTITLE,
                     "version": APP_VERSION, "update": self.updater.state(),
-                    "copyright": COPYRIGHT, "native": NV_STATE, "dnd": self.dnd,
+                    "targets": {w: len(self.targets(w)) for w in TAGS},
+                    "save_total": self.save_total, "copyright": COPYRIGHT, "native": NV_STATE, "dnd": self.dnd,
                     "added_seq": self.added_seq, "last_added": self.last_added,
                     "skip_intro": bool(self.prefs.get("skip_intro"))}
 
     # 저장
+    def targets(self, which):
+        """이 상태로 실제 저장될 영상: 열 수 있고, Rec709 이고, 이미 그 상태가 아니고, 이번에 이미 저장하지 않은 것."""
+        tag = TAGS[which]
+        out = []
+        for fid in self.order:
+            f = self.files[fid]
+            already = f["tag"] == tag and (not ct.needs_gama(tag) or f.get("gamma") == ct.MAC_GAMMA)
+            if f["codec"] and f["ok"] and not already and which not in f["saved"]:
+                out.append(fid)
+        return out
+
     def start_save(self, which):
         if which not in TAGS:
             raise ApiError("알 수 없는 태그")
         with self.lock:
             if self.saving:
                 raise ApiError("이미 저장 중입니다")
-            ids = [fid for fid in self.order if self.files[fid]["codec"]]
+            ids = self.targets(which)  # 저장을 끝낸 영상은 다시 저장하지 않음 (같은 파일이 또 생기지 않게)
             if not ids:
                 raise ApiError("저장할 영상이 없습니다")
-            self.saving, self.save_target = True, which
+            self.saving, self.save_target, self.save_total = True, which, len(ids)
             for fid in ids:
                 self.files[fid].update(status="queued", result="대기 중", progress=0)
         threading.Thread(target=self._save_worker, args=(ids, which), daemon=True).start()
@@ -334,9 +377,9 @@ class Core:
                         continue
                     note = f" · 퀵타임 ({qt}) 확인" if qt else ""
                     f.update(status="done", result=os.path.basename(out) + note, out=out, progress=100)
+                    f["saved"].append(which)
                 except Exception as e:
-                    msg = str(e).strip().splitlines()[-1] if str(e).strip() else "알 수 없는 오류"
-                    f.update(status="error", result=msg[:120])
+                    f.update(status="error", result=friendly(e, "save"))
                     log("save error", f["path"], e)
         finally:
             with self.lock:
@@ -367,6 +410,13 @@ class Core:
         if name == "launch_seen":
             LAUNCH["seen"] = True
             return {"ok": True}
+        if name == "launch_ready":  # 런치 화면: 글꼴 로드와 첫 내용 준비가 끝남 → 이제 창을 보임
+            show_splash()
+            return {"ok": True}
+        if name == "launch_quit":   # 런치 화면이 오류로 멈춘 상태에서 클릭·키 입력
+            if LAUNCH["error"]:
+                threading.Timer(0.1, lambda: os._exit(1)).start()
+            return {"ok": bool(LAUNCH["error"])}
         if name == "nv_state":
             if NV is None:
                 raise ApiError("네이티브 플레이어 없음")
@@ -462,6 +512,13 @@ def launch_state():
         "version": bundle_version(), "name": f"{APP_NAME} {APP_SUBTITLE}", "zone": LAUNCH_ZONE}
 
 
+def show_splash():
+    """런치 창을 보이게 함. 글꼴이 로드되고 화면 내용이 준비된 뒤에 부름 (빈 창이 먼저 보이지 않게)."""
+    if SPLASH is not None and not LAUNCH["t_shown"]:
+        LAUNCH["t_shown"] = time.time()
+        SPLASH.show()
+
+
 def launch_sequence():
     """런치 화면의 웨지를 실제 초기화 단계에 맞춰 채운다 (시간만 재는 가짜 진행 없음).
 
@@ -476,9 +533,10 @@ def launch_sequence():
     def stage(cells, status):
         LAUNCH.update(cells=cells, status=status)
 
-    def fail(msg):
-        LAUNCH["error"] = "실패: " + msg
+    def fail(msg):  # 무엇이 실패했는지 적고 멈춤. 닫을 방법이 없으므로 클릭·키 입력으로 앱을 닫게 함
+        LAUNCH["error"] = "실패: " + msg + " · 클릭하거나 키를 누르면 닫힙니다"
         log("launch error:", msg)
+        show_splash()
 
     stage(1, "앱 안의 ffmpeg 확인 중")
     try:
@@ -486,7 +544,7 @@ def launch_sequence():
     except Exception:
         ok = False
     if not ok:
-        return fail("앱 안의 ffmpeg 를 실행할 수 없습니다. 앱을 다시 설치해 주세요")
+        return fail("앱 안의 ffmpeg를 실행할 수 없습니다. 앱을 다시 설치해 주세요")
     stage(3, "설정 불러오는 중")
     CORE.prefs = load_prefs()
     stage(4, "메인 화면 불러오는 중")
@@ -496,7 +554,7 @@ def launch_sequence():
     while NV_STATE == "pending":
         time.sleep(0.05)
     if sys.platform == "darwin" and NV_STATE != "on":
-        return fail("퀵타임 엔진 미리보기를 켜지 못했습니다 (기록: ~/Library/Logs/G-Retag.log)")
+        return fail("퀵타임 엔진 미리보기를 켜지 못했습니다")
     stage(9, "업데이트 확인 중")
     t = time.time()
     while CORE.updater.state()["status"] in ("idle", "checking") and time.time() - t < 5:
@@ -506,7 +564,8 @@ def launch_sequence():
     t = time.time()
     while not LAUNCH["seen"] and time.time() - t < 3:   # 11칸이 다 찬 화면이 실제로 그려질 때까지
         time.sleep(0.02)
-    while time.time() - (LAUNCH["t_shown"] or t) < 1.0:  # 아주 빨리 끝나도 최소 1초는 보여 줌
+    show_splash()
+    while time.time() - LAUNCH["t_shown"] < 1.0:  # 아주 빨리 끝나도 최소 1초는 보여 줌
         time.sleep(0.02)
     time.sleep(0.2)
     if LAUNCH_HOOK:
@@ -705,8 +764,9 @@ def run_window(url):
                                    background_color="#121212", text_select=False, hidden=True)
     SPLASH = webview.create_window(f"{APP_NAME} {APP_SUBTITLE}", url.replace("/?t=", "/launch?t="), width=640, height=400,
                                    resizable=False, frameless=True, easy_drag=True, background_color="#121212",
-                                   text_select=False)
-    SPLASH.events.loaded += lambda: LAUNCH.update(t_shown=LAUNCH["t_shown"] or time.time())
+                                   text_select=False, hidden=True)
+    # 숨긴 채 만들고, 화면이 글꼴 로드까지 끝냈다고 알리면 보임 (알림이 없으면 불러온 뒤 3초에 보임)
+    SPLASH.events.loaded += lambda: threading.Timer(3, show_splash).start()
     threading.Thread(target=launch_sequence, daemon=True).start()
     WINDOW.events.loaded += lambda: register_dnd() if not CORE.dnd else None
     if sys.platform == "darwin":

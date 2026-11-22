@@ -77,7 +77,8 @@ cat > "$APP/Contents/Info.plist" <<EOF
   <key>LSMinimumSystemVersion</key><string>$MINOS</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.video</string>
   <key>NSHighResolutionCapable</key><true/>
-  <key>NSHumanReadableCopyright</key><string>© 2026 GRAYZONE. All rights reserved.</string>
+  <key>NSHumanReadableCopyright</key><string>© $(date +%Y) GRAY ZONE. All rights reserved.</string>
+  <key>GZBuildDate</key><string>$(date +%Y-%m-%d)</string>
   <key>NSAppTransportSecurity</key><dict>
     <key>NSAllowsLocalNetworking</key><true/>
   </dict>
@@ -119,7 +120,7 @@ chmod 755 "$APP/Contents/MacOS/G-Retag"
 # ---------- DMG ----------
 ln -s /Applications "$WORK/dmg/Applications"
 cat > "$WORK/dmg/HOW-TO-INSTALL.txt" <<'EOF'
-G-Retag for QuickTime 설치 방법   © 2026 GRAYZONE. All rights reserved.
+G-Retag for QuickTime 설치 방법   © @YEAR@ GRAY ZONE. All rights reserved.
 ==========================
 1. G-Retag.app 을 옆의 Applications 폴더로 드래그하세요.
 2. 응용 프로그램 폴더에서 G-Retag 를 실행하세요.
@@ -149,9 +150,10 @@ Rec709 1-2-1  For Mac QuickTime  맥 퀵타임에서 정확하게 보이는 Rec7
 문제가 생기면 이 파일을 보내 주세요: ~/Library/Logs/G-Retag.log
 ffmpeg 와 Python 이 앱 안에 들어있어 따로 설치할 필요가 없습니다.
 
-저작권: 이 소프트웨어의 저작권은 GRAYZONE에 있습니다.
-GRAYZONE의 허락 없이 복제·배포·수정할 수 없습니다. 자세한 내용은 앱 안의 LICENSE.txt 를 보세요.
+저작권: 이 소프트웨어의 저작권은 GRAY ZONE에 있습니다.
+GRAY ZONE의 허락 없이 복제·배포·수정할 수 없습니다. 자세한 내용은 앱 안의 LICENSE.txt 를 보세요.
 EOF
+sed -i "s/@YEAR@/$(date +%Y)/" "$WORK/dmg/HOW-TO-INSTALL.txt"   # 연도는 빌드 날짜에서
 OUT="$DIST/G-Retag-$ARCH.dmg"
 rm -f "$OUT"
 genisoimage -quiet -V "G-Retag" -R -D -l -no-pad -o "$OUT" "$WORK/dmg"

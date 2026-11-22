@@ -82,6 +82,21 @@ jobs:
         run: |
           V=$(sed -n 's/^APP_VERSION = "\(.*\)"/\1/p' app.py)
           bash test/mac_migrate_check.sh "release/$V"
+      - name: 런치 화면을 6번 연속으로 켜서 검게 뜨는 일이 없는지
+        if: success() || failure()
+        run: |
+          V=$(sed -n 's/^APP_VERSION = "\(.*\)"/\1/p' app.py)
+          mkdir -p "$RUNNER_TEMP/rep/Applications"
+          tar -xzf "release/$V/G-Retag-$V-arm64.tar.gz" -C "$RUNNER_TEMP/rep/Applications"
+          APP="$RUNNER_TEMP/rep/Applications/G-Retag.app"
+          BAD=0
+          for i in 1 2 3 4 5 6; do
+            echo "== $i 번째"
+            GCT_LAUNCH_ONLY=1 "$APP/Contents/MacOS/G-Retag-python" -I -B test/mac_native_check.py "$APP" "$RUNNER_TEMP/native/out/launch_rep_$i" || BAD=$((BAD+1))
+            sleep 2
+          done
+          echo "런치 화면 반복 결과: 6번 중 실패 $BAD 번"
+          [ "$BAD" = 0 ]
       - name: 앱 미리보기가 퀵타임 플레이어와 같은 밝기인지 (실제 창 캡처, 로딩 화면 포함)
         if: success() || failure()
         run: |

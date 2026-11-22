@@ -320,7 +320,7 @@
   .intro-key { background: transparent; border: 1px solid #5E5E5E; color: #E8E8E8; } .intro-key span { color: var(--sub); }
   .icard.mac { background: var(--panel2); border-color: #E8E8E8; } .icard.mac .ihead span { color: #E8E8E8; }
   .upd.pill { border: 1px solid #5E5E5E; background: transparent; } .upd-title .dot { background: var(--c-info); box-shadow: none; }
-  .upd-bar i, .spin { border-radius: 0; } .upd-bar i { background: #E8E8E8; }
+  .upd-bar i { background: #E8E8E8; }
   #seek::-webkit-slider-runnable-track { background: linear-gradient(to right, #E8E8E8 var(--p), #303030 var(--p)); }
   #drop { border-color: #E8E8E8; }
   .side-head b, .choice-label { font-size: 11px; letter-spacing: .14em; color: var(--mute); font-weight: 400; }
@@ -358,6 +358,31 @@
   .panel.sel { border-color: #E8E8E8; }
   .badge, .rec { border-radius: 4px; }
   #stage { padding: 16px; } .side-head { padding: 16px 16px 8px; } .side-foot { padding: 10px 16px 12px; border-top: 1px solid #333333; } .copy { padding: 0 16px 12px; }
+
+  /* ---- 사용성 검수 반영 ---- */
+  body { word-break: keep-all; }
+  ::selection { background: #5E5E5E; color: #FFFFFF; }
+  .badge, .code, .time, .upd-ver { font-family: inherit; font-variant-numeric: tabular-nums; }   /* 고정폭 글꼴 대신 숫자 자리만 고정 */
+  .spin { border-radius: 50%; }
+  .warnline { display: block; visibility: hidden; min-height: 18px; } .warnline.show { visibility: visible; }  /* 자리를 늘 확보: 미리보기가 밀리지 않게 */
+  .panel-head:focus-visible { outline-offset: -2px; }
+  #drop { background: rgba(18, 18, 18, .94); }
+  body.fsmode #abBtn { display: none; }
+  .item.bad .row2 .st { display: none; }
+  .errmsg { margin-top: 5px; font-size: 12px; line-height: 1.4; color: #E8E8E8; font-weight: 700; white-space: normal;
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+  .rowbar { margin-top: 7px; display: flex; align-items: center; gap: 8px; }
+  .rowbar .bar { flex: 1; height: 6px; border-radius: 3px; background: #303030; overflow: hidden; }
+  .rowbar .bar i { display: block; height: 100%; background: #ABABAB; border-radius: 3px; transition: width .2s; }
+  .rowbar .pct { width: 38px; text-align: right; font-size: 12px; color: #9A9A9A; font-variant-numeric: tabular-nums; }
+  .ic.wait { color: #9A9A9A; font-weight: 400; }
+  .flow span.done i { font-size: 11px; }
+  .intro-card { display: flex; flex-direction: column; overflow: hidden; }
+  .intro-body { overflow: auto; min-height: 0; flex: 1 1 auto; padding-right: 4px; }
+  .intro-foot { flex: none; }
+  .intro-top { flex: none; } .intro-top .gzmark { margin-left: auto; align-self: flex-start; }
+  .icard.mac { border-color: #5E5E5E; }
+  .icard .rec { margin-left: 8px; vertical-align: 2px; }
 </style>
 </head>
 <body>
@@ -376,7 +401,6 @@
       <div id="emptyList" class="empty">아직 영상이 없어요<br>넣은 영상이 여기에 모여요</div>
       <div class="side-foot"><button id="clearBtn" class="link">목록 비우기</button>
         <span class="link"><button id="aboutBtn" class="link"><span id="ver"></span></button> · <button id="updCheck" class="link">업데이트 확인</button></span></div>
-      <div class="copy">© 2026 GRAYZONE. All rights reserved.</div>
     </aside>
 
     <section id="stage">
@@ -449,8 +473,8 @@
     <div class="brand"><img class="logo" src="/appicon.png" alt=""><span id="aboutTitle">G-Retag</span><span class="sub">for QuickTime</span></div>
     <div class="about-ver" id="aboutVer"></div>
     <p>Rec709 색 태그(1-1-1 General / 1-2-1 For Mac QuickTime) 확인·변환 도구<br><span class="about-note">예전 이름: G-ColorTag</span></p>
-    <p class="about-copy">© 2026 GRAYZONE. All rights reserved.</p>
-    <p class="about-note">이 소프트웨어의 저작권은 GRAYZONE에 있습니다.<br>GRAYZONE의 허락 없이 복제·배포·수정할 수 없습니다.</p>
+    <p class="about-copy" id="aboutCopy"></p>
+    <p class="about-note">이 소프트웨어의 저작권은 GRAY ZONE에 있습니다.<br>GRAY ZONE의 허락 없이 복제·배포·수정할 수 없습니다.</p>
     <p class="about-note">포함된 오픈소스: FFmpeg (LGPL/GPL), Python (PSF), pywebview (BSD), PyObjC (MIT), Pretendard · Manrope (OFL)</p>
     <button id="aboutClose" class="btn">닫기</button>
   </div>
@@ -459,10 +483,12 @@
   <div class="intro-card">
     <div class="intro-top"><img class="logo big" src="/appicon.png" alt="">
       <div><div class="intro-name" id="introTitle">G-Retag<span class="sub">for QuickTime</span></div>
-        <div class="intro-by">by GRAYZONE<span id="introVer"></span></div></div></div>
+        <div class="intro-by">GRAY ZONE<span id="introVer"></span></div></div>
+      <span class="gzmark">© GRAY ZONE</span></div>
+    <div class="intro-body">
     <div class="intro-q">색보정실에서 본 영상이, 맥 퀵타임에서는 밝고 뿌옇게 보이나요?</div>
     <p>영상이 잘못된 게 아니에요. 영상 파일에는 <b>색 정보 표시(태그)</b>가 적혀 있는데, 맥 퀵타임이 이 표시를 읽고 밝기를 다르게 보여 주기 때문이에요.
-      G-Retag 는 그 표시만 바꿔서, 퀵타임에서도 원래 의도한 밝기로 보이게 해 줍니다.</p>
+      G-Retag는 그 표시만 바꿔서, 퀵타임에서도 원래 의도한 밝기로 보이게 해 줍니다.</p>
     <div class="intro-key"><i class="ic ok">✓</i>화질과 색은 그대로예요. 원본 파일도 건드리지 않아요.
       <span>태그만 바꾸므로 픽셀의 밝기·색은 변하지 않아요. 다시 인코딩하지 않아 화질 손실이 없고, 저장도 금방 끝나요.</span></div>
     <div class="intro-flow"><div><b>① 영상 넣기</b>창에 끌어다 놓으세요</div><div><b>② 두 화면 비교</b>퀵타임에서 보일 모습 그대로</div><div><b>③ 고르고 저장</b>새 파일로 저장돼요</div></div>
@@ -470,23 +496,23 @@
       <div class="icard"><div class="ihead"><b>Rec709 1-1-1</b><span>General</span></div>
         <div class="iplain">퀵타임에서 밝고 옅게 보이는 상태</div>
         <div class="iwhen">일반 Rec709 · 다른 플레이어나 웹에 올릴 파일</div></div>
-      <div class="icard mac"><div class="ihead"><b>Rec709 1-2-1</b><span>For Mac QuickTime</span></div>
+      <div class="icard mac"><div class="ihead"><b>Rec709 1-2-1</b><span>For Mac QuickTime<em class="rec" style="font-style:normal">맥 퀵타임 전달용 추천</em></span></div>
         <div class="iplain">퀵타임에서 색보정실 모니터와 같게 보이는 상태</div>
         <div class="iwhen">맥 퀵타임으로 컨펌·전달할 파일이면 이쪽을 고르세요</div></div>
     </div>
     <details class="tech"><summary>자세히 보기 (컬러리스트용)</summary>
       <ul><li>태그의 세 숫자는 차례로 색상 프라이머리 · 전송 기능 · YCbCr 매트릭스 번호예요 (퀵타임 ‘동영상 속성’의 ‘코드 포인트’).</li>
-        <li>1-1-1: 일반 Rec709. 퀵타임은 전송 기능 1 을 감마 약 1.96 으로 풀어 보여 줘서 감마 2.4 모니터보다 밝게 보여요.</li>
-        <li>1-2-1: 전송 기능을 ‘지정 안 됨’으로 두고 감마 2.4 표시를 함께 넣어요. 퀵타임 속성 창에 전송 기능 ‘지정 안 됨’ · 코드 포인트 (1-2-1) 로 보이고, 감마 2.4 모니터와 같은 밝기로 재생돼요.</li>
-        <li>감마 표시는 MOV 에만 들어가므로 1-2-1 은 MOV 로 저장해요 (MP4 를 넣어도 MOV 로 나와요).</li>
+        <li>1-1-1: 일반 Rec709. 퀵타임은 전송 기능 1을 감마 약 1.96으로 풀어 보여 줘서 감마 2.4 모니터보다 밝게 보여요.</li>
+        <li>1-2-1: 전송 기능을 ‘지정 안 됨’으로 두고 감마 2.4 표시를 함께 넣어요. 퀵타임 속성 창에 전송 기능 ‘지정 안 됨’ · 코드 포인트 (1-2-1)로 보이고, 감마 2.4 모니터와 같은 밝기로 재생돼요.</li>
+        <li>감마 표시는 MOV에만 들어가므로 1-2-1은 MOV로 저장해요 (MP4를 넣어도 MOV로 나와요).</li>
         <li>미리보기는 퀵타임과 같은 엔진(AVFoundation)으로 재생해요.</li></ul></details>
+    </div>
     <div class="intro-foot">
       <ul id="introSteps" class="steps"><li data-k="player" class="wait"><i></i><span>미리보기 준비 중…</span></li>
         <li data-k="update" class="wait"><i></i><span>업데이트 확인 중…</span></li></ul>
       <div class="intro-act"><label class="chk"><input type="checkbox" id="skipIntro"> 다음부터 안내 없이 바로 시작</label>
         <button id="introStart" class="btn primary" disabled>준비 중…</button></div>
     </div>
-    <div class="intro-copy">© 2026 GRAYZONE. All rights reserved.</div>
   </div>
 </div>
 <div id="updModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="updTitle">
@@ -591,7 +617,8 @@ function tagBadge(tag, ok, f) {  // 쉬운 말로, 코드는 마우스를 올리
 }
 
 function statusLine(f) {
-  if (f.status === "working") return '<span class="st working">저장 중 ' + (f.progress || 0) + "%</span>";
+  if (f.status === "working") return '<span class="st working">저장 중</span>';
+  if (f.status === "queued") return '<span class="st"><i class="ic wait">○</i>대기 중</span>';
   if (f.status === "done") {
     const qt = /퀵타임 \(1-2-1\) 확인/.test(f.result) ? " · 퀵타임에서 정확하게 보입니다" : "";
     return '<span class="st done" title="' + esc(f.result) + '"><i class="ic ok">✓</i>새 파일로 저장 완료' + qt + "</span>";
@@ -607,7 +634,9 @@ function renderList() {
     '<li class="item' + (f.id === curId ? " cur" : "") + (f.status === "error" ? " bad" : "") + '" data-id="' + f.id + '">' +
       '<div class="row1"><span class="name" title="' + esc(f.path) + '">' + esc(f.name) + "</span>" +
       '<button class="x" data-rm="' + f.id + '" title="목록에서 빼기"' + (S.saving ? " disabled" : "") + ">×</button></div>" +
-      '<div class="row2">' + (f.playable && f.status !== "done" ? tagBadge(f.tag, f.ok, f) : "") + statusLine(f) + "</div>" +
+      ((r2) => r2 ? '<div class="row2">' + r2 + "</div>" : "")((f.playable && f.status !== "done" && f.status !== "working" && f.status !== "queued" ? tagBadge(f.tag, f.ok, f) : "") + (f.status === "error" ? "" : statusLine(f))) +
+      (f.status === "error" ? '<div class="errmsg" title="' + esc(f.result) + '"><i class="ic err">✕</i>' + esc(f.result) + "</div>" : "") +
+      (f.status === "working" ? '<div class="rowbar"><div class="bar"><i style="width:' + (f.progress || 0) + '%"></i></div><span class="pct">' + (f.progress || 0) + "%</span></div>" : "") +
       (f.has_out ? '<div class="rowbtns"><button class="reveal" data-op="' + f.id + '">퀵타임으로 열기</button>' +
                     '<button class="reveal" data-rv="' + f.id + '">Finder에서 보기</button></div>' : "") +
     "</li>").join("");
@@ -625,26 +654,35 @@ function renderSave() {
   });
   const n = S.files.filter((f) => f.playable).length;
   const btn = $("#saveBtn");
+  const tg = choice ? ((S.targets || {})[choice] || 0) : 0;   // 실제로 저장될 영상 수
+  const savedAll = !!choice && n > 0 && tg === 0 && S.files.some((f) => f.status === "done");
   if (S.saving) {
-    const done = S.files.filter((f) => ["done", "skipped", "error"].includes(f.status)).length;
-    btn.textContent = "저장 중… " + done + " / " + n;
+    const left = S.files.filter((f) => ["queued", "working"].includes(f.status)).length;
+    btn.textContent = "저장 중… " + ((S.save_total || 0) - left) + " / " + (S.save_total || 0);
     btn.disabled = true;
   } else {
-    btn.textContent = n > 1 ? "이 상태로 저장 · 영상 " + n + "개" : "이 상태로 저장";
-    btn.disabled = !choice || !n || !S.ffmpeg;
+    btn.textContent = savedAll ? "모두 저장했어요" : !choice || tg <= 1 ? "이 상태로 저장" : "이 상태로 저장 · 영상 " + tg + "개";
+    btn.disabled = !choice || !tg || !S.ffmpeg;
   }
   const ct = $("#choiceText");
   ct.classList.toggle("none", !choice);
   ct.innerHTML = choice ? "<b>" + esc(NAMES[choice]) + "</b>" : "위 두 화면 중 원하는 쪽을 누르세요";
   const cn = $("#choiceNote");
   const mp4 = choice === "mac" && S.files.some((f) => f.playable && /\.(mp4|m4v)$/i.test(f.name));
-  cn.textContent = choice ? NOTES[choice][0] + (mp4 ? " MP4 는 MOV 파일로 저장됩니다." : "") : "";
+  const skip = choice ? n - tg : 0;   // 이미 그 상태이거나, 이미 저장했거나, 지원하지 않는 영상
+  cn.textContent = !choice ? "" : savedAll ? "고른 상태로 모두 저장했어요. 다시 저장하지 않아도 됩니다."
+    : NOTES[choice][0] + (mp4 ? " MP4는 MOV 파일로 저장됩니다." : "") + (skip > 0 ? " " + skip + "개는 건너뜁니다 (이미 이 상태이거나 저장을 마친 영상)." : "");
   // 순서 표시: 1 영상 넣기 → 2 두 화면 비교 → 3 고르고 저장
-  const cur = !n ? 1 : !choice ? 2 : 3;
-  $$("#flow span").forEach((el) => { const k = +el.dataset.s; el.className = k < cur ? "done" : k === cur ? "on" : ""; });
+  const cur = !n ? 1 : !choice ? 2 : savedAll ? 4 : 3;
+  $$("#flow span").forEach((el) => {  // 끝난 단계는 색만이 아니라 ✓ 모양으로
+    const k = +el.dataset.s;
+    el.className = k < cur ? "done" : k === cur ? "on" : "";
+    el.querySelector("i").textContent = k < cur ? "✓" : k;
+  });
   $("#welcome").classList.toggle("show", !S.files.length);
   btn.classList.toggle("primary", !!S.files.length);  // 주 버튼은 화면에 하나: 영상이 없을 때는 가운데 '+ 영상 추가'가 주 버튼
-  $("#abBtn").disabled = !n;
+  const cf = fileById(curId);
+  $("#abBtn").disabled = !cf || !cf.playable;
   cn.className = "cnote" + (choice && NOTES[choice][1] ? " " + NOTES[choice][1] : "");
 }
 
@@ -669,6 +707,7 @@ function selectFile(id) {
   curId = id;
   renderList();
   renderStage();
+  renderSave();
   const f = fileById(id);
   if (f && f.playable) player.load(f);
   else player.message(f ? f.note || "이 파일은 미리볼 수 없습니다" : "");
@@ -926,7 +965,11 @@ function makePlayer(native) {
   });
   seek.addEventListener("change", () => { dragging = false; seekTo(+seek.value, wantPlay); });
   playBtn.addEventListener("click", () => (playing ? pause() : play()));
-  $$(".screen").forEach((s) => s.addEventListener("click", () => { if (!playBtn.disabled) playing ? pause() : play(); }));
+  $$(".screen").forEach((s) => s.addEventListener("click", () => {  // 영상 그림을 누르면 그쪽을 고름. 재생·멈춤은 재생 버튼과 Space
+    choice = s.dataset.tag;
+    renderSave();
+    if (fsTag) $("#fsPick").textContent = choice === fsTag ? "✓ 고른 쪽" : "이쪽으로 고르기";
+  }));
   document.addEventListener("keydown", (e) => {
     if (e.code === "Space" && !e.repeat && (e.target === document.body || fsTag) && !playBtn.disabled && !introOpen && !updOpen) { e.preventDefault(); playing ? pause() : play(); }
   });
@@ -1309,6 +1352,7 @@ $("#updCheck").addEventListener("click", async () => {
   try { apply(await api("update_check", {})); } catch (e) { toast(e.message); }
 });
 $("#aboutBtn").addEventListener("click", () => {
+  $("#aboutCopy").textContent = S.copyright || "";
   $("#aboutVer").textContent = "버전 " + (S.version || "") + (S.native === "on" ? " · 미리보기: 퀵타임 엔진(AVFoundation)" : "");
   $("#about").classList.add("show");
 });
