@@ -419,19 +419,23 @@ func TestReverifyFindsSilentDamage(t *testing.T) {
 	if st := runJob(t, o, nil); st.Status != StatusDone || st.FilesSkipped != 45 {
 		t.Fatalf("normal run: %s skipped %d", st.Status, st.FilesSkipped)
 	}
-	// A re-verifying run hashes both sides and must notice.
+	// A re-checking run hashes both sides, notices, and copies the file
+	// again from the source. The differing file is kept, not destroyed.
 	o.Reverify = true
+	time.Sleep(1100 * time.Millisecond)
 	st := runJob(t, o, nil)
-	if st.Status != StatusFailed || st.FilesFailed != 1 || st.FilesVerified != 44 {
-		t.Fatalf("reverify run: status %s failed %d verified %d", st.Status, st.FilesFailed, st.FilesVerified)
+	if st.Status != StatusDone || st.FilesFailed != 0 || st.FilesCopied != 1 || st.Dests[0].Reverified != 44 || st.Dests[0].Replaced != 1 {
+		t.Fatalf("re-check run: status %s failed %d copied %d re-checked %d replaced %d errors %+v", st.Status, st.FilesFailed, st.FilesCopied, st.Dests[0].Reverified, st.Dests[0].Replaced, st.Errors)
 	}
-	if !strings.Contains(st.Errors[0].Message, "The existing copy differs from the source") {
-		t.Errorf("message: %s", st.Errors[0].Message)
+	if len(st.Warnings) != 1 || !strings.Contains(st.Warnings[0], "1 file on this destination no longer matched the source") || !strings.Contains(st.Warnings[0], ReplacedDirName) {
+		t.Errorf("warnings: %v", st.Warnings)
 	}
-	// It reports; it must not silently overwrite either side.
-	if got, _ := os.ReadFile(victim); string(got) != string(data) {
-		t.Error("reverify modified the destination file")
+	sameTree(t, "destination", treeDigest(t, src, isSrcJunk), treeDigest(t, filepath.Join(dst, "A001"), isReportOrKept))
+	kept := findOne(t, filepath.Join(dst, ReplacedDirName, "*", "A001", "SEQ", "shot010", "shot010.0007.exr"))
+	if got, _ := os.ReadFile(kept); string(got) != string(data) {
+		t.Error("the differing file was not kept as it was")
 	}
+	noPartials(t, dst)
 }
 
 func TestCancelLeavesNoPartialFiles(t *testing.T) {

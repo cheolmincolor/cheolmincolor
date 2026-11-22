@@ -496,13 +496,18 @@ func (j *Job) processFile(i, weight int) {
 					w.tmp = ""
 				}
 				switch {
-				case (w.act == actCheck || w.act == actPending) && isMismatch(w.err):
+				case (w.act == actCheck || w.act == actPending || w.act == actReverify) && isMismatch(w.err):
 					// actCheck: same size, different date and different content:
 					// the file was edited. actPending: a copy that was never
-					// verified is not what the source holds. Either way: copy
-					// it, keeping the file that is there.
+					// verified is not what the source holds. actReverify: a
+					// copy that was good once no longer matches. In each case
+					// the source is what gets backed up: copy it, keeping the
+					// file that is there (in _G-Copy_Replaced).
 					if w.act == actPending {
 						dr.healed.Add(1)
+					}
+					if w.act == actReverify {
+						dr.recopied.Add(1)
 					}
 					w.act = actReplace
 					w.reset()
@@ -734,9 +739,7 @@ func (j *Job) verifyPass(f *srcFile, works []*destWork, srcSum []byte, add func(
 			case err != nil:
 				w.err = fmt.Errorf("Verification read error: %w", err)
 			case n == f.size && bytes.Equal(sum, srcSum):
-			case w.act == actReverify:
-				w.err = &mismatchError{fmt.Sprintf("The existing copy differs from the source (same size and date) — source %x, destination %x. Nothing was changed. If the source is the good one, move or delete that file on the destination, then \"Run Again\" copies it afresh.", srcSum, sum)}
-			case w.act == actCheck || w.act == actPending:
+			case w.act == actCheck || w.act == actPending || w.act == actReverify:
 				w.err = &mismatchError{"the content differs"} // replaced, not reported
 			default:
 				w.err = &mismatchError{fmt.Sprintf("Checksum mismatch — the copy was discarded (source %x, destination %x)", srcSum, sum)}

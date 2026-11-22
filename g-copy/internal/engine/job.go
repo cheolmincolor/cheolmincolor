@@ -36,6 +36,7 @@ type destRun struct {
 	unverified []*unvList   // per source: copies made without verification (see unverified.go)
 	pending    atomic.Int64 // how many such copies are on this destination, still unchecked
 	healed     atomic.Int64 // of those, how many differed and were copied again
+	recopied   atomic.Int64 // verified copies that no longer matched when re-checked, and were copied again
 
 	dirs         sync.Map    // folders known to exist on this destination
 	noExclRename atomic.Bool // the volume cannot rename-unless-exists
@@ -355,6 +356,11 @@ func (j *Job) writeReports() {
 		}
 		if n := dr.healed.Load(); n > 0 {
 			j.warnOnce("healed:"+dr.path, fmt.Sprintf("%s: %s copied earlier without verification differed from the source and %s copied again. The differing %s kept in %s.", dr.shown, countFiles(n), wasWere(n), map[bool]string{true: "file was", false: "files were"}[n == 1], ReplacedDirName))
+		}
+	}
+	for _, dr := range j.dests {
+		if n := dr.recopied.Load(); n > 0 {
+			j.warnOnce("recopied:"+dr.path, fmt.Sprintf("%s: %s on this destination no longer matched the source (same size and date, different content) and %s copied again from the source. The differing %s kept in %s — if the source could be the damaged one, compare them before deleting anything.", dr.shown, countFiles(n), wasWere(n), map[bool]string{true: "file was", false: "files were"}[n == 1], ReplacedDirName))
 		}
 	}
 	if testNoReports {
