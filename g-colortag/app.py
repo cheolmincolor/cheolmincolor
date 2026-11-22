@@ -37,7 +37,7 @@ import qtplayer  # noqa: E402
 
 APP_NAME = "G-Retag"
 APP_SUBTITLE = "for QuickTime"
-APP_VERSION = "3.9.0"
+APP_VERSION = "3.10.0"
 
 
 def build_year():
@@ -809,7 +809,12 @@ class Handler(BaseHTTPRequestHandler):
 def start_server(root, port=0):
     global CORE
     CORE = Core(root)
-    srv = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    class Server(ThreadingHTTPServer):
+        def handle_error(self, request, client_address):  # 창이 닫히며 끊긴 연결은 오류가 아님 (기록에 남기지 않음)
+            if isinstance(sys.exc_info()[1], (ConnectionError, TimeoutError)):
+                return
+            super().handle_error(request, client_address)
+    srv = Server(("127.0.0.1", port), Handler)
     srv.daemon_threads = True
     port = srv.server_address[1]
     HOSTS.update({f"127.0.0.1:{port}", f"localhost:{port}"})
