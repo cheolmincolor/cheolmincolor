@@ -34,10 +34,11 @@ sys.path.insert(0, HERE)
 import colortag as ct  # noqa: E402
 import updater  # noqa: E402
 import qtplayer  # noqa: E402
+import refmovie  # noqa: E402
 
 APP_NAME = "G-Retag"
 APP_SUBTITLE = "for QuickTime"
-APP_VERSION = "3.11.0"
+APP_VERSION = "3.12.0"
 
 
 def build_year():
@@ -147,6 +148,13 @@ def friendly(e, doing):
     return "영상을 읽지 못했어요. 파일이 깨졌거나 복사가 덜 끝났을 수 있어요."
 
 
+def direct_mode():
+    """원본 직접 재생을 쓸 수 있는지: 맥의 퀵타임 엔진 플레이어가 켜져 있을 때 (테스트는 GCT_DIRECT_SIM=1)."""
+    if os.environ.get("GCT_DIRECT_SIM") == "1":
+        return True
+    return sys.platform == "darwin" and NV_STATE == "on" and isinstance(NV, qtplayer.AVBackend)
+
+
 def check_709(tag):
     """Rec.709 계열인지. (변환해도 되는 영상인지)"""
     if tag is None:
@@ -191,6 +199,8 @@ class Previews:
         if job["state"] == "done":
             out.update(start=job["start"], dur=job["dur"],
                        mac=f"/media/{key}/mac?t={TOKEN}", std=f"/media/{key}/std?t={TOKEN}")
+            if job.get("direct"):
+                out.update(direct=True, seg_len=job["dur"])  # 영상 전체가 한 구간
         elif job["state"] == "error":
             out["error"] = job.get("error", "")
         return out
@@ -223,6 +233,18 @@ class Previews:
         f = self.files.get(job["fid"])
         if not f:
             raise AppError("목록에서 빠진 영상입니다")
+        if job["seg"] == 0 and f["duration"] > 0 and not f.get("no_direct") and direct_mode():
+            # 원본 직접 재생: 영상 데이터를 복사하지 않고 태그만 다른 참조 파일 두 개를 만들어 원본 해상도·소리 그대로 재생
+            try:
+                if os.environ.get("GCT_DIRECT_SIM") == "1":
+                    std = mac = f["path"]
+                else:
+                    std, mac = refmovie.make_pair(f["path"], os.path.join(self.root, key))
+                job.update(start=0.0, dur=f["duration"], std=std, mac=mac, direct=True)
+                return
+            except Exception as e:  # 안 되는 파일은 예전 방식(720p 미리보기)으로
+                f["no_direct"] = True
+                log("direct preview off:", os.path.basename(f["path"]), e)
         start = job["seg"] * SEG
         dur = SEG if not f["duration"] else max(0.05, min(SEG, f["duration"] - start))
         ext = ".mov"  # 1-2-1 미리보기에 감마 표시(gama)를 넣으려면 MOV 여야 함
@@ -319,7 +341,7 @@ class Core:
                     "targets": {w: len(self.targets(w)) for w in TAGS},
                     "save_total": self.save_total, "last_save": dict(self.last_save), "copyright": COPYRIGHT, "native": NV_STATE, "dnd": self.dnd,
                     "added_seq": self.added_seq, "last_added": self.last_added,
-                    "skip_intro": bool(self.prefs.get("skip_intro"))}
+                    "skip_intro": bool(self.prefs.get("skip_intro")), "sound": bool(self.prefs.get("sound", True))}
 
     # 저장
     def targets(self, which):
@@ -478,11 +500,20 @@ class Core:
                 raise ApiError("업데이트를 설치할 수 없습니다")
             threading.Timer(0.3, quit_app).start()
             return {"ok": True}
-        if name == "prefs":  # 로딩 화면 '다음부터 바로 시작'
-            if "skip_intro" in data:
-                self.prefs["skip_intro"] = bool(data["skip_intro"])
-                save_prefs(self.prefs)
+        if name == "prefs":  # 로딩 화면 '다음부터 바로 시작', 소리 켬/끔
+            for k in ("skip_intro", "sound"):
+                if k in data:
+                    self.prefs[k] = bool(data[k])
+            save_prefs(self.prefs)
             return self.state()
+        if name == "no_direct":  # 원본 직접 재생이 안 되는 영상 → 720p 미리보기로 다시 준비
+            f = self.files.get(data.get("id"))
+            if f:
+                f["no_direct"] = True
+                with self.previews.cv:
+                    self.previews.jobs.pop(f"{f['id']}_0", None)
+                log("direct preview off (player):", f["name"])
+            return {"ok": True}
         if name == "update_page":  # 직접 내려받아야 할 때: 릴리스 페이지 열기
             page = self.updater.state()["page"]
             if sys.platform == "darwin":

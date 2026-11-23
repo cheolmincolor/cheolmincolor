@@ -41,7 +41,7 @@ done < wheels.lock
 rm -rf "$WORK"; mkdir -p "$WORK/dmg"
 APP="$WORK/dmg/G-Retag.app"; RES="$APP/Contents/Resources"
 mkdir -p "$APP/Contents/MacOS" "$RES/bin" "$RES/web" "$RES/site"
-cp app.py colortag.py updater.py qtplayer.py migrate.py LICENSE.txt "$RES/"
+cp app.py colortag.py updater.py qtplayer.py migrate.py refmovie.py LICENSE.txt "$RES/"
 cp web/index.html web/launch.html "$RES/web/"
 mkdir -p "$RES/web/fonts"; cp web/fonts/*.woff2 "$RES/web/fonts/"   # 앱 글꼴 Pretendard, GRAY ZONE 워드마크 Manrope (OFL)
 gunzip -c "$FF_GZ" > "$RES/bin/ffmpeg"; chmod 755 "$RES/bin/ffmpeg"

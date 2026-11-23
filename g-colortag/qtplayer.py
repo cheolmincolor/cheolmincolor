@@ -126,6 +126,10 @@ class AVBackend(_Base):
                 self._event(pid, "seeked", n=n, g=g)
             pl.seekToTime_toleranceBefore_toleranceAfter_completionHandler_(
                 when, self.CM.kCMTimeZero, self.CM.kCMTimeZero, done)
+        elif op == "volume":
+            v = float(c.get("v") or 0)
+            pl.setMuted_(v <= 0)
+            pl.setVolume_(max(0.0, min(1.0, v)))
         elif op == "show":
             p["view"].setHidden_(not c.get("on"))
         elif op == "rect":
@@ -138,6 +142,7 @@ class AVBackend(_Base):
         view.layer().setBackgroundColor_(Q.CGColorCreateGenericRGB(0, 0, 0, 1))
         player = AV.AVPlayer.alloc().init()
         player.setActionAtItemEnd_(1)  # AVPlayerActionAtItemEndPause
+        player.setMuted_(True)         # 소리는 화면 쪽에서 켜라고 할 때만 (두 화면이 같이 재생되므로 한쪽만)
         try:
             player.setAutomaticallyWaitsToMinimizeStalling_(False)  # 로컬 파일: 바로 재생
         except Exception:
@@ -234,6 +239,8 @@ class SimBackend(_Base):
                     s.update(base=cur, t0=now, rate=float(c.get("rate") or 1))
                 elif op == "seek":
                     s["seeks"].append((now + 0.05, float(c.get("t") or 0), c.get("n")))
+                elif op == "volume":
+                    s["vol"] = float(c.get("v") or 0)
                 elif op == "show":
                     s["shown"] = bool(c.get("on"))
                 elif op == "rect":

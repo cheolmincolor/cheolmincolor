@@ -27,6 +27,7 @@ import app  # noqa: E402
 BARS = [16, 71, 126, 181, 236]
 RESULT = {"ok": False, "steps": []}
 INTRO_CHECKS = []
+DIRECT_CHECKS = []
 
 
 def step(msg):
@@ -374,6 +375,18 @@ def test():
         step(f"앱 1-2-1 막대 밝기: {app_vals['mac']}")
 
         key = sorted(app.CORE.previews.jobs)[0]
+        job0 = app.CORE.previews.jobs[key]
+        try:
+            pm, ps = app.NV.players["mac0"]["player"], app.NV.players["std0"]["player"]
+            snd = (bool(pm.isMuted()), round(float(pm.volume()), 2), bool(ps.isMuted()))
+            size = pm.currentItem().presentationSize()
+            step(f"원본 직접 재생: {bool(job0.get('direct'))} · 재생 크기 {size.width:.0f}×{size.height:.0f} · "
+                 f"소리 1-2-1 화면 음소거 {snd[0]} 음량 {snd[1]} / 1-1-1 화면 음소거 {snd[2]} · 파일 {os.path.basename(job0['mac'])}")
+            DIRECT_CHECKS.append(("원본 직접 재생 켜짐 (원본 해상도 1280×720 그대로)", bool(job0.get("direct")) and (size.width, size.height) == (1280, 720)))
+            DIRECT_CHECKS.append(("소리는 1-2-1 화면 한쪽에서만", snd == (False, 1.0, True)))
+        except Exception as e:
+            step(f"직접 재생 확인 실패: {e}")
+            DIRECT_CHECKS.append(("원본 직접 재생 확인", False))
         qt = {}
         for tag in ("std", "mac"):
             try:
@@ -386,7 +399,7 @@ def test():
         RESULT.update(app=app_vals, quicktime=qt, tag_difference=diff_tags)
         # 기준: 앱 미리보기가 퀵타임 플레이어와 같게 보이는가 (두 태그의 차이는 퀵타임을 따라가므로 기록만)
         step(f"참고: 두 태그 밝기 차이 {diff_tags:.1f} (퀵타임도 같은 값이면 정상)")
-        checks = list(INTRO_CHECKS)
+        checks = list(INTRO_CHECKS) + DIRECT_CHECKS
         if len(qt) == 2:
             for tag in ("std", "mac"):
                 d = max(abs(x - y) for x, y in zip(app_vals[tag], qt[tag]))

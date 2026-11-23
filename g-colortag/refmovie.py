@@ -1,5 +1,5 @@
 # Copyright (c) 2026 GRAYZONE. All rights reserved.
-"""실험용: 원본 영상을 복사하지 않고 '태그만 다른 모습'을 재생하기 위한 참조 파일(reference movie) 만들기.
+"""원본 영상을 복사하지 않고 '태그만 다른 모습'을 재생하기 위한 참조 파일(reference movie) 만들기.
 
 참조 파일은 영상 데이터 없이 머리 정보(moov)만 가진 아주 작은 MOV 다.
   - 원본의 moov 를 그대로 가져오고
@@ -7,8 +7,9 @@
   - 모든 트랙의 데이터 위치(dref)를 '원본 파일'로 돌린다. 샘플 위치(stco)는 원본 파일 기준 그대로다.
 원본 해상도·소리 그대로, 만드는 데 걸리는 시간은 moov 를 읽고 쓰는 시간뿐이다.
 
-주의: 영상 스트림 안의 색 정보(ProRes 프레임 머리, H.264 VUI)는 바뀌지 않는다. 실제 저장본과 똑같이 보이는지는
-실제 맥에서 확인해야 한다 (test/probe_refmovie.py).
+영상 스트림 안의 색 정보(ProRes 프레임 머리, H.264 VUI)는 바뀌지 않지만, 실제 맥(macOS 26)에서 실제 저장본과
+밝기·색 정보가 똑같이 재생되는 것을 확인했다 (test/probe_refmovie.py: H.264 MP4, 애플 ProRes 422, ProRes 4444, HEVC).
+MP4 원본은 우리가 직접 쓴 데이터 위치로는 플레이어가 열지 못하므로, 맥이 쓴 머리 파일(apple_header)에 태그만 고쳐 쓴다.
 
 사용: python3 refmovie.py 원본.mov 출력.mov 1-2-1
 """
@@ -108,6 +109,34 @@ def make_reference(src, dst, tag, moov_from=None, keep_dref=False):
         f.write(_box(b"ftyp", b"qt  " + struct.pack(">I", 0x200) + b"qt  "))
         f.write(_box(b"moov", new))
     return dst
+
+
+def apple_header(src, dst):
+    """맥 전용: AVFoundation 으로 '참조 머리 파일' 쓰기 (영상 데이터는 원본을 가리킴)."""
+    import AVFoundation as AV
+    from Foundation import NSURL
+    mm, err = AV.AVMutableMovie.movieWithURL_options_error_(NSURL.fileURLWithPath_(src), None, None)
+    if mm is None:
+        raise RuntimeError(f"AVMutableMovie: {err}")
+    ok, err = mm.writeMovieHeaderToURL_fileType_options_error_(NSURL.fileURLWithPath_(dst), AV.AVFileTypeQuickTimeMovie, 0, None)
+    if not ok:
+        raise RuntimeError(f"writeMovieHeader: {err}")
+    return dst
+
+
+def make_pair(src, base):
+    """맥 전용: 원본 하나에서 (1-1-1 참조 파일, 1-2-1 참조 파일) 을 만들고 재생 가능한지 확인."""
+    import AVFoundation as AV
+    from Foundation import NSURL
+    hdr = apple_header(src, base + "_hdr.mov")
+    out = []
+    for name, tag in (("std", (1, 1, 1)), ("mac", MAC_TAG)):
+        p = make_reference(src, f"{base}_{name}.mov", tag, moov_from=hdr, keep_dref=True)
+        asset = AV.AVURLAsset.URLAssetWithURL_options_(NSURL.fileURLWithPath_(p), None)
+        if not asset.isPlayable() or not asset.tracksWithMediaType_(AV.AVMediaTypeVideo):
+            raise RuntimeError("참조 파일을 재생할 수 없음")
+        out.append(p)
+    return out
 
 
 if __name__ == "__main__":

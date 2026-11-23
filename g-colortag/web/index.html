@@ -390,6 +390,7 @@
   .time.tc { min-width: 92px; color: #E8E8E8; font-size: 12.5px; padding-left: 10px; border-left: 1px solid #333333; }
   .time.tc:empty { display: none; }
   body.fsmode .time.tc { border-left-color: #5E5E5E; }
+  #sndBtn { display: none; flex: none; } body.direct #sndBtn { display: inline-block; }
 </style>
 </head>
 <body>
@@ -460,10 +461,11 @@
         <input id="seek" type="range" min="0" max="1" step="0.01" value="0" disabled>
         <span id="tdur" class="time">0:00</span>
         <span id="tc" class="time tc" title="타임코드 (시:분:초:프레임)"></span>
+        <button id="sndBtn" class="btn sm" title="소리 켜기/끄기 (M)"></button>
         <button id="abBtn" class="btn sm" disabled title="한 화면을 크게 띄우고 Tab 으로 두 상태를 번갈아 봅니다">⇄ 크게 번갈아 보기</button>
       </div>
-      <div class="tip"><b>비교 팁</b> · 어두운 부분과 피부 톤에서 차이가 잘 보여요. ‘크게 번갈아 보기’로 같은 자리에서 바꿔 보면 더 분명해요. (미리보기는 소리가 나지 않아요)<br>
-        <b>키보드</b> · Space 재생/멈춤 · ← → 한 프레임씩 (Shift 와 함께 10프레임) · ↑ ↓ 목록의 다른 영상</div>
+      <div class="tip"><b>비교 팁</b> · 어두운 부분과 피부 톤에서 차이가 잘 보여요. ‘크게 번갈아 보기’로 같은 자리에서 바꿔 보면 더 분명해요. <br>
+        <b>키보드</b> · Space 재생/멈춤 · M 소리 · ← → 한 프레임씩 (Shift 와 함께 10프레임) · ↑ ↓ 목록의 다른 영상</div>
 
       <div class="savebar">
         <div><div class="choice-label">어떻게 저장할까요?</div><div id="choiceText" class="none">위 두 화면 중 원하는 쪽을 누르세요</div>
@@ -601,6 +603,7 @@ function apply(st) {
   renderStage();
   renderUpdate();
   renderIntro();
+  renderSound();
   if (S.added_seq && S.added_seq !== addedSeen) {  // 끌어다 놓기 등으로 새로 들어온 영상 → 첫 번째를 보여줌
     if (addedSeen !== null && S.last_added && S.last_added.length) {
       if (introOpen && introReady()) closeIntro();  // 안내 화면에 영상을 끌어다 놓으면 바로 시작
@@ -736,7 +739,13 @@ function makePlayer(native) {
   let file = null, duration = 0, active = 0, gen = 0, playing = false, dragging = false, prefetching = null, handing = false;
   let wantPlay = false, loading = false;  // wantPlay: 사용자가 마지막으로 원한 상태(재생/정지)
   let lastT = -1, lastStdT = -1, lastMove = 0, lastStdMove = 0, lastTick = 0, lastRecover = -1e9, recoveries = 0;
-  const SEG = () => S.seg_len || 10;
+  let segLen = 0;  // 원본 직접 재생일 때: 영상 전체가 한 구간 (0 이면 10초 구간 미리보기)
+  const SEG = () => segLen || S.seg_len || 10;
+  function applySound() {  // 소리는 기준 화면(1-2-1) 한쪽에서만. 두 화면이 같은 소리를 겹쳐 내지 않게
+    const on = !!segLen && soundOn();
+    decks.forEach((d) => { d.mac.volume = on ? 1 : 0; d.std.volume = 0; });
+    document.body.classList.toggle("direct", !!segLen);
+  }
   const lastSeg = () => Math.max(0, Math.ceil(duration / SEG() - 1e-6) - 1);
   const segOf = (t) => Math.min(Math.floor(t / SEG() + 1e-9), lastSeg());
   const all = () => decks.flatMap((d) => [d.mac, d.std]);
@@ -822,9 +831,24 @@ function makePlayer(native) {
   }
   async function loadDeck(d, fid, seg, offset, g) {
     Object.assign(d, { ready: false, seg: -1, fid: null });
-    const j = await getSeg(fid, seg, g);
-    await Promise.all([prime(d.mac, j.mac, offset), prime(d.std, j.std, offset)]);
+    let j = await getSeg(fid, seg, g);
+    try {
+      await Promise.all([prime(d.mac, j.mac, offset), prime(d.std, j.std, offset)]);
+    } catch (e) {
+      if (e === STALE || !j.direct) throw e;
+      // 원본 직접 재생이 안 되는 영상 → 720p 미리보기로 다시 준비
+      await api("no_direct", { id: fid });
+      if (g !== gen) throw STALE;
+      segLen = 0;
+      applySound();
+      j = await getSeg(fid, 0, g);
+      seg = 0;
+      offset = Math.min(offset, Math.max(0, j.dur - 0.05));
+      await Promise.all([prime(d.mac, j.mac, offset), prime(d.std, j.std, offset)]);
+    }
     if (g !== gen) throw STALE;
+    segLen = j.direct ? j.seg_len : 0;
+    applySound();
     Object.assign(d, { fid, seg, start: j.start, dur: j.dur, ready: true });
     return d;
   }
@@ -992,6 +1016,8 @@ function makePlayer(native) {
 
   return {
     stop() { if (playing || wantPlay) pause(); },  // 안내 화면을 열 때 멈춤
+    applySound,
+    direct: () => !!segLen,
     step(n) {  // n 프레임 앞(+)·뒤(-)로. 멈춘 채로 그 프레임을 보여 줌
       if (!file || playBtn.disabled) return;
       const fps = file.fps || 24;
@@ -1007,6 +1033,7 @@ function makePlayer(native) {
       setIcon();
       reset();
       file = f;
+      segLen = 0;
       duration = f.duration > 0 ? f.duration : SEG();
       seek.max = duration;
       $("#tdur").textContent = fmt(duration);
@@ -1131,6 +1158,8 @@ class NativeVideo {
     this._cmd({ op: "src", url: this._src || null, g: this._g });
   }
   get readyState() { return this.s.ready ? 4 : 0; }
+  set volume(v) { if (v !== this._vol) { this._vol = v; this._cmd({ op: "volume", v }); } }
+  get volume() { return this._vol || 0; }
   get duration() { return this.s.dur; }
   get paused() { return this.s.paused; }
   get ended() { return this.s.ended && this._target === null; }
@@ -1405,11 +1434,27 @@ function selectRel(d) {  // 목록의 앞·뒤 영상으로
   const li = $('#list li[data-id="' + S.files[j].id + '"]');
   if (li && li.scrollIntoView) li.scrollIntoView({ block: "nearest" });
 }
+/* 소리: 원본을 직접 재생할 때만 (720p 미리보기에는 소리가 없음). 켬/끔은 다음에 켤 때도 기억 */
+let soundPref = null;
+const soundOn = () => (soundPref === null ? S.sound !== false : soundPref);
+function renderSound() {
+  const b = $("#sndBtn");
+  b.textContent = soundOn() ? "소리 켬" : "소리 끔";
+  b.setAttribute("aria-pressed", soundOn() ? "true" : "false");
+}
+function toggleSound() {
+  soundPref = !soundOn();
+  renderSound();
+  if (player) player.applySound();
+  api("prefs", { sound: soundPref }).catch(() => {});
+}
+$("#sndBtn").addEventListener("click", toggleSound);
 $("#prevF").addEventListener("click", () => player && player.step(-1));
 $("#nextF").addEventListener("click", () => player && player.step(1));
 document.addEventListener("keydown", (e) => {
   if (!player || introOpen || updOpen || $("#about").classList.contains("show") || e.metaKey || e.ctrlKey || e.altKey) return;
   const d = { ArrowLeft: -1, ArrowRight: 1 }[e.key], v = { ArrowUp: -1, ArrowDown: 1 }[e.key];
+  if (e.key === "m" || e.key === "M" || e.key === "ㅡ") { if (player.direct()) toggleSound(); return; }
   if (d) { e.preventDefault(); player.step(d * (e.shiftKey ? 10 : 1)); }
   else if (v && !fsTag) { e.preventDefault(); selectRel(v); }
 });
