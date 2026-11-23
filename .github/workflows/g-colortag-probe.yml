@@ -8,6 +8,8 @@ on:
       - 'g-colortag/test/probe_strings.py'
       - 'g-colortag/test/probe_inspector.py'
       - 'g-colortag/test/probe_avf.py'
+      - 'g-colortag/test/probe_refmovie.py'
+      - 'g-colortag/refmovie.py'
       - '.github/workflows/g-colortag-probe.yml'
   workflow_dispatch:
 
@@ -28,8 +30,10 @@ jobs:
       - name: 애플 AVFoundation 으로 태그 바꿔 쓰기
         if: false
         run: python3 g-colortag/test/probe_avf.py "$RUNNER_TEMP/probe"
+      - name: 참조 파일 실험 (원본을 복사하지 않고 태그만 다르게 재생)
+        run: python3 g-colortag/test/probe_refmovie.py "$RUNNER_TEMP/probe"
       - name: 퀵타임 속성 창 캡처
-        if: success() || failure()
+        if: false
         run: python3 g-colortag/test/probe_inspector.py "$RUNNER_TEMP/probe"
       - name: 퀵타임 실험
         if: false
