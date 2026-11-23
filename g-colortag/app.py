@@ -884,13 +884,22 @@ def install_open_handler():
         import objc
         from webview.platforms.cocoa import BrowserView
 
+        argv = {os.path.abspath(a) for a in sys.argv if not a.startswith("-")}
+
         def application_openFiles_(self, app, files):
-            paths = [str(x) for x in files]
+            # 실행 명령에 들어 있는 경로(app.py 등)도 macOS 가 '열 파일'로 넘기므로 걸러 냄. 영상 파일과 폴더만 받음
+            paths = [p for p in (str(x) for x in files)
+                     if os.path.abspath(p) not in argv and (os.path.isdir(p) or p.lower().endswith(VIDEO_EXT))]
+            if not paths:
+                app.replyToOpenOrPrint_(0)
+                return
             log("open files:", len(paths))
             if CORE is not None and paths:
                 threading.Thread(target=CORE.add_paths, args=(paths,), daemon=True).start()
             app.replyToOpenOrPrint_(0)
         objc.classAddMethods(BrowserView.AppDelegate, [application_openFiles_])
+        import Foundation  # 실행 명령의 인자를 '열 파일'로 다루지 않게
+        Foundation.NSUserDefaults.standardUserDefaults().setObject_forKey_("NO", "NSTreatUnknownArgumentsAsOpen")
     except Exception:
         log("open handler off:", traceback.format_exc())
 

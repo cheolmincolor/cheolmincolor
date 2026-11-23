@@ -17,4 +17,6 @@ sleep 2
 pkill -f "G-Retag.app/Contents/Resources/app.py" 2>/dev/null || true
 echo "  기록:"; sed 's/^/    /' "$LOG" | head -12
 [ "$ok" = 1 ] || { echo "❌ 앱이 넘겨받은 영상을 열지 못함"; exit 1; }
+N=$(grep -c "open files:" "$LOG" || true)
+[ "$N" = 1 ] || { echo "❌ 열기 요청이 $N 번 처리됨 (영상 하나만 넘겼으므로 1번이어야 함)"; exit 1; }
 echo "'다음으로 열기'로 영상 열기 통과 ✅"
