@@ -77,6 +77,14 @@ cat > "$APP/Contents/Info.plist" <<EOF
   <key>LSMinimumSystemVersion</key><string>$MINOS</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.video</string>
   <key>NSHighResolutionCapable</key><true/>
+  <key>CFBundleDocumentTypes</key><array><dict>
+    <key>CFBundleTypeName</key><string>영상</string>
+    <key>CFBundleTypeRole</key><string>Viewer</string>
+    <key>LSHandlerRank</key><string>Alternate</string>
+    <key>LSItemContentTypes</key><array>
+      <string>com.apple.quicktime-movie</string><string>public.mpeg-4</string><string>com.apple.m4v-video</string>
+    </array>
+  </dict></array>
   <key>NSHumanReadableCopyright</key><string>© $(date +%Y) GRAY ZONE. All rights reserved.</string>
   <key>GZBuildDate</key><string>$(date +%Y-%m-%d)</string>
   <key>NSAppTransportSecurity</key><dict>

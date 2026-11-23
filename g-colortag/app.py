@@ -266,7 +266,8 @@ class Core:
                 if p in known or not os.path.isfile(p):
                     continue
                 f = {"id": uuid.uuid4().hex[:10], "path": p, "gamma": None, "name": os.path.basename(p), "codec": "", "tag": None,
-                     "duration": 0.0, "ok": False, "note": "", "status": "", "result": "", "out": None, "progress": 0, "saved": []}
+                     "duration": 0.0, "ok": False, "note": "", "status": "", "result": "", "out": None, "progress": 0, "saved": [],
+                     "fps": 0.0, "tc_start": None, "tc_fps": 0, "drop": False}
                 try:
                     tr = ct.read_tracks(p)
                 except Exception:
@@ -274,6 +275,7 @@ class Core:
                 if tr:
                     f["codec"], f["tag"], f["gamma"] = tr[0]["codec"], tr[0]["tag"], tr[0]["gamma"]
                     f["duration"] = ct.read_duration(p)
+                    f.update(ct.read_timing(p))
                     f["ok"], f["note"] = check_709(f["tag"])
                 else:
                     f["note"] = ("영상을 읽지 못했어요. 파일이 깨졌거나 복사가 덜 끝났을 수 있어요."
@@ -307,7 +309,7 @@ class Core:
             files = []
             for fid in self.order:
                 f = self.files[fid]
-                files.append({k: f[k] for k in ("id", "path", "name", "codec", "duration", "ok", "note", "gamma",
+                files.append({k: f[k] for k in ("id", "path", "name", "codec", "duration", "ok", "note", "gamma", "fps", "tc_start", "tc_fps", "drop",
                                                  "status", "result", "progress")}
                              | {"tag": ct.tag_str(f["tag"]) if f["tag"] else "없음", "has_out": bool(f["out"]),
                                 "playable": bool(f["codec"])})
@@ -870,8 +872,27 @@ def run_window(url):
                 globals()["NV_STATE"] = "off"
                 log("native player timeout")
         threading.Timer(25, give_up).start()
+    if sys.platform == "darwin":
+        install_open_handler()
     webview.start()
     return True
+
+
+def install_open_handler():
+    """파인더에서 영상을 더블클릭('다음으로 열기')하거나 Dock 의 앱 아이콘에 끌어다 놓으면 목록에 추가."""
+    try:
+        import objc
+        from webview.platforms.cocoa import BrowserView
+
+        def application_openFiles_(self, app, files):
+            paths = [str(x) for x in files]
+            log("open files:", len(paths))
+            if CORE is not None and paths:
+                threading.Thread(target=CORE.add_paths, args=(paths,), daemon=True).start()
+            app.replyToOpenOrPrint_(0)
+        objc.classAddMethods(BrowserView.AppDelegate, [application_openFiles_])
+    except Exception:
+        log("open handler off:", traceback.format_exc())
 
 
 def quit_app():

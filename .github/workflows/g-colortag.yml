@@ -82,6 +82,11 @@ jobs:
         run: |
           V=$(sed -n 's/^APP_VERSION = "\(.*\)"/\1/p' app.py)
           bash test/mac_migrate_check.sh "release/$V"
+      - name: 영상을 '다음으로 열기'로 넘기면 목록에 들어가는지
+        if: success() || failure()
+        run: |
+          V=$(sed -n 's/^APP_VERSION = "\(.*\)"/\1/p' app.py)
+          bash test/mac_open_check.sh "release/$V/G-Retag-$V-arm64.tar.gz"
       - name: 런치 화면을 6번 연속으로 켜서 검게 뜨는 일이 없는지
         if: success() || failure()
         run: |

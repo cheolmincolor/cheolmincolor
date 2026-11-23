@@ -99,6 +99,67 @@ def read_tracks(path):
     return tracks
 
 
+def read_timing(path):
+    """프레임 단위 이동·타임코드 표시용: {fps, tc_start(프레임 수), tc_fps, drop}. 못 읽으면 fps 0.
+
+    fps 는 영상 트랙의 시간 단위(mdhd)와 첫 샘플 길이(stts)에서, 시작 타임코드는 타임코드 트랙(tmcd)에서 읽는다.
+    """
+    out = {"fps": 0.0, "tc_start": None, "tc_fps": 0, "drop": False}
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, 2)
+            size = f.tell()
+            tr = {}
+
+            def flush():
+                if tr.get("hdlr") == "vide" and not out["fps"] and tr.get("delta") and tr.get("scale"):
+                    out["fps"] = round(tr["scale"] / tr["delta"], 4)
+                if tr.get("hdlr") == "tmcd" and out["tc_start"] is None and tr.get("tc_fps") and tr.get("chunk") is not None:
+                    f.seek(tr["chunk"])
+                    raw = f.read(4)
+                    if len(raw) == 4:
+                        out.update(tc_start=struct.unpack(">I", raw)[0], tc_fps=tr["tc_fps"], drop=tr.get("drop", False))
+                tr.clear()
+
+            def walk(start, end, parent=""):
+                for typ, body, box_end in _boxes(f, start, end):
+                    if typ == "trak":
+                        flush()
+                    if typ in CONTAINERS:
+                        walk(body, box_end, typ)
+                    elif typ == "hdlr" and parent == "mdia":
+                        f.seek(body + 8)
+                        tr["hdlr"] = f.read(4).decode("latin-1")
+                    elif typ == "mdhd":
+                        f.seek(body)
+                        ver = f.read(1)[0]
+                        f.seek(body + (20 if ver == 1 else 12))
+                        tr["scale"] = struct.unpack(">I", f.read(4))[0]
+                    elif typ == "stts":
+                        f.seek(body + 4)
+                        n = struct.unpack(">I", f.read(4))[0]
+                        if n:
+                            tr["delta"] = struct.unpack(">II", f.read(8))[1]
+                    elif typ == "stsd" and tr.get("hdlr") == "tmcd":
+                        for codec, eb, ee in _boxes(f, body + 8, box_end):
+                            if codec == "tmcd" and ee - eb >= 25:
+                                f.seek(eb + 8 + 4)  # 샘플 엔트리 머리 8 + 예약 4
+                                flags, _scale, _dur = struct.unpack(">III", f.read(12))
+                                tr["tc_fps"] = f.read(1)[0]
+                                tr["drop"] = bool(flags & 1)
+                            break
+                    elif typ in ("stco", "co64") and "chunk" not in tr:
+                        f.seek(body + 4)
+                        n = struct.unpack(">I", f.read(4))[0]
+                        if n:
+                            tr["chunk"] = struct.unpack(">I" if typ == "stco" else ">Q", f.read(4 if typ == "stco" else 8))[0]
+            walk(0, size)
+            flush()
+    except (OSError, struct.error, IndexError):
+        pass
+    return out
+
+
 def describe(path):
     """진단용: 영상 샘플 설명 안의 아톰과 colr 값 (예: 'ap4h[fiel, colr:nclc:1-2-1, pasp]')."""
     out = []

@@ -385,6 +385,11 @@
   .intro-top { flex: none; } .intro-top .gzmark { margin-left: auto; align-self: flex-start; }
   .icard.mac { border-color: #5E5E5E; }
   .icard .rec { margin-left: 8px; vertical-align: 2px; }
+  .stepf { width: 26px; padding: 0; flex: none; font-size: 15px; line-height: 1; }
+  .transport .stepf + .stepf { margin-left: -8px; }
+  .time.tc { min-width: 92px; color: #E8E8E8; font-size: 12.5px; padding-left: 10px; border-left: 1px solid #333333; }
+  .time.tc:empty { display: none; }
+  body.fsmode .time.tc { border-left-color: #5E5E5E; }
 </style>
 </head>
 <body>
@@ -449,12 +454,16 @@
 
       <div class="transport">
         <button id="playBtn" disabled aria-label="재생"><svg viewBox="0 0 14 14"><path id="playIcon" d="M3 1.5v11l9.5-5.5z" fill="currentColor"/></svg></button>
+        <button id="prevF" class="btn sm stepf" disabled title="한 프레임 뒤로 (←)" aria-label="한 프레임 뒤로">‹</button>
+        <button id="nextF" class="btn sm stepf" disabled title="한 프레임 앞으로 (→)" aria-label="한 프레임 앞으로">›</button>
         <span id="tcur" class="time">0:00</span>
         <input id="seek" type="range" min="0" max="1" step="0.01" value="0" disabled>
         <span id="tdur" class="time">0:00</span>
+        <span id="tc" class="time tc" title="타임코드 (시:분:초:프레임)"></span>
         <button id="abBtn" class="btn sm" disabled title="한 화면을 크게 띄우고 Tab 으로 두 상태를 번갈아 봅니다">⇄ 크게 번갈아 보기</button>
       </div>
-      <div class="tip"><b>비교 팁</b> · 어두운 부분과 피부 톤에서 차이가 잘 보여요. ‘크게 번갈아 보기’로 같은 자리에서 바꿔 보면 더 분명해요. (미리보기는 소리가 나지 않아요)</div>
+      <div class="tip"><b>비교 팁</b> · 어두운 부분과 피부 톤에서 차이가 잘 보여요. ‘크게 번갈아 보기’로 같은 자리에서 바꿔 보면 더 분명해요. (미리보기는 소리가 나지 않아요)<br>
+        <b>키보드</b> · Space 재생/멈춤 · ← → 한 프레임씩 (Shift 와 함께 10프레임) · ↑ ↓ 목록의 다른 영상</div>
 
       <div class="savebar">
         <div><div class="choice-label">어떻게 저장할까요?</div><div id="choiceText" class="none">위 두 화면 중 원하는 쪽을 누르세요</div>
@@ -685,6 +694,8 @@ function renderSave() {
   btn.classList.toggle("primary", !!S.files.length);  // 주 버튼은 화면에 하나: 영상이 없을 때는 가운데 '+ 영상 추가'가 주 버튼
   const cf = fileById(curId);
   $("#abBtn").disabled = !cf || !cf.playable;
+  $("#prevF").disabled = $("#nextF").disabled = !cf || !cf.playable;
+  if (!cf || !cf.playable) $("#tc").textContent = "";
   cn.className = "cnote" + (choice && NOTES[choice][1] ? " " + NOTES[choice][1] : "");
 }
 
@@ -748,7 +759,10 @@ function makePlayer(native) {
     const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = Math.floor(t % 60);
     return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(s).padStart(2, "0");
   }
+  let curT = 0;  // 지금 위치(초). 프레임 단위 이동과 타임코드 표시의 기준
   function showTime(t) {
+    curT = t;
+    $("#tc").textContent = file ? tcText(file, t) : "";
     if (duration - t < 0.1) t = duration;  // 마지막 프레임에서는 전체 길이로 표시
     seek.value = t;
     seek.style.setProperty("--p", (duration ? Math.min(100, (t / duration) * 100) : 0) + "%");
@@ -971,12 +985,22 @@ function makePlayer(native) {
     if (fsTag) $("#fsPick").textContent = choice === fsTag ? "✓ 고른 쪽" : "이쪽으로 고르기";
   }));
   document.addEventListener("keydown", (e) => {
-    const onPanel = e.target && e.target.closest && e.target.closest(".panel-head");  // 화면 이름 줄을 누른 직후에도 Space 는 재생
-    if (e.code === "Space" && !e.repeat && (e.target === document.body || fsTag || onPanel) && !playBtn.disabled && !introOpen && !updOpen) { e.preventDefault(); playing ? pause() : play(); }
+    // 버튼이나 화면 이름 줄에 포커스가 있어도 Space 는 재생·멈춤 (체크 칸과 알림창 안에서는 제외)
+    const typing = e.target && e.target.closest && e.target.closest("input[type=checkbox], textarea, select, .modal");
+    if (e.code === "Space" && !e.repeat && !typing && !playBtn.disabled && !introOpen && !updOpen) { e.preventDefault(); playing ? pause() : play(); }
   });
 
   return {
     stop() { if (playing || wantPlay) pause(); },  // 안내 화면을 열 때 멈춤
+    step(n) {  // n 프레임 앞(+)·뒤(-)로. 멈춘 채로 그 프레임을 보여 줌
+      if (!file || playBtn.disabled) return;
+      const fps = file.fps || 24;
+      if (playing || wantPlay) pause();
+      const last = Math.max(0, Math.round(duration * fps) - 1);
+      const f = Math.max(0, Math.min(last, Math.floor(curT * fps + 0.01) + n));
+      seekTo((f + 0.25) / fps, false);
+    },
+    time: () => curT,
     load(f) {
       gen++;
       playing = wantPlay = loading = false;
@@ -1359,6 +1383,36 @@ $("#aboutBtn").addEventListener("click", () => {
 });
 $("#aboutClose").addEventListener("click", () => $("#about").classList.remove("show"));
 $("#about").addEventListener("click", (e) => { if (e.target.id === "about") $("#about").classList.remove("show"); });
+/* ------------------------------------------------------------ 확인 뷰어: 프레임 이동·타임코드·영상 넘기기 */
+function tcText(f, t) {  // 타임코드 시:분:초:프레임 (파일에 시작 타임코드가 있으면 거기서부터, 드롭 프레임은 ; 로 표시)
+  const fps = f.fps || 0;
+  if (!fps) return "";
+  const nom = f.tc_fps || Math.round(fps);
+  let n = Math.floor(t * fps + 0.01) + (f.tc_start || 0), sep = ":";
+  if (f.drop && (nom === 30 || nom === 60)) {
+    const d = nom === 30 ? 2 : 4, per10 = nom * 600 - d * 9, perMin = nom * 60 - d;
+    const rem = n % per10;
+    n += d * 9 * Math.floor(n / per10) + (rem > d ? d * Math.floor((rem - d) / perMin) : 0);
+    sep = ";";
+  }
+  const p2 = (x) => String(x).padStart(2, "0"), s = Math.floor(n / nom);
+  return p2(Math.floor(s / 3600) % 24) + ":" + p2(Math.floor(s / 60) % 60) + ":" + p2(s % 60) + sep + p2(n % nom);
+}
+function selectRel(d) {  // 목록의 앞·뒤 영상으로
+  const i = S.files.findIndex((f) => f.id === curId), j = i + d;
+  if (i < 0 || j < 0 || j >= S.files.length) return;
+  selectFile(S.files[j].id);
+  const li = $('#list li[data-id="' + S.files[j].id + '"]');
+  if (li && li.scrollIntoView) li.scrollIntoView({ block: "nearest" });
+}
+$("#prevF").addEventListener("click", () => player && player.step(-1));
+$("#nextF").addEventListener("click", () => player && player.step(1));
+document.addEventListener("keydown", (e) => {
+  if (!player || introOpen || updOpen || $("#about").classList.contains("show") || e.metaKey || e.ctrlKey || e.altKey) return;
+  const d = { ArrowLeft: -1, ArrowRight: 1 }[e.key], v = { ArrowUp: -1, ArrowDown: 1 }[e.key];
+  if (d) { e.preventDefault(); player.step(d * (e.shiftKey ? 10 : 1)); }
+  else if (v && !fsTag) { e.preventDefault(); selectRel(v); }
+});
 document.addEventListener("keydown", (e) => {  // Esc: 열린 창 닫기, Enter: 로딩 화면에서 시작
   if (fsTag) return;
   if (e.key === "Escape") {
