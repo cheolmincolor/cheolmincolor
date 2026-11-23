@@ -37,7 +37,7 @@ import qtplayer  # noqa: E402
 
 APP_NAME = "G-Retag"
 APP_SUBTITLE = "for QuickTime"
-APP_VERSION = "3.10.0"
+APP_VERSION = "3.11.0"
 
 
 def build_year():
