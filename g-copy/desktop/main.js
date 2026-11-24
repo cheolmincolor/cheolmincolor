@@ -201,13 +201,19 @@ function sendUpdate(state) {
   if (win && !win.isDestroyed()) win.webContents.send('update', state);
 }
 
+// The menu's "Check for Updates…": the main window shows the update window,
+// the check, and its result (the same window a new version opens by itself).
 async function checkForUpdates() {
   if (!updater) return;
-  const s = await updater.check(true);
-  const box = (o) => (win ? dialog.showMessageBox(win, o) : dialog.showMessageBox(o));
-  if (s.status === 'uptodate') box({ type: 'info', message: 'G-Copy is up to date', detail: 'Version ' + app.getVersion() + ' is the latest.' });
-  else if (s.status === 'error' || s.status === 'unavailable') box({ type: 'warning', message: 'Could not check for updates', detail: s.message });
-  else if (s.status === 'ready') showWindow(); // the window shows the update and its notes
+  if (!win || launching) {
+    const s = await updater.check(true); // no window yet: fall back to a plain message
+    const box = (o) => dialog.showMessageBox(o);
+    if (s.status === 'uptodate') box({ type: 'info', message: 'G-Copy is up to date', detail: 'Version ' + app.getVersion() + ' is the latest.' });
+    else if (s.status === 'error' || s.status === 'unavailable') box({ type: 'warning', message: 'Could not check for updates', detail: s.message });
+    return;
+  }
+  showWindow();
+  win.webContents.send('update-check');
 }
 
 function startUpdater() {

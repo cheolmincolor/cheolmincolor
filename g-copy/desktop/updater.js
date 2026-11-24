@@ -143,7 +143,7 @@ class Updater {
       const loopbackTest = process.env.GCOPY_UPDATE_FEED && u.protocol === 'http:' && u.hostname === '127.0.0.1';
       if (u.protocol !== 'https:' && !loopbackTest) throw new Error('The update download is not secure (https).');
 
-      this.set({ status: 'downloading', version: man.version, progress: 0 });
+      this.set({ status: 'downloading', version: man.version, notes: String(man.notes || ''), progress: 0 });
       await fsp.rm(this.dir, { recursive: true, force: true });
       await fsp.mkdir(this.dir, { recursive: true });
       const zip = path.join(this.dir, 'update.zip');

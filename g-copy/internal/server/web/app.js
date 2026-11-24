@@ -762,6 +762,7 @@ async function poll() {
   }
   if (Date.now() - schedLoaded > 30000) loadSchedules();
   const busy = state.mode === 'running' || state.mode === 'confirm';
+  maybeShowUpdate(); // a backup may just have ended
   schedule(busy ? 400 : bannerJob && !FINISHED.includes(bannerJob.status) ? 1000 : 3000);
 }
 
@@ -1545,29 +1546,115 @@ function renderUpdate(st) {
   } else {
     pill.hidden = true;
   }
-  if ($('update-dlg').open) renderUpdateDialog();
+  if ($('update-dlg').open && UPD.mode === 'update') renderUpdateDialog();
+  else if ($('update-dlg').open && UPD.mode === 'checking' && ['downloading', 'ready', 'available'].includes(st.status)) openUpdateDialog('update');
+  maybeShowUpdate();
 }
+
+// The update window. It opens by itself once for each new version (when
+// nothing else is going on), and whenever the top-bar button or the menu's
+// "Check for Updates…" is used.
+const UPD = { mode: 'update', message: '' }; // mode: update | checking | uptodate | error
 
 function renderUpdateDialog() {
   const st = updates.state || {};
   const busy = state.mode === 'running' || state.mode === 'confirm' || (bannerJob && !FINISHED.includes(bannerJob.status));
-  $('up-title').textContent = st.status === 'ready' ? 'G-Copy ' + st.version + ' is ready' : 'Downloading G-Copy ' + (st.version || '');
-  $('up-sub').textContent = st.status === 'ready'
-    ? 'You have ' + st.current + '. Restarting takes a few seconds; your schedules and settings are kept.'
-    : 'The update is being downloaded and checked' + (st.progress ? ' (' + Math.floor(st.progress * 100) + '%)' : '') + '.';
+  const show = (id, on) => { $(id).hidden = !on; };
+  const btn = $('up-install'), later = $('up-later');
+  show('up-progress', false);
+  show('up-dot', true);
+  $('up-notes').textContent = '';
+  $('up-versions').textContent = '';
+  $('up-sub').textContent = '';
+  $('up-sub').title = '';
+  later.hidden = false; later.textContent = 'Later';
+  btn.hidden = false; btn.disabled = false; btn.title = '';
+  if (UPD.mode === 'checking') {
+    show('up-dot', false);
+    $('up-title').textContent = 'Checking for updates…';
+    btn.hidden = true; later.textContent = 'Close';
+    $('up-hint').textContent = '';
+    return;
+  }
+  if (UPD.mode === 'uptodate') {
+    show('up-dot', false);
+    $('up-title').textContent = 'G-Copy is up to date';
+    $('up-sub').textContent = 'Version ' + (st.current || '') + ' is the latest.';
+    later.hidden = true; btn.textContent = 'OK';
+    $('up-hint').textContent = '';
+    return;
+  }
+  if (UPD.mode === 'error') {
+    show('up-dot', false);
+    $('up-title').textContent = 'Could not check for updates';
+    // in plain words; the technical reason is kept for whoever needs it
+    const why = String(UPD.message || '');
+    $('up-sub').textContent = /net::|ENOTFOUND|ECONN|ETIMEDOUT|timed? ?out|abort|fetch failed/i.test(why) || !why
+      ? 'The update server could not be reached. Check the internet connection, then Try Again.'
+      : why;
+    $('up-sub').title = why;
+    later.textContent = 'Close'; btn.textContent = 'Try Again';
+    $('up-hint').textContent = '';
+    return;
+  }
+  $('up-title').textContent = 'A new version is available';
+  $('up-versions').textContent = (st.current || '') + ' → ' + (st.version || '');
   $('up-notes').textContent = st.notes || '';
-  const btn = $('up-install');
-  btn.disabled = st.status !== 'ready' || busy;
-  btn.title = busy ? 'Wait until the backup has finished' : '';
-  $('up-hint').textContent = busy ? 'A backup is running — it will be installed after you quit G-Copy.' : 'It is also installed the next time you quit G-Copy.';
+  if (st.status === 'available') { // automatic updates are off: download when asked
+    btn.textContent = 'Download';
+    $('up-hint').textContent = 'Automatic updates are off, so it has not been downloaded yet.';
+  } else if (st.status === 'downloading') {
+    show('up-progress', true);
+    const p = Math.floor((st.progress || 0) * 100);
+    $('up-fill').style.width = p + '%';
+    $('up-pct').textContent = p + '%';
+    btn.textContent = 'Restart to Update'; btn.disabled = true;
+    $('up-hint').textContent = 'Downloading and checking the update…';
+  } else {
+    btn.textContent = 'Restart to Update';
+    btn.disabled = busy;
+    btn.title = busy ? 'Wait until the backup has finished' : '';
+    $('up-hint').textContent = busy ? 'A backup is running — it will be installed after you quit G-Copy.' : 'Choose Later and it installs when you quit G-Copy.';
+  }
+}
+
+function openUpdateDialog(mode = 'update') {
+  UPD.mode = mode;
+  $('up-err').hidden = true;
+  renderUpdateDialog();
+  if (!$('update-dlg').open) $('update-dlg').showModal();
+}
+
+// A new version opens the window by itself, once per version, but never
+// over a backup in progress, a paused one, a sync question or another window.
+let storeReady = false;
+function maybeShowUpdate() {
+  const st = updates.state;
+  if (!native || !storeReady || !st || !st.version || !['downloading', 'ready', 'available'].includes(st.status)) return;
+  if (store.get('updateShown', '') === st.version) return;
+  const busy = state.mode === 'running' || state.mode === 'confirm' || (bannerJob && !FINISHED.includes(bannerJob.status));
+  if (busy || document.querySelector('dialog[open]')) return;
+  store.set('updateShown', st.version);
+  openUpdateDialog('update');
+}
+
+async function checkNow() { // the menu's "Check for Updates…" and Try Again
+  openUpdateDialog('checking');
+  let r;
+  try { r = await native.checkUpdate(); } catch (e) { r = { status: 'error', message: e.message }; }
+  if (!$('update-dlg').open) return; // closed meanwhile
+  if (r.status === 'uptodate') openUpdateDialog('uptodate');
+  else if (r.status === 'error' || r.status === 'unavailable') { UPD.message = r.message; openUpdateDialog('error'); }
+  else openUpdateDialog('update');
 }
 
 if (native && native.getUpdate) {
-  $('update-pill').addEventListener('click', () => {
-    if (updates.state && updates.state.status === 'available') { native.checkUpdate(); return; } // download it now
-    $('up-err').hidden = true; renderUpdateDialog(); $('update-dlg').showModal();
-  });
+  $('update-pill').addEventListener('click', () => openUpdateDialog('update'));
   $('up-install').addEventListener('click', async () => {
+    if (UPD.mode === 'uptodate') { $('update-dlg').close(); return; }
+    if (UPD.mode === 'error') { checkNow(); return; }
+    const st = updates.state || {};
+    if (st.status === 'available') { native.checkUpdate(); return; } // download it now; the window follows the progress
     $('up-install').disabled = true;
     const r = await native.installUpdate();
     if (r.status !== 'installing') {
@@ -1580,6 +1667,9 @@ if (native && native.getUpdate) {
   });
   native.onUpdate(renderUpdate);
   native.getUpdate().then(renderUpdate);
+  if (native.onCheckRequest) native.onCheckRequest(checkNow);
+  // when a window closes, or a backup ends, a waiting update may be shown
+  for (const dlg of document.querySelectorAll('dialog')) dlg.addEventListener('close', () => setTimeout(maybeShowUpdate, 300));
 }
 
 // ── start-up ────────────────────────────────────────────────────────────
@@ -1603,6 +1693,7 @@ async function refreshDests() {
 
 (async function init() {
   await store.load();
+  storeReady = true;
   const o = store.get('opts', null);
   if (o) {
     $('opt-verify').checked = o.verify !== false; // settings from versions with a checksum menu (xxHash64 / MD5): on

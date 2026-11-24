@@ -35,4 +35,6 @@ contextBridge.exposeInMainWorld('gcopyNative', {
   checkUpdate: () => ipcRenderer.invoke('update', 'check'),
   installUpdate: () => ipcRenderer.invoke('update', 'install'),
   onUpdate: (fn) => { ipcRenderer.on('update', (_e, state) => fn(state)); },
+  // the menu's "Check for Updates…": the window shows the check and its result
+  onCheckRequest: (fn) => { ipcRenderer.on('update-check', () => fn()); },
 });
