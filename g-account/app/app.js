@@ -272,10 +272,15 @@ function years() {
   set[Number(S.today.slice(0, 4))] = 1;
   return Object.keys(set).map(Number).sort(function (a, b) { return b - a; });
 }
+/** 연도 선택 상자. 좁은 창에서는 「년」을 빼서 머리줄에 자리를 남깁니다. */
+function yearOptions(ys) {
+  var unit = window.innerWidth < 720 ? '' : '년';
+  $('#year').innerHTML = (ys || years()).map(function (y) { return '<option value="' + y + '"' + (y === S.year ? ' selected' : '') + '>' + y + unit + '</option>'; }).join('');
+}
 function render() {
   var ys = years();
   if (ys.indexOf(S.year) < 0) S.year = ys[0];
-  $('#year').innerHTML = ys.map(function (y) { return '<option value="' + y + '"' + (y === S.year ? ' selected' : '') + '>' + y + '년</option>'; }).join('');
+  yearOptions(ys);
   $('#sheetLink').href = S.sheetUrl;
   var open = S.jobs.filter(function (j) { return j.unpaid > 0; });
   var badge = $('#unpaidBadge');
@@ -913,7 +918,7 @@ document.addEventListener('keydown', function (e) {
 var resizeTimer = null, escOn = null;
 window.addEventListener('resize', function () {
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(function () { if (S.loaded && S.tab === 'home' && !modal.innerHTML) render(); }, 150);
+  resizeTimer = setTimeout(function () { if (!S.loaded) return; if (S.tab === 'home' && !modal.innerHTML) render(); else yearOptions(); }, 150);
 });
 document.addEventListener('keydown', function (e) {
   if (e.key === 'Escape') {
