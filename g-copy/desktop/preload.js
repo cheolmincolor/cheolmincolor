@@ -17,7 +17,7 @@ contextBridge.exposeInMainWorld('gcopyNative', {
   },
 
   // fraction 0..1 shows a bar in the Dock/taskbar, above 1 "working", -1 none.
-  setProgress: (fraction, running) => ipcRenderer.send('progress', fraction, running),
+  setProgress: (fraction, running, paused) => ipcRenderer.send('progress', fraction, running, !!paused),
 
   // A system notification, shown only when the window is in the background.
   notify: (title, body) => ipcRenderer.send('notify', title, body),

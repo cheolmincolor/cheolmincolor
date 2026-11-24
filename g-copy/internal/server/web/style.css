@@ -453,3 +453,35 @@ body:has(#sched-edit[open]) #schedules { visibility: hidden; }
 
 /* a run that could not start has no figures to show */
 #result[data-norun] .facts, #result[data-norun] .notes { display: none; }
+
+/* ── queue, pause, sizes ────────────────────────────────── */
+.run-actions { display: flex; gap: 8px; flex: none; flex-wrap: wrap; justify-content: flex-end; }
+.bar.paused .fill { background: #777777; transition: none; }
+.queue { margin-bottom: 18px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; align-items: baseline; }
+.queue h2 { font-size: 11px; font-weight: 500; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); }
+.queue-sub { color: var(--muted); font-size: 12px; }
+.queue ol { grid-column: 1 / -1; margin-top: 6px; }
+.queue li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 2px 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line-soft); }
+.queue .q-n { color: var(--faint); font-size: 12px; text-align: right; }
+.queue .q-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queue .q-acts { display: flex; gap: 6px; }
+.queue .q-err { grid-column: 2 / -1; font-size: 12px; font-weight: 700; color: var(--text); overflow-wrap: anywhere; }
+.queue .q-err::before { content: "✕"; color: var(--bad); margin-right: 6px; }
+.queue li.failed .q-name { font-weight: 700; }
+
+/* how much there is, how much this run copies, and where it will fit */
+.cap { grid-column: 1 / -1; margin-top: 12px; padding-top: 11px; border-top: 1px solid var(--line-soft); font-size: 12.5px; color: var(--muted); }
+.cap + .extra { margin-top: 8px; padding-top: 8px; }
+.cap-text { display: flex; flex-wrap: wrap; gap: 2px 12px; }
+.cap-text b { color: var(--text); font-weight: 600; }
+.cap-text .short { display: inline-flex; align-items: center; gap: 6px; color: var(--text); font-weight: 700; }
+.cap-text .short .ico { width: 16px; height: 16px; color: var(--warn); }
+.capbar { display: flex; height: 6px; margin-top: 8px; border-radius: 3px; overflow: hidden; background: #303030; }
+.capbar i { display: block; height: 100%; min-width: 0; }
+.capbar .used { background: #5E5E5E; }
+.capbar .copy { background: #E0E0E0; }
+.capbar .have { background: #777777; }
+.capbar .over { background: repeating-linear-gradient(135deg, #C6C6C6 0 3px, #474747 3px 6px); }
+.cap-key { display: flex; flex-wrap: wrap; gap: 2px 12px; margin-top: 6px; font-size: 11px; color: var(--faint); }
+.cap-key span::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; background: var(--k); vertical-align: -1px; }
+@media (max-width: 820px) { .run-foot { flex-wrap: wrap; } .run-actions { width: 100%; } .run-actions .btn { flex: 1; } }

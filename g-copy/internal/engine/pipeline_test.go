@@ -531,3 +531,102 @@ func TestUnverifiedListSurvivesAndIsNotBackedUp(t *testing.T) {
 		t.Error("not treated as a housekeeping file")
 	}
 }
+
+// Pause holds the copy between chunks; resume continues it to the same
+// verified result; a paused job can still be cancelled.
+func TestPauseAndResume(t *testing.T) {
+	tmp := t.TempDir()
+	src, dst := filepath.Join(tmp, "A001"), filepath.Join(tmp, "NAS")
+	for i := 0; i < 10; i++ {
+		writeFile(t, filepath.Join(src, fmt.Sprintf("clip%02d.mov", i)), randBytes(int64(i), 24<<20), day)
+	}
+	os.MkdirAll(dst, 0o755)
+	o := Options{Sources: []string{src}, Destinations: []string{dst}, Subfolder: true}
+	j, err := start(o, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if j.Pause() {
+		// scanning is over in an instant; if it was caught, it must refuse
+		if s := j.Snapshot().Status; s != StatusCopying {
+			t.Errorf("paused while %s", s)
+		}
+		j.Resume()
+	}
+	for j.Snapshot().WorkDone < 40<<20 {
+		time.Sleep(2 * time.Millisecond)
+	}
+	if !j.Pause() {
+		t.Fatal("could not pause while copying")
+	}
+	time.Sleep(300 * time.Millisecond) // chunks in flight finish
+	a := j.Snapshot()
+	time.Sleep(500 * time.Millisecond)
+	b := j.Snapshot()
+	if !a.Paused || !b.Paused || a.Status != StatusCopying || a.WorkDone != b.WorkDone || a.WorkDone >= a.WorkTotal {
+		t.Fatalf("while paused: paused %v/%v status %s work %d → %d of %d", a.Paused, b.Paused, a.Status, a.WorkDone, b.WorkDone, a.WorkTotal)
+	}
+	if b.FinishAt != nil || b.ETA != 0 {
+		t.Errorf("a finish time is shown while paused: %v %v", b.FinishAt, b.ETA)
+	}
+	j.Resume()
+	j.Wait()
+	st := j.Snapshot()
+	if st.Status != StatusDone || st.Paused || st.FilesCopied != 10 || st.WorkDone != st.WorkTotal {
+		t.Fatalf("after resume: %s paused %v copied %d work %d/%d errors %+v", st.Status, st.Paused, st.FilesCopied, st.WorkDone, st.WorkTotal, st.Errors)
+	}
+	sameTree(t, "destination", treeDigest(t, src, nil), treeDigest(t, filepath.Join(dst, "A001"), isReportOrKept))
+	// the average speed does not count the time on hold
+	if st.CopyRate <= 0 || st.CopyRate < float64(st.WorkDone)/st.Seconds {
+		t.Errorf("copy rate %.0f, over the whole run %.0f", st.CopyRate, float64(st.WorkDone)/st.Seconds)
+	}
+	noPartials(t, dst)
+
+	// cancel while paused
+	dst2 := filepath.Join(tmp, "DAS")
+	os.MkdirAll(dst2, 0o755)
+	o.Destinations = []string{dst2}
+	j, _ = start(o, nil, nil)
+	for j.Snapshot().WorkDone < 30<<20 {
+		time.Sleep(2 * time.Millisecond)
+	}
+	j.Pause()
+	time.Sleep(200 * time.Millisecond)
+	j.Cancel()
+	done := make(chan struct{})
+	go func() { j.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("a paused job did not end when cancelled")
+	}
+	if st := j.Snapshot(); st.Status != StatusCancelled || st.Paused {
+		t.Errorf("after cancel: %s paused %v", st.Status, st.Paused)
+	}
+	noPartials(t, dst2)
+}
+
+// Once the source is read and compared, the snapshot says how big each
+// source is and how much of it this run copies, and how big each disk is.
+func TestSizesAfterScanning(t *testing.T) {
+	tmp := t.TempDir()
+	a, b, dst := filepath.Join(tmp, "A001"), filepath.Join(tmp, "B001"), filepath.Join(tmp, "NAS")
+	writeFile(t, filepath.Join(a, "one.mov"), make([]byte, 1000), day)
+	writeFile(t, filepath.Join(a, "two.mov"), make([]byte, 2000), day)
+	writeFile(t, filepath.Join(a, ".DS_Store"), make([]byte, 50), day)
+	writeFile(t, filepath.Join(b, "three.mov"), make([]byte, 4000), day)
+	writeFile(t, filepath.Join(dst, "A001", "one.mov"), make([]byte, 1000), day) // already there
+	st := runJob(t, Options{Sources: []string{a, b}, Destinations: []string{dst}}, nil)
+	if st.Status != StatusDone || len(st.Sources) != 2 {
+		t.Fatalf("%s %+v", st.Status, st.Sources)
+	}
+	if s := st.Sources[0]; s.Path != a || s.Files != 2 || s.Bytes != 3000 || s.CopyFiles != 1 || s.CopyBytes != 2000 {
+		t.Errorf("first source: %+v", s)
+	}
+	if s := st.Sources[1]; s.Files != 1 || s.Bytes != 4000 || s.CopyFiles != 1 || s.CopyBytes != 4000 {
+		t.Errorf("second source: %+v", s)
+	}
+	if d := st.Dests[0]; d.Need != 6000 || d.Total <= 0 || d.Free <= 0 || d.Free > d.Total {
+		t.Errorf("destination: need %d free %d total %d", d.Need, d.Free, d.Total)
+	}
+}

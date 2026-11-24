@@ -26,6 +26,7 @@ type destRun struct {
 	shown string   // as the user selected it
 	bases []string // per source: folder that receives that source's files
 	free  int64
+	total int64
 	need  int64
 
 	copied, skipped, reverified, replaced, failed, bytes atomic.Int64
@@ -117,6 +118,15 @@ type Job struct {
 	srcLane     []int    // per source: its lane
 	verifySlots *slots
 
+	// pause: copying stops between chunks until resumed (see Pause)
+	pauseMu     sync.Mutex
+	paused      bool
+	resume      chan struct{} // closed on Resume; non-nil while paused
+	pausedSince time.Time
+	pausedNanos atomic.Int64 // total time spent paused, for speed and remaining time
+
+	srcStats []SourceState // per source, filled in by compare
+
 	est        estimator    // used by speedLoop only
 	finishNano atomic.Int64 // estimated finish (unix nanoseconds), 0 = not yet known
 	copyStart  atomic.Int64 // when copying began (unix nanoseconds)
@@ -169,6 +179,70 @@ func start(opts Options, onFinish func(State), afterWrite func(string)) (*Job, e
 // Cancel stops the job. Files that were already verified stay in place;
 // files in flight are discarded.
 func (j *Job) Cancel() { j.cancel() }
+
+// Pause puts copying on hold. Chunks in flight are finished (so no file is
+// left half-written in a way that could be mistaken), then nothing is read
+// or written until Resume. It returns false if there is nothing to pause.
+func (j *Job) Pause() bool {
+	j.mu.Lock()
+	st := j.status
+	j.mu.Unlock()
+	if st != StatusCopying {
+		return false
+	}
+	j.pauseMu.Lock()
+	defer j.pauseMu.Unlock()
+	if !j.paused {
+		j.paused, j.resume, j.pausedSince = true, make(chan struct{}), time.Now()
+	}
+	return true
+}
+
+// Resume continues a paused job.
+func (j *Job) Resume() {
+	j.pauseMu.Lock()
+	defer j.pauseMu.Unlock()
+	if j.paused {
+		j.pausedNanos.Add(int64(time.Since(j.pausedSince)))
+		j.paused = false
+		close(j.resume)
+		j.resume = nil
+	}
+}
+
+func (j *Job) isPaused() bool {
+	j.pauseMu.Lock()
+	defer j.pauseMu.Unlock()
+	return j.paused
+}
+
+// pausedFor is the total time spent paused so far.
+func (j *Job) pausedFor() time.Duration {
+	j.pauseMu.Lock()
+	defer j.pauseMu.Unlock()
+	d := time.Duration(j.pausedNanos.Load())
+	if j.paused {
+		d += time.Since(j.pausedSince)
+	}
+	return d
+}
+
+// waitIfPaused blocks while the job is paused. Cancelling ends the wait.
+func (j *Job) waitIfPaused() {
+	for {
+		j.pauseMu.Lock()
+		ch := j.resume
+		j.pauseMu.Unlock()
+		if ch == nil {
+			return
+		}
+		select {
+		case <-ch:
+		case <-j.ctx.Done():
+			return
+		}
+	}
+}
 
 // Wait blocks until the job has finished.
 func (j *Job) Wait() { <-j.done }
@@ -419,11 +493,17 @@ func (j *Job) speedLoop(stop <-chan struct{}) {
 				if j.est.start.IsZero() {
 					j.est.begin(time.Unix(0, cs), 0)
 				}
-				_, fin := j.est.update(now, j.workDone.Load(), j.workTotal.Load())
+				if j.isPaused() {
+					j.finishNano.Store(0) // no finish time while on hold
+					continue
+				}
+				// The estimator runs on a clock that stands still while paused.
+				off := j.pausedFor()
+				_, fin := j.est.update(now.Add(-off), j.workDone.Load(), j.workTotal.Load())
 				if fin.IsZero() {
 					j.finishNano.Store(0)
 				} else {
-					j.finishNano.Store(fin.UnixNano())
+					j.finishNano.Store(fin.Add(off).UnixNano())
 				}
 			}
 		}
@@ -455,6 +535,11 @@ func (j *Job) Snapshot() State {
 	finished := j.status.Finished()
 	planned := j.status == StatusConfirming || j.status == StatusCopying || finished
 	j.mu.Unlock()
+	st.Sources = []SourceState{}
+	if planned { // written by compare, stable afterwards
+		st.Sources = append(st.Sources, j.srcStats...)
+	}
+	st.Paused = !finished && j.isPaused()
 
 	sort.Strings(st.Current)
 	st.Seconds = end.Sub(j.started).Seconds()
@@ -481,7 +566,9 @@ func (j *Job) Snapshot() State {
 	} else if st.Seconds > 0 {
 		st.Speed = float64(j.ioDone.Load()) / st.Seconds
 		if cs, ce := j.copyStart.Load(), j.copyEnd.Load(); cs != 0 && ce > cs && st.WorkDone > 0 {
-			st.CopyRate = float64(st.WorkDone) / time.Duration(ce-cs).Seconds()
+			if active := time.Duration(ce-cs) - j.pausedFor(); active > 0 {
+				st.CopyRate = float64(st.WorkDone) / active.Seconds() // not counting time on hold
+			}
 		}
 	}
 	clean := st.Status == StatusDone || (st.Status == StatusFailed && st.Message == "" && j.srcErrs.Load() == 0)
@@ -495,7 +582,7 @@ func (j *Job) Snapshot() State {
 		}
 		ds.RemoveList = []string{}
 		if planned { // these are written before copying and stable afterwards
-			ds.Free, ds.Need, ds.Skipped = dr.free, dr.need, dr.skipped.Load()
+			ds.Free, ds.Total, ds.Need, ds.Skipped = dr.free, dr.total, dr.need, dr.skipped.Load()
 			ds.ToRemove, ds.ToRemoveBytes = int64(len(dr.extras)), dr.removeBytes
 			for _, e := range dr.extras {
 				if len(ds.RemoveList) == maxRemoveList {

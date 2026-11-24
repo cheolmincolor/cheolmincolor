@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -310,5 +311,122 @@ func TestFolderSize(t *testing.T) {
 	}
 	if code, _ := c.do("GET", "/api/size?path=relative", nil, nil); code != http.StatusBadRequest {
 		t.Errorf("relative path: %d", code)
+	}
+}
+
+// Backups added while one is running wait their turn and start by
+// themselves; the running one can be paused and resumed.
+func TestQueueAndPause(t *testing.T) {
+	_, _, c := setup(t)
+	tmp := t.TempDir()
+	mk := func(name string, size int) string {
+		p := filepath.Join(tmp, name)
+		os.MkdirAll(p, 0o755)
+		os.WriteFile(filepath.Join(p, "clip.mov"), bytes.Repeat([]byte{byte(len(name))}, size), 0o644)
+		return p
+	}
+	a, b2, c3, gone := mk("A001", 120<<20), mk("A002", 1000), mk("A003", 2000), mk("A004", 500)
+	dst := filepath.Join(tmp, "NAS")
+	os.MkdirAll(dst, 0o755)
+	opt := func(src string) map[string]any {
+		return map[string]any{"sources": []string{src}, "destinations": []string{dst}, "subfolder": true}
+	}
+
+	if code, _ := c.do("POST", "/api/job/pause", map[string]any{}, nil); code != http.StatusConflict {
+		t.Errorf("pause with nothing running: %d", code)
+	}
+	if code, out := c.do("POST", "/api/job", opt(a), nil); code != 200 {
+		t.Fatalf("start: %d %v", code, out)
+	}
+	// pause as soon as it copies
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		code, out := c.do("POST", "/api/job/pause", map[string]any{}, nil)
+		if code == 200 && out["paused"] == true {
+			break
+		}
+		if _, j := c.do("GET", "/api/job", nil, nil); j["status"] == "done" || time.Now().After(deadline) {
+			t.Fatalf("could not pause the first backup: %d %v", code, j["status"])
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	// a second start is still refused; the queue takes it
+	if code, _ := c.do("POST", "/api/job", opt(b2), nil); code != http.StatusConflict {
+		t.Errorf("second start while one runs: %d", code)
+	}
+	for _, src := range []string{b2, c3, gone} {
+		if code, out := c.do("POST", "/api/queue", opt(src), nil); code != 200 {
+			t.Fatalf("queue %s: %d %v", src, code, out)
+		}
+	}
+	if code, _ := c.do("POST", "/api/queue", map[string]any{"sources": []string{a}, "destinations": []string{a}}, nil); code != http.StatusBadRequest {
+		t.Errorf("an unsafe backup was queued: %d", code)
+	}
+	_, out := c.do("GET", "/api/queue", nil, nil)
+	q := out["queue"].([]any)
+	names := func(q []any) string {
+		var n []string
+		for _, it := range q {
+			n = append(n, it.(map[string]any)["name"].(string))
+		}
+		return strings.Join(n, " | ")
+	}
+	if names(q) != "A002 → NAS | A003 → NAS | A004 → NAS" {
+		t.Fatalf("queue: %s", names(q))
+	}
+	// A003 first
+	_, out = c.do("POST", "/api/queue/"+q[1].(map[string]any)["id"].(string)+"/up", map[string]any{}, nil)
+	if got := names(out["queue"].([]any)); got != "A003 → NAS | A002 → NAS | A004 → NAS" {
+		t.Errorf("after moving up: %s", got)
+	}
+	// the disk of the last one goes away before its turn
+	os.RemoveAll(gone)
+	// still paused: nothing else has started
+	time.Sleep(300 * time.Millisecond)
+	if _, j := c.do("GET", "/api/job", nil, nil); j["paused"] != true || j["status"] != "copying" {
+		t.Fatalf("while paused: %v %v", j["status"], j["paused"])
+	}
+	if code, j := c.do("POST", "/api/job/resume", map[string]any{}, nil); code != 200 || j["paused"] != false {
+		t.Fatalf("resume: %d %v", code, j["paused"])
+	}
+	// all three run, in order, one at a time
+	deadline = time.Now().Add(30 * time.Second)
+	var h []any
+	for {
+		_, out = c.do("GET", "/api/history", nil, nil)
+		h = out["history"].([]any)
+		_, qv := c.do("GET", "/api/queue", nil, nil)
+		if q := qv["queue"].([]any); len(h) == 3 && len(q) == 1 && q[0].(map[string]any)["error"] != nil {
+			break // all three ran, and the fourth had its turn
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("queue did not run: %d runs, queue %v", len(h), qv)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	var order []string
+	for i := len(h) - 1; i >= 0; i-- { // history is newest first
+		j := h[i].(map[string]any)
+		o := j["options"].(map[string]any)
+		order = append(order, filepath.Base(o["sources"].([]any)[0].(string))+":"+j["status"].(string)+":"+fmt.Sprint(o["queued"] == true)+":"+fmt.Sprint(o["label"]))
+	}
+	want := "A001:done:false:<nil> A003:done:true:A003 → NAS A002:done:true:A002 → NAS"
+	if strings.Join(order, " ") != want {
+		t.Errorf("runs: %s\nwant: %s", strings.Join(order, " "), want)
+	}
+	for _, n := range []string{"A001", "A002", "A003"} {
+		if _, err := os.Stat(filepath.Join(dst, n, "clip.mov")); err != nil {
+			t.Errorf("%s was not backed up: %v", n, err)
+		}
+	}
+	// the one whose disk is gone stays listed with the reason, and can be removed
+	_, out = c.do("GET", "/api/queue", nil, nil)
+	left := out["queue"].([]any)[0].(map[string]any)
+	if left["name"] != "A004 → NAS" || !strings.Contains(left["error"].(string), "not found") {
+		t.Errorf("left in the queue: %v", left)
+	}
+	_, out = c.do("POST", "/api/queue/"+left["id"].(string)+"/delete", map[string]any{}, nil)
+	if len(out["queue"].([]any)) != 0 {
+		t.Errorf("after removing: %v", out["queue"])
 	}
 }

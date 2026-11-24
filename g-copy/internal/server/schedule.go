@@ -250,6 +250,24 @@ func (s *Server) startQueued() {
 			s.mu.Unlock()
 			return // its end calls us again
 		}
+		// Backups a person queued go first, in their order; schedules after.
+		if it := s.nextQueuedLocked(); it != nil {
+			opts := it.Options
+			opts.Label, opts.Queued, opts.Unattended = it.Name, true, false
+			opts.HintSpeed = s.speedHint(opts.Destinations)
+			j, err := engine.Start(opts, s.jobFinished)
+			if err != nil {
+				// e.g. its disk was unplugged meanwhile: keep it listed with
+				// the reason, and go on with the next one
+				it.Error = err.Error()
+				s.queue = append(s.queue, it)
+				s.mu.Unlock()
+				continue
+			}
+			s.job = j
+			s.mu.Unlock()
+			return
+		}
 		s.sched.mu.Lock()
 		if len(s.sched.queue) == 0 {
 			s.sched.mu.Unlock()
@@ -374,7 +392,7 @@ func (s *Server) handleScheduleCreate(w http.ResponseWriter, r *http.Request) {
 		err = in.When.validate()
 	}
 	opts := *in.Options
-	opts.Label, opts.Unattended = "", false
+	opts.Label, opts.Unattended, opts.Queued = "", false, false
 	screenOptions(&opts)
 	if err == nil {
 		err = engine.Check(opts) // the same checks as a manual start

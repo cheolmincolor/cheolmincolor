@@ -128,6 +128,8 @@ async function api(path, body) {
 // ── state ───────────────────────────────────────────────────────────────
 
 const state = {
+  queue: [],       // backups waiting for the running one (see /api/queue)
+  detached: false, // the person left a running backup on its own to set up another
   volumes: [],     // last known disks, for icons
   mode: 'setup',   // setup | running | finished
   sources: [],     // { path, isVolume }
@@ -195,7 +197,9 @@ function setRing(d, frac, state, centre) {
 
 function card(item, kind, index) {
   const extra = h('div', { class: 'extra' });
-  if (kind === 'dst') item.extraEl = extra;
+  const cap = h('div', { class: 'cap', hidden: true });
+  item.extraEl = extra;
+  item.capEl = cap;
   let lead;
   if (kind === 'dst') {
     lead = item.ringEl = ringEl();
@@ -212,6 +216,7 @@ function card(item, kind, index) {
       class: 'iconbtn', type: 'button', 'aria-label': 'Remove ' + baseName(item.path),
       onclick: () => { (kind === 'src' ? state.sources : state.dests).splice(index, 1); saveDests(); renderSetup(); },
     }, icon('x')),
+    cap,
     extra,
   );
 }
@@ -281,6 +286,7 @@ function renderDestProgress(job) {
       return 'bad';
     }
     if (job.status !== 'copying') { setRing(d, 0.25, 'wait', ''); return ''; }
+    if (job.paused && s.workTotal && s.workDone < s.workTotal) { setRing(d, s.workDone / s.workTotal, 'cap', '#pause'); return ''; }
     if (!s.workTotal) { setRing(d, 1, s.unverified > 0 ? 'warn' : 'ok', s.unverified > 0 ? '#alert' : '#check'); return s.unverified > 0 ? '' : 'ok'; } // nothing to copy here
     const f = s.workDone / s.workTotal;
     setRing(d, f, s.stopped ? 'bad' : 'run', s.stopped ? '#alert' : Math.floor(f * 100) + '%');
@@ -293,7 +299,13 @@ function renderSetup() {
   flowState = []; // plain lines until something runs
   renderLanes();
   const need = sourceNeed();
+  for (const s of state.sources) {
+    const e = sizes.get(s.path);
+    s.capEl.hidden = true;
+    s.extraEl.replaceChildren(...(!e || e.pending ? [h('span', {}, 'Checking size…')] : e.failed ? [] : [h('span', {}, plural(e.files, 'file') + ' · ' + fmtBytes(e.bytes))]));
+  }
   for (const d of state.dests) {
+    d.capEl.hidden = true;
     if (d.free == null) continue;
     const kids = [h('span', {}, fmtBytes(d.free) + ' free' + (d.total > 0 ? ' of ' + fmtBytes(d.total) : ''))];
     if (need.checking) kids.push(h('span', {}, 'Checking size…'));
@@ -315,6 +327,8 @@ function renderSetup() {
   sub.disabled = many;
 
   const ready = state.sources.length > 0 && state.dests.length > 0;
+  // While another backup runs, a new one waits its turn in the queue.
+  $('btn-start').textContent = otherRunning() ? 'Add to Queue' : 'Start Backup';
   $('btn-start').disabled = !ready;
   $('btn-save-sched').disabled = !ready;
   $('start-err').hidden = true;
@@ -345,7 +359,7 @@ function sourceNeed() {
       sizes.set(s.path, e);
       const path = s.path;
       api('/api/size?path=' + encodeURIComponent(path))
-        .then((r) => sizes.set(path, { bytes: r.bytes }), () => sizes.set(path, { failed: true }))
+        .then((r) => sizes.set(path, { bytes: r.bytes, files: r.files }), () => sizes.set(path, { failed: true }))
         .then(() => { if (state.mode === 'setup') renderSetup(); });
     }
     if (e.pending) checking = true;
@@ -353,6 +367,52 @@ function sourceNeed() {
     else bytes += e.bytes;
   }
   return { bytes, checking, known: known && !checking };
+}
+
+// ── sizes, once the source has been read and compared ─────────────────
+
+function capBar(parts) { // [class, bytes, key label]
+  const total = parts.reduce((n, p) => n + Math.max(0, p[1]), 0) || 1;
+  const bar = h('div', { class: 'capbar', role: 'img', 'aria-label': parts.map((p) => p[2] + ' ' + fmtBytes(p[1])).join(', ') });
+  for (const [cls, bytes] of parts) { const seg = h('i', { class: cls }); seg.style.width = (Math.max(0, bytes) / total) * 100 + '%'; if (bytes > 0) seg.style.minWidth = '3px'; bar.append(seg); } // a small share still shows
+  const colour = { used: '#5E5E5E', copy: '#E0E0E0', have: '#777777', free: '#303030', over: '#C6C6C6' };
+  const key = h('div', { class: 'cap-key' }, ...parts.filter((p) => p[1] > 0).map((p) => { const k = h('span', {}, p[2]); k.style.setProperty('--k', colour[p[0]]); return k; }));
+  return [bar, key];
+}
+
+function renderSizes(job) {
+  const known = job.sources && job.sources.length > 0;
+  state.sources.forEach((s, i) => {
+    const st = known && job.sources[i];
+    s.capEl.hidden = !st;
+    if (!st) { if (s.extraEl) s.extraEl.replaceChildren(); return; }
+    s.extraEl.replaceChildren();
+    const have = st.bytes - st.copyBytes;
+    s.capEl.replaceChildren(
+      h('div', { class: 'cap-text' },
+        h('span', {}, h('b', {}, plural(st.files, 'file') + ' · ' + fmtBytes(st.bytes)), ' in this source'),
+        h('span', {}, st.copyFiles > 0 ? plural(st.copyFiles, 'file') + ' · ' + fmtBytes(st.copyBytes) + ' to copy' : 'nothing new to copy')),
+      ...capBar([['copy', st.copyBytes, 'To copy'], ['have', have, 'Already on the destination']]),
+    );
+  });
+  state.dests.forEach((d, i) => {
+    const st = job.dests[i];
+    const show = known && st && st.total > 0 && st.free >= 0;
+    d.capEl.hidden = !show;
+    if (!show) return;
+    const used = Math.max(0, st.total - st.free);
+    const after = st.free - st.need;
+    const short = after < 0;
+    d.capEl.replaceChildren(
+      h('div', { class: 'cap-text' },
+        h('span', {}, 'This backup ', h('b', {}, fmtBytes(st.need))),
+        h('span', {}, 'Free before ', h('b', {}, fmtBytes(st.free))),
+        short ? h('span', { class: 'short' }, icon('alert'), 'Short by ' + fmtBytes(-after))
+          : h('span', {}, 'Free after ', h('b', {}, fmtBytes(after)))),
+      ...capBar(short ? [['used', used, 'Used'], ['over', st.free, 'Not enough room for ' + fmtBytes(st.need)]]
+        : [['used', used, 'Used'], ['copy', st.need, 'This backup'], ['free', after, 'Free after']]),
+    );
+  });
 }
 
 function destExtra(job, i) {
@@ -423,7 +483,14 @@ function renderRun(job) {
     stats = parts.join(' · ');
     if (job.current.length) file = job.current[0] + (job.current.length > 1 ? '  and ' + (job.current.length - 1) + ' more' : '');
   }
+  if (job.paused) { phase = 'Paused'; stats = 'Paused — nothing is being read or written. ' + num(job.filesCopied) + ' copied so far.'; file = ''; }
   track.classList.toggle('busy', job.status !== 'copying');
+  track.classList.toggle('paused', !!job.paused);
+  $('btn-pause').hidden = job.status !== 'copying';
+  $('pause-text').textContent = job.paused ? 'Resume' : 'Pause';
+  $('pause-icon').setAttribute('href', job.paused ? '#i-play' : '#i-pause');
+  $('btn-pause').classList.toggle('primary', !!job.paused);
+  $('btn-pause').classList.toggle('ghost', !job.paused);
   const order = ['scanning', 'comparing', 'copying', 'report'];
   const at = order.indexOf(job.status);
   for (const li of $('run-steps').children) {
@@ -435,9 +502,10 @@ function renderRun(job) {
   $('run-pct').textContent = pct;
   $('run-stats').textContent = stats;
   $('run-file').textContent = file;
-  document.title = (pct ? pct + ' — ' : '') + 'G-Copy';
-  // Dock / taskbar: a bar while copying, a pulsing one while still counting
-  if (native) native.setProgress(job.status === 'copying' && job.workTotal > 0 ? job.workDone / job.workTotal : 2, true);
+  document.title = (job.paused ? 'Paused — ' : pct ? pct + ' — ' : '') + 'G-Copy';
+  // Dock / taskbar: a bar while copying, a pulsing one while still counting.
+  // Paused: the Mac may sleep.
+  if (native) native.setProgress(job.status === 'copying' && job.workTotal > 0 ? job.workDone / job.workTotal : 2, true, !!job.paused);
 }
 
 // ── finished ────────────────────────────────────────────────────────────
@@ -529,7 +597,7 @@ function renderResult(job) {
   const listed = job.dests.reduce((n, d) => n + d.toRemove, 0);
   if (job.mirror === 'approved' && removed > 0) notes.push(h('li', {}, 'Sync: ' + plural(removed, 'file') + ' no longer in the source were moved (not deleted) to each destination\'s _G-Copy_Removed folder.'));
   if (job.mirror === 'declined') notes.push(h('li', {}, 'Sync: ' + plural(listed, 'file') + ' no longer in the source were left where they are.'));
-  if (job.options.label) notes.unshift(h('li', {}, 'Scheduled run: ' + job.options.label));
+  if (job.options.label) notes.unshift(h('li', {}, (job.options.queued ? 'Started from the queue: ' : 'Scheduled run: ') + job.options.label));
   if (unverified && job.filesCopied > 0) notes.unshift(h('li', { class: 'warn' }, 'Verification was off: no checksum report (MHL) was written for the files copied in this run.'));
   if (job.datesFixed > 0) notes.push(h('li', {}, plural(job.datesFixed, 'file') + ' had the same size but a different date on the destination. Their content was read back and matches the source, so only the date was corrected — nothing was copied again.'));
   if (job.retried > 0) notes.push(h('li', {}, plural(job.retried, 'copy', 'copies') + ' needed a second try after a temporary problem (a read error or a checksum mismatch).' + (unverified ? '' : ' Every file listed as copied was verified on its final try.')));
@@ -586,6 +654,7 @@ function applyJob(job) {
   }
   setMode(finished ? 'finished' : job.status === 'confirming' ? 'confirm' : 'running');
   if (!finished) announce = job.id;
+  renderSizes(job);
   state.dests.forEach((d, i) => d.extraEl && d.extraEl.replaceChildren(...destExtra(job, i)));
   renderDestProgress(job);
   if (finished) renderResult(job);
@@ -670,17 +739,24 @@ async function poll() {
       if (ours) applyJob(ours); else { setMode('setup'); renderSetup(); }
       renderBanner(job);
     }
-  } else if (job.status !== 'idle' && !mine && job.options && job.options.label) {
-    renderBanner(job);
+  } else if (job.status !== 'idle' && !mine && job.options && (job.options.label || state.detached)) {
+    renderBanner(job); // a scheduled or queued run, or one the person stepped away from to set up another
   } else if (!mine && !FINISHED.includes(job.status) && job.status !== 'idle') {
     applyJob(job); // a backup started from another window: follow it here too
   } else {
     hideBanner();
   }
+  if (job.status === 'idle') state.detached = false;
+  await loadQueue();
+  if (state.mode === 'setup') $('btn-start').textContent = otherRunning() ? 'Add to Queue' : 'Start Backup';
   if (Date.now() - schedLoaded > 30000) loadSchedules();
   const busy = state.mode === 'running' || state.mode === 'confirm';
   schedule(busy ? 400 : bannerJob && !FINISHED.includes(bannerJob.status) ? 1000 : 3000);
 }
+
+// What a background run is called: a schedule's name, a queued backup's, or its folders.
+const jobKind = (job) => (job.options.queued ? 'Queued backup' : job.options.label ? 'Scheduled run' : 'Backup');
+const jobName = (job) => job.options.label || job.options.sources.map(baseName).join(', ') + ' → ' + job.options.destinations.map(baseName).join(', ');
 
 function renderBanner(job) {
   bannerJob = job;
@@ -688,26 +764,32 @@ function renderBanner(job) {
   let text, tone = '';
   if (!finished) {
     const copying = job.status === 'copying' && job.workTotal > 0;
-    text = 'Scheduled run in progress · ' + job.options.label + ' · ' + (copying ? Math.floor((job.workDone / job.workTotal) * 100) + '% · ' + fmtLeft(job) : 'preparing');
-    announceSched = job.id;
-    if (native) native.setProgress(copying ? job.workDone / job.workTotal : 2, true);
+    const pct = copying ? Math.floor((job.workDone / job.workTotal) * 100) + '%' : '';
+    const where = job.status === 'confirming' ? 'needs your decision — click View'
+      : job.paused ? 'paused · ' + pct
+      : copying ? pct + ' · ' + fmtLeft(job) : 'preparing';
+    text = jobKind(job) + (job.status === 'confirming' ? ' ' : ' in progress · ') + (job.status === 'confirming' ? '· ' : '') + jobName(job) + ' · ' + where;
+    if (job.status === 'confirming') tone = 'warn';
+    if (job.status === 'confirming' && announceSched !== 'ask:' + job.id && native) native.notify('G-Copy — Your decision is needed', jobName(job) + ': choose whether to clean up files that are no longer in the source.');
+    announceSched = job.status === 'confirming' ? 'ask:' + job.id : job.id;
+    if (native) native.setProgress(copying ? job.workDone / job.workTotal : 2, true, !!job.paused);
   } else {
     const loose = (job.options.noVerify && job.filesCopied > 0) || job.dests.some((d) => d.unverified > 0);
     const verdict = job.status === 'done' ? (loose ? 'done, not verified' : 'complete') : job.status === 'cancelled' ? 'cancelled' : 'needs a look';
     tone = job.status === 'done' ? (loose ? 'warn' : 'ok') : job.status === 'cancelled' ? 'warn' : 'bad';
-    text = 'Scheduled run ' + verdict + ' · ' + job.options.label + ' · ' + num(job.filesCopied) + ' copied' +
+    text = jobKind(job) + ' ' + verdict + ' · ' + jobName(job) + ' · ' + num(job.filesCopied) + ' copied' +
       (job.filesFailed ? ', ' + num(job.filesFailed) + ' failed' : '');
     if (native) native.setProgress(-1, false);
-    if (announceSched === job.id) {
+    if (announceSched === job.id || announceSched === 'ask:' + job.id) {
       announceSched = null;
-      if (native) native.notify('G-Copy — Scheduled run ' + verdict, job.options.label + ': ' + num(job.filesCopied) + ' copied' + (job.filesFailed ? ', ' + num(job.filesFailed) + ' failed' : ''));
+      if (native) native.notify('G-Copy — ' + jobKind(job) + ' ' + verdict, jobName(job) + ': ' + num(job.filesCopied) + ' copied' + (job.filesFailed ? ', ' + num(job.filesFailed) + ' failed' : ''));
       loadSchedules();
     }
   }
   const b = $('sched-banner');
   b.hidden = false;
   b.dataset.tone = tone;
-  $('sb-icon').setAttribute('href', '#i-' + (tone === 'ok' ? 'check' : tone === 'bad' ? 'alert' : tone === 'warn' ? (job.status === 'cancelled' ? 'stop' : 'alert') : 'cal'));
+  $('sb-icon').setAttribute('href', '#i-' + (tone === 'ok' ? 'check' : tone === 'bad' ? 'alert' : tone === 'warn' ? (job.status === 'cancelled' ? 'stop' : 'alert') : job.paused ? 'pause' : job.options.label && !job.options.queued ? 'cal' : 'disk'));
   $('sb-text').textContent = text;
   $('sb-view').textContent = finished ? 'View Result' : 'View';
   $('sb-close').hidden = !finished;
@@ -728,6 +810,7 @@ $('sb-view').addEventListener('click', () => {
   }
   hideBanner();
   state.job = null;
+  state.detached = false;
   applyJob(job);
   schedule(100);
 });
@@ -757,7 +840,79 @@ async function startJob(opts) {
   }
 }
 
-$('btn-start').addEventListener('click', () => startJob(options()));
+// ── the queue ───────────────────────────────────────────────────────────
+
+// otherRunning: a backup is going on that this screen is not showing in full.
+const otherRunning = () => !!bannerJob && !FINISHED.includes(bannerJob.status);
+
+async function loadQueue() {
+  try { state.queue = (await api('/api/queue')).queue; } catch { return; }
+  renderQueue();
+}
+
+function renderQueue() {
+  const q = state.queue || [];
+  $('queue-panel').hidden = q.length === 0;
+  const waiting = q.filter((x) => !x.error).length;
+  $('queue-sub').textContent = waiting ? plural(waiting, 'backup') + ' waiting. ' + (waiting === 1 ? 'It starts' : 'They start one after another') + ' when the running backup has finished.' : 'These could not start.';
+  const act = async (path) => { try { state.queue = (await api(path, {})).queue; renderQueue(); } catch { /* shown by api() */ } };
+  $('queue-list').replaceChildren(...q.map((it, i) => h('li', { class: it.error ? 'failed' : '' },
+    h('span', { class: 'q-n' }, String(i + 1)),
+    h('span', { class: 'q-name', title: it.options.sources.concat(it.options.destinations).join('\n') }, it.name + fmtQueueOpts(it.options)),
+    h('span', { class: 'q-acts' },
+      i > 0 && !it.error ? h('button', { class: 'btn small', type: 'button', 'aria-label': 'Move ' + it.name + ' up', onclick: () => act('/api/queue/' + it.id + '/up') }, 'Move Up') : null,
+      h('button', { class: 'btn small', type: 'button', 'aria-label': 'Remove ' + it.name + ' from the queue', onclick: () => act('/api/queue/' + it.id + '/delete') }, 'Remove')),
+    it.error ? h('span', { class: 'q-err' }, 'Could not start: ' + it.error) : null,
+  )));
+}
+const fmtQueueOpts = (o) => { const x = [o.mirror && 'sync', o.reverify && 're-check', o.noVerify && 'not verified'].filter(Boolean); return x.length ? '  ·  ' + x.join(' · ') : ''; };
+
+async function addToQueue(opts) {
+  const err = $('start-err');
+  err.hidden = true;
+  $('btn-start').disabled = true;
+  try {
+    state.queue = (await api('/api/queue', opts)).queue;
+    store.set('opts', { verify: !opts.noVerify, subfolder: opts.subfolder, reverify: wantRecheck(), mirror: !!opts.mirror });
+    state.sources = []; // the next card, to the same place
+    sizes.clear();
+    renderQueue();
+    renderSetup();
+    schedule(100);
+  } catch (e) {
+    err.textContent = e.message;
+    err.hidden = false;
+    $('btn-start').disabled = false;
+  }
+}
+
+$('btn-start').addEventListener('click', () => (otherRunning() ? addToQueue(options()) : startJob(options())));
+
+// Step away from the running backup to set up another: it carries on, shown in the banner.
+$('btn-add-job').addEventListener('click', () => {
+  const job = state.job;
+  if (!job) return;
+  state.detached = true;
+  state.job = null;
+  state.sources = [];
+  state.dests = state.dests.map((d) => item(d.path));
+  sizes.clear();
+  setMode('setup');
+  document.title = 'G-Copy';
+  renderBanner(job);
+  renderSetup();
+  refreshDests();
+  schedule(100);
+});
+
+$('btn-pause').addEventListener('click', async () => {
+  const job = state.job;
+  if (!job) return;
+  $('btn-pause').disabled = true;
+  try { applyJob(await api(job.paused ? '/api/job/resume' : '/api/job/pause', {})); } catch { /* shown by api(); the next poll puts the button right */ }
+  $('btn-pause').disabled = false;
+  schedule(250);
+});
 
 let cancelArmed = 0;
 $('btn-cancel').addEventListener('click', async () => {
@@ -1035,7 +1190,7 @@ $('btn-history').addEventListener('click', async () => {
     const gone = (j.dests || []).reduce((n, d) => n + (d.removed || 0), 0);
     if (gone > 0) detail += ' · ' + num(gone) + ' cleaned up';
     if (loose) detail = 'Not verified · ' + detail;
-    if (j.options.label) detail = 'Scheduled · ' + j.options.label + ' · ' + detail;
+    if (j.options.label) detail = (j.options.queued ? 'Queued · ' : 'Scheduled · ' + j.options.label + ' · ') + detail;
     if (j.status === 'cancelled') detail = 'Cancelled · ' + detail;
     if (j.status === 'failed') detail = (j.message || num(j.filesFailed) + ' failed · ' + plural(j.errorCount, 'problem')) + (j.message ? '' : ' · ' + detail);
     // A run that failed or was cancelled can be opened again, with its list of problems.

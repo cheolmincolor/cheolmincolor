@@ -370,6 +370,11 @@ func (j *Job) compare() error {
 		j.blockCollisions(d)
 	}
 
+	stats := make([]SourceState, len(j.srcRoots))
+	for s := range stats {
+		stats[s].Path = j.opts.Sources[s]
+	}
+	defer func() { j.srcStats = stats }() // also when the run stops here for lack of space
 	var total int64
 	for i := range j.files {
 		f := &j.files[i]
@@ -391,19 +396,23 @@ func (j *Job) compare() error {
 				dr.failed.Add(1)
 			}
 		}
+		stats[f.src].Files++
+		stats[f.src].Bytes += f.size
 		if active > 0 {
 			total += f.size * (1 + reads) // one source read + one read-back per verified destination
+			stats[f.src].CopyFiles++
+			stats[f.src].CopyBytes += f.size
 		}
 	}
 	j.workTotal.Store(total)
 
 	for _, dr := range j.dests {
-		free, _, err := DiskUsage(dr.path)
+		free, total, err := DiskUsage(dr.path)
 		if err != nil {
 			dr.free = -1 // unknown: some network shares do not report it
 			continue
 		}
-		dr.free = free
+		dr.free, dr.total = free, total
 		if dr.need > free {
 			return fmt.Errorf("%s needs %s but has %s free. Free up space on it or choose another destination.",
 				filepath.Base(dr.shown), humanBytes(dr.need), humanBytes(free))

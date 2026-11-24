@@ -43,7 +43,8 @@ type Options struct {
 	NoVerify bool `json:"noVerify,omitempty"`
 
 	// Set by the scheduler, not by the screen.
-	Label      string `json:"label,omitempty"`      // name of the schedule that started the run
+	Label      string `json:"label,omitempty"`      // name of the schedule (or queued backup) that started the run
+	Queued     bool   `json:"queued,omitempty"`     // started from the queue, after another backup
 	Unattended bool   `json:"unattended,omitempty"` // nobody is there to answer questions
 
 	// Speed of an earlier run to the same destinations (bytes of work per
@@ -90,6 +91,7 @@ type FileError struct {
 type DestState struct {
 	Path          string   `json:"path"`
 	Free          int64    `json:"free"`
+	Total         int64    `json:"total"` // size of the disk (0 if unknown)
 	Need          int64    `json:"need"`
 	Copied        int64    `json:"copied"`
 	Skipped       int64    `json:"skipped"`
@@ -112,36 +114,48 @@ type DestState struct {
 	Folders       []string `json:"folders"`
 }
 
+// SourceState is the per-source part of a job snapshot, known once the
+// source has been read and compared with the destinations.
+type SourceState struct {
+	Path      string `json:"path"`
+	Files     int64  `json:"files"` // files in the source (without system files)
+	Bytes     int64  `json:"bytes"`
+	CopyFiles int64  `json:"copyFiles"` // of those, files this run copies to at least one destination
+	CopyBytes int64  `json:"copyBytes"`
+}
+
 // State is a point-in-time snapshot of a job, safe to serialise.
 type State struct {
-	ID            string      `json:"id"`
-	Status        Status      `json:"status"`
-	Message       string      `json:"message,omitempty"`
-	Options       Options     `json:"options"`
-	StartedAt     time.Time   `json:"startedAt"`
-	EndedAt       *time.Time  `json:"endedAt,omitempty"`
-	Seconds       float64     `json:"seconds"`
-	ScanFiles     int64       `json:"scanFiles"`
-	ScanBytes     int64       `json:"scanBytes"`
-	Excluded      int64       `json:"excluded"`
-	Special       int64       `json:"special"`
-	WorkTotal     int64       `json:"workTotal"`
-	WorkDone      int64       `json:"workDone"`
-	Speed         float64     `json:"speed"`
-	ETA           float64     `json:"eta"`                // seconds left; 0 while still estimating
-	FinishAt      *time.Time  `json:"finishAt,omitempty"` // estimated finish (while copying)
-	CopyRate      float64     `json:"copyRate,omitempty"` // average speed of the copy phase, for the next estimate
-	FilesCopied   int64       `json:"filesCopied"`
-	FilesSkipped  int64       `json:"filesSkipped"`
-	FilesVerified int64       `json:"filesVerified"`
-	FilesFailed   int64       `json:"filesFailed"`
-	DatesFixed    int64       `json:"datesFixed"` // files whose content matched and only the date was corrected
-	Retried       int64       `json:"retried"`    // second tries after a temporary error
-	BytesCopied   int64       `json:"bytesCopied"`
-	ErrorCount    int64       `json:"errorCount"`
-	Errors        []FileError `json:"errors"`
-	Warnings      []string    `json:"warnings"`
-	Mirror        string      `json:"mirror"` // sync outcome; see the Mirror* constants
-	Current       []string    `json:"current"`
-	Dests         []DestState `json:"dests"`
+	ID            string        `json:"id"`
+	Status        Status        `json:"status"`
+	Message       string        `json:"message,omitempty"`
+	Options       Options       `json:"options"`
+	StartedAt     time.Time     `json:"startedAt"`
+	EndedAt       *time.Time    `json:"endedAt,omitempty"`
+	Seconds       float64       `json:"seconds"`
+	ScanFiles     int64         `json:"scanFiles"`
+	ScanBytes     int64         `json:"scanBytes"`
+	Excluded      int64         `json:"excluded"`
+	Special       int64         `json:"special"`
+	WorkTotal     int64         `json:"workTotal"`
+	WorkDone      int64         `json:"workDone"`
+	Speed         float64       `json:"speed"`
+	ETA           float64       `json:"eta"`                // seconds left; 0 while still estimating
+	FinishAt      *time.Time    `json:"finishAt,omitempty"` // estimated finish (while copying)
+	CopyRate      float64       `json:"copyRate,omitempty"` // average speed of the copy phase, for the next estimate
+	FilesCopied   int64         `json:"filesCopied"`
+	FilesSkipped  int64         `json:"filesSkipped"`
+	FilesVerified int64         `json:"filesVerified"`
+	FilesFailed   int64         `json:"filesFailed"`
+	DatesFixed    int64         `json:"datesFixed"` // files whose content matched and only the date was corrected
+	Retried       int64         `json:"retried"`    // second tries after a temporary error
+	BytesCopied   int64         `json:"bytesCopied"`
+	ErrorCount    int64         `json:"errorCount"`
+	Errors        []FileError   `json:"errors"`
+	Warnings      []string      `json:"warnings"`
+	Mirror        string        `json:"mirror"` // sync outcome; see the Mirror* constants
+	Current       []string      `json:"current"`
+	Dests         []DestState   `json:"dests"`
+	Sources       []SourceState `json:"sources"` // filled in once comparing is done
+	Paused        bool          `json:"paused"`  // copying is on hold until resumed
 }

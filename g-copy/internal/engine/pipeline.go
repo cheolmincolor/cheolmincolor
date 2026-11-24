@@ -289,6 +289,7 @@ func (j *Job) dispatch(l int, wg *sync.WaitGroup) {
 		if !lane.take(j.ctx, weight) {
 			return
 		}
+		j.waitIfPaused() // do not start another file while on hold
 		wg.Add(1)
 		go func(i, weight int) {
 			defer wg.Done()
@@ -646,6 +647,7 @@ func (j *Job) copyPass(f *srcFile, works []*destWork, add func(int64)) []byte {
 	h := newHasher(j.opts.Algo)
 	var total int64
 	srcErr := readChunks(j.ctx, src, srcDev(f.src), func(chunk []byte) bool {
+		j.waitIfPaused()
 		anyAlive := false
 		for _, w := range works {
 			anyAlive = anyAlive || w.alive()
@@ -732,6 +734,7 @@ func (j *Job) verifyPass(f *srcFile, works []*destWork, srcSum []byte, add func(
 			}
 			dr := j.dests[w.d]
 			sum, n, err := hashFile(j.ctx, path, j.opts.Algo, dr.path, func(n int64) {
+				j.waitIfPaused()
 				add(n)
 				w.progress(dr, n)
 			})

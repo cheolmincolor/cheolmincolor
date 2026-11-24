@@ -36,7 +36,8 @@ type Server struct {
 
 	mu      sync.Mutex
 	job     *engine.Job
-	closing bool // shutting down: start nothing new
+	queue   []*QueueItem // backups waiting for the running one to finish (see queue.go)
+	closing bool         // shutting down: start nothing new
 
 	sched scheduler
 	now   func() time.Time // the clock; replaced in tests
@@ -86,6 +87,12 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("POST /api/job/cancel", s.handleJobCancel)
 	api.HandleFunc("POST /api/job/confirm", s.handleJobConfirm)
 	api.HandleFunc("POST /api/job/dismiss", s.handleJobDismiss)
+	api.HandleFunc("POST /api/job/pause", s.handleJobPause)
+	api.HandleFunc("POST /api/job/resume", s.handleJobResume)
+	api.HandleFunc("GET /api/queue", s.handleQueue)
+	api.HandleFunc("POST /api/queue", s.handleQueueAdd)
+	api.HandleFunc("POST /api/queue/{id}/delete", s.handleQueueDelete)
+	api.HandleFunc("POST /api/queue/{id}/up", s.handleQueueUp)
 	api.HandleFunc("GET /api/history", s.handleHistory)
 	api.HandleFunc("GET /api/schedules", s.handleSchedules)
 	api.HandleFunc("POST /api/schedules", s.handleScheduleCreate)
@@ -387,7 +394,7 @@ func (s *Server) handleJobStart(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, "G-Copy is quitting")
 		return
 	}
-	opts.Label, opts.Unattended = "", false // a person started this one
+	opts.Label, opts.Unattended, opts.Queued = "", false, false // a person started this one
 	screenOptions(&opts)
 	opts.HintSpeed = s.speedHint(opts.Destinations)
 	j, err := engine.Start(opts, s.jobFinished)

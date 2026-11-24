@@ -20,6 +20,7 @@ let engineOrigin = '';    // e.g. http://127.0.0.1:51234
 let engineGone = null;    // resolves when the engine has exited
 let win = null;
 let busy = false;         // a backup is running
+let onHold = false;       // …and it is paused
 let closingOnPurpose = false;
 let shuttingDown = false;
 let quitting = false;     // the app is quitting (not just its window closing)
@@ -164,7 +165,7 @@ function updateTray() {
       tray = new Tray(img);
       tray.on('click', () => tray.popUpContextMenu());
     }
-    const status = busy ? 'Backup in progress' : scheduleText || 'No active schedules';
+    const status = busy ? (onHold ? 'Backup paused' : 'Backup in progress') : scheduleText || 'No active schedules';
     tray.setToolTip('G-Copy — ' + status);
     tray.setContextMenu(Menu.buildFromTemplate([
       { label: 'Open G-Copy', click: showWindow },
@@ -259,16 +260,19 @@ ipcMain.handle('pick-folder', async (event, kind, startAt) => {
   return res.canceled || !res.filePaths.length ? null : res.filePaths[0];
 });
 
-ipcMain.on('progress', (event, fraction, running) => {
+ipcMain.on('progress', (event, fraction, running, paused) => {
   if (!trusted(event) || !win) return;
-  const was = busy;
+  const was = busy, wasHeld = onHold;
   busy = !!running;
+  onHold = busy && !!paused;
   const f = Number(fraction);
   win.setProgressBar(Number.isFinite(f) ? f : -1); // -1 removes the bar, above 1 means "working"
   // Keep the Mac from sleeping in the middle of a backup (the screen may still turn off).
-  if (busy && awake < 0) awake = powerSaveBlocker.start('prevent-app-suspension');
-  if (!busy && awake >= 0) { powerSaveBlocker.stop(awake); awake = -1; }
-  if (was !== busy) updateTray();
+  // A paused backup lets it sleep; resuming keeps it awake again.
+  const keepAwake = busy && !onHold;
+  if (keepAwake && awake < 0) awake = powerSaveBlocker.start('prevent-app-suspension');
+  if (!keepAwake && awake >= 0) { powerSaveBlocker.stop(awake); awake = -1; }
+  if (was !== busy || wasHeld !== onHold) updateTray();
 });
 
 ipcMain.on('schedules', (event, count, text) => {
