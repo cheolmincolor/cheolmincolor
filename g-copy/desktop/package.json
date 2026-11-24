@@ -1,7 +1,7 @@
 {
   "name": "gcopy-desktop",
   "productName": "G-Copy",
-  "version": "0.8.7",
+  "version": "0.8.8",
   "description": "Backs up drives to NAS/DAS and verifies every file with checksums",
   "private": true,
   "main": "main.js",
