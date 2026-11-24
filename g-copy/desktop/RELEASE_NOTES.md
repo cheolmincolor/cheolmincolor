@@ -1,1 +1,2 @@
-- The queue of waiting backups is now shown at the bottom of the window, below the options.
+- Queued backups can be edited: Edit puts the folders and options back on the set-up screen; Save Changes keeps its place in the queue. While you edit it, it does not start.
+- Queued backups are checked in the background (nothing is copied): each shows how much it will copy and, for every destination, about how much space will be left when its turn comes — after the backups before it. "Will not fit" warns in advance.

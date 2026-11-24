@@ -630,3 +630,41 @@ func TestSizesAfterScanning(t *testing.T) {
 		t.Errorf("destination: need %d free %d total %d", d.Need, d.Free, d.Total)
 	}
 }
+
+// A preview says what a run would copy, without copying anything.
+func TestPreviewBackup(t *testing.T) {
+	tmp := t.TempDir()
+	src, dst := filepath.Join(tmp, "A001"), filepath.Join(tmp, "NAS")
+	writeFile(t, filepath.Join(src, "one.mov"), make([]byte, 1000), day)
+	writeFile(t, filepath.Join(src, "two.mov"), make([]byte, 2500), day)
+	writeFile(t, filepath.Join(dst, "A001", "one.mov"), make([]byte, 1000), day) // already there
+	before := treeDigest(t, dst, nil)
+	p, err := PreviewBackup(context.Background(), Options{Sources: []string{src}, Destinations: []string{dst}, Subfolder: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Sources) != 1 || p.Sources[0].Files != 2 || p.Sources[0].Bytes != 3500 || p.Sources[0].CopyBytes != 2500 {
+		t.Errorf("sources: %+v", p.Sources)
+	}
+	if len(p.Dests) != 1 || p.Dests[0].Need != 2500 || p.Dests[0].Path != dst || p.Dests[0].Volume == "" {
+		t.Errorf("dests: %+v", p.Dests)
+	}
+	sameTree(t, "destination untouched", before, treeDigest(t, dst, nil))
+	if m, _ := filepath.Glob(filepath.Join(dst, "*", ".*")); len(m) != 0 {
+		t.Errorf("left files behind: %v", m)
+	}
+	// a destination too small is reported in the numbers, not as an error
+	if VolumeKey(dst) != VolumeKey(tmp) {
+		t.Errorf("one disk, two keys: %q %q", VolumeKey(dst), VolumeKey(tmp))
+	}
+	// a source that is gone is an error
+	if _, err := PreviewBackup(context.Background(), Options{Sources: []string{filepath.Join(tmp, "gone")}, Destinations: []string{dst}}); err == nil || !IsMissing(err) {
+		t.Errorf("missing source: %v", err)
+	}
+	// it stops when asked
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := PreviewBackup(ctx, Options{Sources: []string{src}, Destinations: []string{dst}}); err == nil {
+		t.Error("a cancelled preview did not stop")
+	}
+}

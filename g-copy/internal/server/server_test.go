@@ -430,3 +430,146 @@ func TestQueueAndPause(t *testing.T) {
 		t.Errorf("after removing: %v", out["queue"])
 	}
 }
+
+// Queued backups are read in the background: the screen learns what each
+// would copy, and whether each destination will still have room when its
+// turn comes. A queued backup can be held while edited, and changed.
+func TestQueueScanAndEdit(t *testing.T) {
+	_, _, c := setup(t)
+	tmp := t.TempDir()
+	mk := func(name string, files, size int) string {
+		p := filepath.Join(tmp, name)
+		os.MkdirAll(p, 0o755)
+		for i := 0; i < files; i++ {
+			os.WriteFile(filepath.Join(p, fmt.Sprintf("c%d.mov", i)), bytes.Repeat([]byte{byte(i + len(name))}, size), 0o644)
+		}
+		return p
+	}
+	big, b, cc := mk("A001", 3, 40<<20), mk("A002", 2, 1000), mk("A003", 1, 4000)
+	dst := filepath.Join(tmp, "NAS")
+	os.MkdirAll(dst, 0o755)
+	opt := func(src string, extra map[string]any) map[string]any {
+		o := map[string]any{"sources": []string{src}, "destinations": []string{dst}, "subfolder": true}
+		for k, v := range extra {
+			o[k] = v
+		}
+		return o
+	}
+	if code, out := c.do("POST", "/api/job", opt(big, nil), nil); code != 200 {
+		t.Fatalf("start: %d %v", code, out)
+	}
+	for { // hold the first backup so the queue stays put
+		if code, _ := c.do("POST", "/api/job/pause", map[string]any{}, nil); code == 200 {
+			break
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	for _, src := range []string{b, cc} {
+		if code, out := c.do("POST", "/api/queue", opt(src, nil), nil); code != 200 {
+			t.Fatalf("queue: %d %v", code, out)
+		}
+	}
+	item := func(out map[string]any, i int) map[string]any { return out["queue"].([]any)[i].(map[string]any) }
+	var out map[string]any
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		_, out = c.do("GET", "/api/queue", nil, nil)
+		s0, s1 := item(out, 0)["scan"], item(out, 1)["scan"]
+		if s0 != nil && s1 != nil && s0.(map[string]any)["state"] == "done" && s1.(map[string]any)["state"] == "done" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("queued backups were not scanned: %v", out)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	room := func(it map[string]any) map[string]any {
+		return it["scan"].(map[string]any)["room"].([]any)[0].(map[string]any)
+	}
+	src0 := item(out, 0)["scan"].(map[string]any)["preview"].(map[string]any)["sources"].([]any)[0].(map[string]any)
+	if src0["files"].(float64) != 2 || src0["copyBytes"].(float64) != 2000 {
+		t.Errorf("first queued source: %v", src0)
+	}
+	r0, r1 := room(item(out, 0)), room(item(out, 1))
+	// before the first queued backup: what the paused one still has to write
+	if r0["need"].(float64) != 2000 || r0["ahead"].(float64) <= 0 || r0["ahead"].(float64) > 3*40<<20 || r0["fits"] != true {
+		t.Errorf("room for the first queued backup: %v", r0)
+	}
+	// before the second: that, plus the first queued backup
+	if r1["need"].(float64) != 4000 || r1["ahead"].(float64) != r0["ahead"].(float64)+2000 || r1["freeAtTurn"].(float64) != r1["freeNow"].(float64)-r1["ahead"].(float64) {
+		t.Errorf("room for the second queued backup: %v (first %v)", r1, r0)
+	}
+	// nothing was copied by scanning
+	for _, n := range []string{"A002", "A003"} {
+		if _, err := os.Stat(filepath.Join(dst, n)); !os.IsNotExist(err) {
+			t.Errorf("%s was copied by a scan", n)
+		}
+	}
+
+	// hold the first queued backup and change its source
+	id := item(out, 0)["id"].(string)
+	if code, _ := c.do("POST", "/api/queue/"+id+"/hold", map[string]any{"held": true}, nil); code != 200 {
+		t.Fatal("hold")
+	}
+	alt := mk("A009", 4, 500)
+	if code, out := c.do("POST", "/api/queue/"+id, opt(alt, nil), nil); code != 200 {
+		t.Fatalf("update: %d %v", code, out)
+	}
+	if code, _ := c.do("POST", "/api/queue/"+id, map[string]any{"sources": []string{alt}, "destinations": []string{alt}}, nil); code != http.StatusBadRequest {
+		t.Errorf("an unsafe change was accepted: %d", code)
+	}
+	deadline = time.Now().Add(10 * time.Second)
+	for {
+		_, out = c.do("GET", "/api/queue", nil, nil)
+		if sc := item(out, 0)["scan"]; sc != nil && sc.(map[string]any)["state"] == "done" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the changed backup was not scanned again: %v", out)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	it0 := item(out, 0)
+	if it0["name"] != "A009 → NAS" || it0["held"] != false || room(it0)["need"].(float64) != 2000 {
+		t.Errorf("after the change: %v", it0)
+	}
+
+	// a held backup does not start; the one after it does
+	c.do("POST", "/api/queue/"+id+"/hold", map[string]any{"held": true}, nil)
+	c.do("POST", "/api/job/resume", map[string]any{}, nil)
+	deadline = time.Now().Add(30 * time.Second)
+	for {
+		_, h := c.do("GET", "/api/history", nil, nil)
+		if len(h["history"].([]any)) == 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("runs: %v", h)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	time.Sleep(200 * time.Millisecond)
+	_, out = c.do("GET", "/api/queue", nil, nil)
+	if q := out["queue"].([]any); len(q) != 1 || item(out, 0)["id"] != id {
+		t.Fatalf("queue after the others ran: %v", out)
+	}
+	if _, err := os.Stat(filepath.Join(dst, "A003", "c0.mov")); err != nil {
+		t.Error("the backup after the held one did not run")
+	}
+	// released: it runs
+	c.do("POST", "/api/queue/"+id+"/hold", map[string]any{"held": false}, nil)
+	deadline = time.Now().Add(10 * time.Second)
+	for {
+		if _, err := os.Stat(filepath.Join(dst, "A009", "c3.mov")); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the released backup did not run")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	// editing a backup that has already started is refused with a reason
+	if code, out := c.do("POST", "/api/queue/"+id, opt(alt, nil), nil); code != http.StatusNotFound || !strings.Contains(out["error"].(string), "no longer in the queue") {
+		t.Errorf("update after it started: %d %v", code, out)
+	}
+}

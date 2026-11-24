@@ -330,8 +330,9 @@ func (s *Server) jobFinished(st engine.State) {
 	}
 	s.sched.mu.Unlock()
 	// The run is still marked as running until the engine returns from
-	// this call; start the next one just after.
-	go func() { time.Sleep(50 * time.Millisecond); s.startQueued() }()
+	// this call; start the next one just after, and read the rest of the
+	// queue again (the destinations changed).
+	go func() { time.Sleep(50 * time.Millisecond); s.startQueued(); s.kickScans(true) }()
 }
 
 // ── API ──────────────────────────────────────────────────────────────────

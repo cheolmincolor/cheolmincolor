@@ -328,7 +328,12 @@ function renderSetup() {
 
   const ready = state.sources.length > 0 && state.dests.length > 0;
   // While another backup runs, a new one waits its turn in the queue.
-  $('btn-start').textContent = otherRunning() ? 'Add to Queue' : 'Start Backup';
+  $('btn-start').textContent = state.editing ? 'Save Changes' : otherRunning() ? 'Add to Queue' : 'Start Backup';
+  const editing = state.editing && (state.queue || []).find((x) => x.id === state.editing);
+  $('edit-note').hidden = !editing;
+  $('edit-note').textContent = editing ? 'Editing queued backup ' + ((state.queue || []).indexOf(editing) + 1) + ' (' + editing.name + '). Change the folders or options, then Save Changes.' : '';
+  $('btn-edit-cancel').hidden = !editing;
+  $('btn-save-sched').hidden = !!editing;
   $('btn-start').disabled = !ready;
   $('btn-save-sched').disabled = !ready;
   $('start-err').hidden = true;
@@ -748,7 +753,13 @@ async function poll() {
   }
   if (job.status === 'idle') state.detached = false;
   await loadQueue();
-  if (state.mode === 'setup') $('btn-start').textContent = otherRunning() ? 'Add to Queue' : 'Start Backup';
+  if (state.mode === 'setup') $('btn-start').textContent = state.editing ? 'Save Changes' : otherRunning() ? 'Add to Queue' : 'Start Backup';
+  if (state.editing && !(state.queue || []).some((x) => x.id === state.editing)) { // it started, or was removed elsewhere
+    state.editing = null;
+    renderSetup();
+    $('start-err').textContent = 'The backup you were editing is no longer in the queue (it has started, or was removed). Your changes were not saved — Add to Queue adds them as a new backup.';
+    $('start-err').hidden = false;
+  }
   if (Date.now() - schedLoaded > 30000) loadSchedules();
   const busy = state.mode === 'running' || state.mode === 'confirm';
   schedule(busy ? 400 : bannerJob && !FINISHED.includes(bannerJob.status) ? 1000 : 3000);
@@ -811,6 +822,7 @@ $('sb-view').addEventListener('click', () => {
   hideBanner();
   state.job = null;
   state.detached = false;
+  state.editing = null; // a backup being edited stays on hold; its row offers Edit and Release
   applyJob(job);
   schedule(100);
 });
@@ -856,15 +868,101 @@ function renderQueue() {
   const waiting = q.filter((x) => !x.error).length;
   $('queue-sub').textContent = waiting ? plural(waiting, 'backup') + ' waiting. ' + (waiting === 1 ? 'It starts' : 'They start one after another') + ' when the running backup has finished.' : 'These could not start.';
   const act = async (path) => { try { state.queue = (await api(path, {})).queue; renderQueue(); } catch { /* shown by api() */ } };
-  $('queue-list').replaceChildren(...q.map((it, i) => h('li', { class: it.error ? 'failed' : '' },
+  const editingHere = (it) => state.editing === it.id;
+  $('queue-list').replaceChildren(...q.map((it, i) => h('li', { class: [it.error && 'failed', it.held && 'held'].filter(Boolean).join(' ') },
     h('span', { class: 'q-n' }, String(i + 1)),
     h('span', { class: 'q-name', title: it.options.sources.concat(it.options.destinations).join('\n') }, it.name + fmtQueueOpts(it.options)),
     h('span', { class: 'q-acts' },
       i > 0 && !it.error ? h('button', { class: 'btn small', type: 'button', 'aria-label': 'Move ' + it.name + ' up', onclick: () => act('/api/queue/' + it.id + '/up') }, 'Move Up') : null,
-      h('button', { class: 'btn small', type: 'button', 'aria-label': 'Remove ' + it.name + ' from the queue', onclick: () => act('/api/queue/' + it.id + '/delete') }, 'Remove')),
+      editingHere(it) ? null : h('button', { class: 'btn small', type: 'button', 'aria-label': 'Edit ' + it.name, onclick: () => editQueued(it) }, 'Edit'),
+      it.held && !editingHere(it) ? h('button', { class: 'btn small', type: 'button', 'aria-label': 'Let ' + it.name + ' start when its turn comes', onclick: () => act2('/api/queue/' + it.id + '/hold', { held: false }) }, 'Release') : null,
+      h('button', { class: 'btn small', type: 'button', 'aria-label': 'Remove ' + it.name + ' from the queue', onclick: () => { if (editingHere(it)) stopEditing(); act('/api/queue/' + it.id + '/delete'); } }, 'Remove')),
+    it.held ? h('span', { class: 'q-held' }, editingHere(it) ? 'Being edited above — it waits until you save or cancel.' : 'On hold — it does not start until released or saved.') : null,
     it.error ? h('span', { class: 'q-err' }, 'Could not start: ' + it.error) : null,
+    ...queueScanLines(it),
   )));
 }
+const act2 = async (path, body) => { try { state.queue = (await api(path, body)).queue; renderQueue(); } catch { /* shown by api() */ } };
+
+// What a queued backup would copy, and whether each destination will still
+// have room when its turn comes (after the backups before it).
+function queueScanLines(it) {
+  const sc = it.scan;
+  if (it.error) return [];
+  if (!sc || sc.state === 'waiting') return [h('span', { class: 'q-scan' }, 'Waiting to be checked…')];
+  if (sc.state === 'failed') return [h('span', { class: 'q-err' }, 'Could not be checked: ' + sc.message)];
+  const p = sc.preview;
+  if (!p) return [h('span', { class: 'q-scan' }, 'Checking size…')];
+  const files = p.sources.reduce((n, s) => n + s.files, 0), bytes = p.sources.reduce((n, s) => n + s.bytes, 0);
+  const cFiles = p.sources.reduce((n, s) => n + s.copyFiles, 0), cBytes = p.sources.reduce((n, s) => n + s.copyBytes, 0);
+  const out = [h('span', { class: 'q-scan' }, plural(files, 'file') + ' · ' + fmtBytes(bytes) + ' — ' + (cFiles ? plural(cFiles, 'file') + ' · ' + fmtBytes(cBytes) + ' to copy' : 'nothing new to copy') + (sc.state === 'scanning' ? ' (checking again…)' : ''))];
+  for (const r of sc.room || []) {
+    const name = baseName(r.path);
+    if (r.freeNow < 0) { out.push(h('span', { class: 'q-room' }, h('span', {}, name + ': needs ', h('b', {}, fmtBytes(r.need)), ' (free space unknown)'))); continue; }
+    out.push(h('span', { class: 'q-room' },
+      h('span', {}, name + ': needs ', h('b', {}, fmtBytes(r.need))),
+      r.fits ? h('span', {}, 'about ', h('b', {}, fmtBytes(r.freeAtTurn)), ' free when its turn comes' + (r.ahead > 0 ? ' (' + fmtBytes(r.ahead) + ' still to be written before it)' : ''))
+        : h('span', { class: 'short' }, icon('alert'), 'Will not fit: about ' + fmtBytes(Math.max(0, r.freeAtTurn)) + ' free when its turn comes' + (r.ahead > 0 ? ', after ' + fmtBytes(r.ahead) + ' for the backups before it' : '')),
+    ));
+  }
+  return out;
+}
+
+// ── editing a queued backup ────────────────────────────────────────────
+
+async function editQueued(it) {
+  if (state.editing && state.editing !== it.id) await stopEditing();
+  try { state.queue = (await api('/api/queue/' + it.id + '/hold', { held: true })).queue; } catch { return; }
+  // to the set-up screen, the running backup (if shown) goes to the banner
+  if (state.mode === 'running' || state.mode === 'confirm') $('btn-add-job').click();
+  else if (state.mode === 'finished') { try { await api('/api/job/dismiss', { id: state.job && state.job.id }); } catch { /* */ } state.job = null; setMode('setup'); }
+  const o = it.options;
+  state.editing = it.id;
+  state.sources = o.sources.map(item);
+  state.dests = o.destinations.map(item);
+  sizes.clear();
+  $('opt-subfolder').checked = o.subfolder !== false;
+  $('opt-mirror').checked = !!o.mirror;
+  $('opt-verify').checked = !o.noVerify;
+  $('opt-reverify').disabled = false;
+  $('opt-reverify').checked = recheckWanted = !!o.reverify;
+  renderSetup();
+  refreshDests();
+  renderQueue();
+  window.scrollTo(0, 0);
+}
+
+async function stopEditing(release = true) {
+  const id = state.editing;
+  state.editing = null;
+  if (release && id) { try { state.queue = (await api('/api/queue/' + id + '/hold', { held: false })).queue; } catch { /* it may have gone */ } }
+  state.sources = [];
+  sizes.clear();
+  renderSetup();
+  renderQueue();
+}
+
+async function saveQueued(opts) {
+  const err = $('start-err');
+  err.hidden = true;
+  $('btn-start').disabled = true;
+  try {
+    state.queue = (await api('/api/queue/' + state.editing, opts)).queue;
+    state.editing = null;
+    state.sources = [];
+    sizes.clear();
+    renderSetup();
+    renderQueue();
+  } catch (e) {
+    err.textContent = e.message; // e.g. it started meanwhile: the fields stay, Add to Queue still works
+    err.hidden = false;
+    if (/no longer in the queue/.test(e.message)) state.editing = null;
+    renderSetup();
+    err.hidden = false;
+  }
+}
+
+$('btn-edit-cancel').addEventListener('click', () => stopEditing());
 const fmtQueueOpts = (o) => { const x = [o.mirror && 'sync', o.reverify && 're-check', o.noVerify && 'not verified'].filter(Boolean); return x.length ? '  ·  ' + x.join(' · ') : ''; };
 
 async function addToQueue(opts) {
@@ -886,7 +984,7 @@ async function addToQueue(opts) {
   }
 }
 
-$('btn-start').addEventListener('click', () => (otherRunning() ? addToQueue(options()) : startJob(options())));
+$('btn-start').addEventListener('click', () => (state.editing ? saveQueued(options()) : otherRunning() ? addToQueue(options()) : startJob(options())));
 
 // Step away from the running backup to set up another: it carries on, shown in the banner.
 $('btn-add-job').addEventListener('click', () => {

@@ -34,10 +34,11 @@ type Server struct {
 	configDir   string
 	extraVolDir []string
 
-	mu      sync.Mutex
-	job     *engine.Job
-	queue   []*QueueItem // backups waiting for the running one to finish (see queue.go)
-	closing bool         // shutting down: start nothing new
+	mu       sync.Mutex
+	job      *engine.Job
+	queue    []*QueueItem  // backups waiting for the running one to finish (see queue.go)
+	scanKick chan struct{} // wakes the background scanner of the queue
+	closing  bool          // shutting down: start nothing new
 
 	sched scheduler
 	now   func() time.Time // the clock; replaced in tests
@@ -65,6 +66,11 @@ func (s *Server) CancelRunning() {
 	s.mu.Lock()
 	s.closing = true
 	j := s.job
+	for _, it := range s.queue {
+		if it.cancel != nil {
+			it.cancel() // stop reading queued sources too
+		}
+	}
 	s.mu.Unlock()
 	if j != nil {
 		j.Cancel()
@@ -93,6 +99,8 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("POST /api/queue", s.handleQueueAdd)
 	api.HandleFunc("POST /api/queue/{id}/delete", s.handleQueueDelete)
 	api.HandleFunc("POST /api/queue/{id}/up", s.handleQueueUp)
+	api.HandleFunc("POST /api/queue/{id}/hold", s.handleQueueHold)
+	api.HandleFunc("POST /api/queue/{id}", s.handleQueueUpdate)
 	api.HandleFunc("GET /api/history", s.handleHistory)
 	api.HandleFunc("GET /api/schedules", s.handleSchedules)
 	api.HandleFunc("POST /api/schedules", s.handleScheduleCreate)
