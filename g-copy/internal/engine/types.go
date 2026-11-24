@@ -6,7 +6,7 @@ import "time"
 
 const (
 	// Version is written into reports.
-	Version = "0.8.5"
+	Version = "0.8.6"
 
 	chunkSize       = 4 << 20  // read/write unit
 	bigFileSize     = 16 << 20 // files this size or larger are copied one at a time

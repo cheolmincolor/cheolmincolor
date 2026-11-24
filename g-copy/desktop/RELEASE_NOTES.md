@@ -1,3 +1,1 @@
-- Pause and Resume: a backup can be put on hold while it is copying and continued from the same place. While paused, the Mac may sleep.
-- Queue: while a backup runs, "Add Another Backup" lets you set up more. They wait in a list and start by themselves, one after another. You can reorder or remove them.
-- Sizes: the source card shows how much it holds and how much this run copies; each destination shows what this backup needs and the free space before and after, with a bar.
+- The queue of waiting backups is now shown at the bottom of the window, below the options.
