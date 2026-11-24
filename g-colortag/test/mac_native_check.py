@@ -377,7 +377,8 @@ def test():
         key = sorted(app.CORE.previews.jobs)[0]
         job0 = app.CORE.previews.jobs[key]
         try:
-            pm, ps = app.NV.players["mac0"]["player"], app.NV.players["std0"]["player"]
+            act = json.loads(js("JSON.stringify(GCT.player.debug())"))["active"]  # 영상이 올라간 쪽
+            pm, ps = app.NV.players[f"mac{act}"]["player"], app.NV.players[f"std{act}"]["player"]
             snd = (bool(pm.isMuted()), round(float(pm.volume()), 2), bool(ps.isMuted()))
             size = pm.currentItem().presentationSize()
             step(f"원본 직접 재생: {bool(job0.get('direct'))} · 재생 크기 {size.width:.0f}×{size.height:.0f} · "
@@ -390,7 +391,13 @@ def test():
         qt = {}
         for tag in ("std", "mac"):
             try:
-                qt[tag] = qt_capture(app.CORE.previews.path(key, tag), tag)
+                if job0.get("direct"):
+                    # 참조 파일은 앱 안에서만 씀 (퀵타임 플레이어 앱은 참조가 가리키는 원본을 읽지 못함)
+                    # → 퀵타임에는 실제 파일을 보여 줌: 1-1-1 은 원본, 1-2-1 은 앱이 저장한 파일
+                    real = movie if tag == "std" else app.ct.convert_file(movie, (1, 2, 1))
+                    qt[tag] = qt_capture(real, tag)
+                else:
+                    qt[tag] = qt_capture(app.CORE.previews.path(key, tag), tag)
                 step(f"퀵타임 {'1-1-1' if tag == 'std' else '1-2-1'} 막대 밝기: {qt[tag]}")
             except Exception as e:
                 step(f"퀵타임 캡처 실패 ({tag}): {e}")
