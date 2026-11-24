@@ -457,7 +457,7 @@ body:has(#sched-edit[open]) #schedules { visibility: hidden; }
 /* ── queue, pause, sizes ────────────────────────────────── */
 .run-actions { display: flex; gap: 8px; flex: none; flex-wrap: wrap; justify-content: flex-end; }
 .bar.paused .fill { background: #777777; transition: none; }
-.queue { margin-bottom: 18px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; align-items: baseline; }
+.queue { margin-top: 22px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; align-items: baseline; }
 .queue h2 { font-size: 11px; font-weight: 500; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); }
 .queue-sub { color: var(--muted); font-size: 12px; }
 .queue ol { grid-column: 1 / -1; margin-top: 6px; }

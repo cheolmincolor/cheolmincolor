@@ -49,12 +49,6 @@
     <button class="iconbtn" id="sb-close" type="button" aria-label="Dismiss" hidden><svg class="ico"><use href="#i-x"/></svg></button>
   </div>
 
-  <section class="queue" id="queue-panel" aria-labelledby="queue-title" hidden>
-    <h2 id="queue-title">Queue</h2>
-    <p class="queue-sub" id="queue-sub"></p>
-    <ol id="queue-list"></ol>
-  </section>
-
   <div class="stage" id="stage">
     <svg class="flow-lines" id="flow-lines" aria-hidden="true"></svg>
 
@@ -168,6 +162,13 @@
       <h3 id="res-errors-title"></h3>
       <ul id="res-errors"></ul>
     </div>
+  </section>
+
+  <!-- backups waiting for their turn: below whatever is on screen -->
+  <section class="queue" id="queue-panel" aria-labelledby="queue-title" hidden>
+    <h2 id="queue-title">Queue</h2>
+    <p class="queue-sub" id="queue-sub"></p>
+    <ol id="queue-list"></ol>
   </section>
 </main>
 
