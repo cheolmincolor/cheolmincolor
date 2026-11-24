@@ -314,38 +314,95 @@ test('화면', async (t) => {
     await close();
   });
 
-  await t.test('자동 업데이트: 준비되면 위에 알림, 「지금 다시 시작」은 설치 후 앱 종료', async () => {
+  await t.test('업데이트 창: 새 버전이면 한 번 저절로, 입력 중이면 끝난 뒤, 「나중에」·「지금 다시 시작」', async () => {
     const env = await open(browser);
     const { page, service, shot, close, errors } = env;
     let installed = null, quit = 0;
-    const u = { state: { status: 'idle', current: '1.1.0', latest: '', notes: '', progress: 0, error: '' } };
-    u.check = async () => { u.state = { ...u.state, status: 'none', latest: '1.1.0' }; return u.state; };
+    const u = { state: { status: 'idle', current: '1.10.0', latest: '', notes: '', progress: 0, error: '' } };
+    u.check = async () => { u.state = { ...u.state, status: 'none', latest: '1.10.0' }; return u.state; };
     u.install = (o) => { installed = o; u.state = { ...u.state, status: 'installing' }; return true; };
     service.o.updater = u;
     service.o.quit = () => { quit++; };
+    const push = (patch) => page.evaluate((st) => window.__update(st), (u.state = { ...u.state, ...patch }));
+    const dlg = page.locator('#upd .sheet');
+
+    // 설정의 「업데이트 확인」: 같은 창에서 결과
     await page.click('#settings');
-    await page.click('[data-update=check]');
-    await page.waitForFunction(() => /최신 버전입니다/.test(document.querySelector('#updateBox').textContent));
-    assert.match(await page.locator('#updateBox').innerText(), /지금 버전\s+1\.1\.0/);
+    await page.click('#updateBox [data-upd=check]');
+    await page.waitForFunction(() => /최신 버전이에요/.test(document.querySelector('#upd').textContent));
+    assert.match(await dlg.innerText(), /v1\.10\.0/);
     await page.keyboard.press('Escape');
-    // 앱 본체가 「다 받았음」을 알려 옴
-    u.state = { status: 'ready', current: '1.1.0', latest: '1.2.0', notes: '- 새 기능 하나', progress: 100, error: '' };
-    await page.evaluate((s) => window.__update(s), u.state);
-    assert.match(await page.locator('#updateBar').innerText(), /새 버전 1\.2\.0[\s\S]*지금 다시 시작/);
-    // 안내 막대가 보일 때 오류 알림은 막대 아래에 (막대 문구를 덮지 않음)
-    env.google.failNext = { status: 500, body: { error: { message: '서버 오류' } } };
-    await page.click('#refresh');
-    await page.waitForSelector('.toast.error');
-    const barBottom = await page.locator('#updateBar').evaluate((el) => el.getBoundingClientRect().bottom);
-    const toastTop = await page.locator('.toast').evaluate((el) => el.getBoundingClientRect().top);
-    assert.ok(toastTop >= barBottom, `알림(${toastTop})이 안내 막대(${barBottom})를 덮음`);
-    await shot('47-toast-under-bar');
-    await page.evaluate(() => { document.querySelector('#toast').innerHTML = ''; });
-    await shot('10-update');
-    await page.click('#updateBar [data-update=install]');
-    await page.waitForFunction(() => document.querySelector('#updateBar').hidden);
+    assert.equal(await dlg.count(), 0);
+    assert.equal(await page.locator('.sheet').count(), 1, 'Esc 는 위의 업데이트 창만 닫음');
+    await page.keyboard.press('Escape');
+    // 메뉴 「업데이트 확인…」: 확인하지 못하면 「다시 확인」
+    u.check = async () => { u.state = { ...u.state, status: 'error', error: '인터넷에 연결되어 있지 않습니다.' }; return u.state; };
+    await page.evaluate(() => window.__menu('update'));
+    await page.waitForFunction(() => /확인하지 못했어요/.test(document.querySelector('#upd').textContent));
+    assert.equal(await page.locator('#upd [data-upd=check]').innerText(), '다시 확인');
+    await shot('50-update-failed');
+    await page.click('#upd [data-upd=later]');
+    u.check = async () => u.state;
+
+    // 입력 창이 열린 채로 새 버전을 찾음 → 닫은 뒤에 뜸
+    assert.equal(await page.isVisible('#updBadge'), false);
+    await page.click('#add'); await page.fill('#fTitle', '쓰는 중');
+    await push({ status: 'downloading', latest: '1.11.0', notes: '- 연간 흐름판\n- 최신순', progress: 0 });
+    await push({ progress: 40 });
+    assert.equal(await dlg.count(), 0, '입력 중에 떠서는 안 됨');
+    assert.equal(await page.isVisible('#updBadge'), true);
+    await page.evaluate(() => { window.confirm = () => true; });
+    await page.keyboard.press('Escape');
+    await dlg.waitFor();
+    const text = await dlg.innerText();
+    assert.match(text, /새 버전이 있어요/);
+    assert.match(text, /v1\.10\.0 → v1\.11\.0/);
+    assert.match(text, /연간 흐름판/);
+    assert.equal(await page.locator('#upd progress').getAttribute('value'), '40');
+    assert.match(text, /40%/);
+    assert.equal(await page.locator('#upd [data-upd=install]').isDisabled(), true);
+    assert.equal(await page.locator('#upd h3 .upd-dot').evaluate((el) => getComputedStyle(el, '::before').color), 'rgb(91, 140, 255)');
+    await shot('51-update-downloading');
+    // 다 받음 → 「지금 다시 시작」 활성 + 안내
+    await push({ status: 'ready', progress: 100 });
+    assert.equal(await page.locator('#upd [data-upd=install]').isDisabled(), false);
+    assert.match(await dlg.innerText(), /‘나중에’를 누르면 앱을 끌 때 저절로 설치돼요\./);
+    await shot('52-update-ready');
+    // 「나중에」: 창만 닫힘, 같은 버전으로는 다시 저절로 뜨지 않음(다시 불러와도)
+    await page.click('#upd [data-upd=later]');
+    assert.equal(await dlg.count(), 0);
+    assert.equal(installed, null);
+    await page.reload();
+    await page.waitForSelector('.kpis');
+    await page.evaluate((st) => window.__update(st), u.state);
+    assert.equal(await dlg.count(), 0, '같은 버전으로 다시 뜸');
+    assert.equal(await page.isVisible('#updBadge'), true);
+    // 머리줄 표시로 다시 열기. 입력 창 위에서 열면(바뀐 내용 있음) 다시 시작은 막힘
+    await page.click('#add'); await page.fill('#fTitle', '쓰는 중');
+    await page.evaluate(() => window.__menu('update'));
+    await dlg.waitFor();
+    assert.equal(await page.locator('#upd [data-upd=install]').isDisabled(), true);
+    assert.match(await dlg.innerText(), /입력을 마치면 다시 시작할 수 있어요\./);
+    await page.mouse.click(5, 5); // 바깥 = 「나중에」
+    assert.equal(await dlg.count(), 0);
+    assert.equal(await page.inputValue('#fTitle'), '쓰는 중');
+    await page.click('.sheet [data-a=close]');
+    await page.click('#updBadge');
+    await page.click('#upd [data-upd=install]');
+    await page.waitForFunction(() => /설치하는 중/.test(document.querySelector('#upd').textContent));
     assert.deepEqual([installed, quit], [{ relaunch: true }, 1]);
+    // 새 버전이 또 나오면 그 버전으로 한 번 더
+    await page.click('#upd [data-upd=later]');
+    await push({ status: 'ready', latest: '1.12.0' });
+    await dlg.waitFor();
     assert.deepEqual(errors, []);
+    await close();
+  });
+
+  await t.test('업데이트 창: 처음 설정 화면에서는 뜨지 않음', async () => {
+    const { page, close } = await open(browser, { ready: false });
+    await page.evaluate(() => window.__update({ status: 'ready', current: '1.10.0', latest: '1.11.0', notes: '', progress: 100, error: '' }));
+    assert.equal(await page.locator('#upd .sheet').count(), 0);
     await close();
   });
 
@@ -353,7 +410,7 @@ test('화면', async (t) => {
     const { page, errors, shot, close, google } = await open(browser);
     const h = (sel) => page.locator(sel).first().evaluate((el) => el.getBoundingClientRect().height);
     await page.click('nav [data-tab=ledger]');
-    assert.ok(await h('.chip') >= 36 && await h('.icon-btn') >= 40 && await h('#q') >= 44);
+    assert.ok(await h('.chip') >= 36 && await h('#refresh') >= 40 && await h('#q') >= 44);
     assert.equal(await page.locator('#refresh .lbl').isVisible(), true); // 넓은 창: 아이콘 옆 이름
     // 등록 버튼은 탭 줄 안(위쪽)에 있어 목록과 겹치지 않음
     const fab = await page.locator('#add').boundingBox();
@@ -547,6 +604,13 @@ test('화면', async (t) => {
 
   await t.test('가장 작은 창(500)·다크 모드에서 넘침 없음', async () => {
     const { page, shot, close, errors } = await open(browser, { ctx: { viewport: { width: 500, height: 700 }, colorScheme: 'dark' } });
+    // 새 버전 표시가 있어도 머리줄이 넘치지 않고, 업데이트 창이 화면 안에 들어옴
+    await page.evaluate(() => window.__update({ status: 'ready', current: '1.10.0', latest: '1.11.0', notes: '- 바뀐 점', progress: 100, error: '' }));
+    await page.waitForSelector('#upd .sheet');
+    assert.equal(await page.isVisible('#updBadge'), true);
+    assert.equal(await page.locator('#upd .sheet').evaluate((el) => { const r = el.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && el.scrollWidth <= el.clientWidth; }), true);
+    await shot('53-update-narrow');
+    await page.click('#upd [data-upd=later]');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     assert.equal(await page.evaluate(() => { const h = document.querySelector('header'); const t = h.querySelector('h1'); return h.scrollWidth <= h.clientWidth && t.scrollWidth <= t.clientWidth && t.getBoundingClientRect().height < 30; }), true, '머리줄이 넘치거나 줄바꿈됨');
     await shot('7-narrow-dark');

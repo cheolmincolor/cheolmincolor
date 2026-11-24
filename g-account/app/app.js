@@ -76,46 +76,98 @@ function failed(e) {
 }
 
 // ---------- 업데이트 ----------
-var UPDATE_TEXT = {
-  idle: '', checking: '새 버전을 확인하는 중…', none: '최신 버전입니다.', available: '새 버전이 있습니다.',
-  downloading: '새 버전을 받는 중…', ready: '새 버전이 준비됐습니다. 다시 시작하면 적용됩니다.',
-  installing: '업데이트를 설치하는 중…', unsupported: '', error: ''
-};
-function updateText(u) {
-  var t = UPDATE_TEXT[u.status] || '';
-  if (u.status === 'downloading') t += ' ' + (u.progress || 0) + '%';
-  if (u.status === 'error' || u.status === 'unsupported') t = u.error || '업데이트를 확인하지 못했습니다.';
-  return t;
+// ---------- 업데이트 창 (GRAY ZONE 공통: 런치 화면은 확인만, 안내는 장부 창에서) ----------
+var updEl = $('#upd'), updBadge = $('#updBadge');
+function verNewer(a, b) {
+  var x = String(a || '').split('.').map(Number), y = String(b || '').split('.').map(Number);
+  for (var i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); }
+  return false;
 }
+/** 새 버전이 있다고 알려야 하는 상태인지 (받는 중·준비됨, 받다가 실패한 경우 포함) */
+function hasNew(u) { return !!u && verNewer(u.latest, u.current) && /available|downloading|ready|installing|unsupported|error/.test(u.status); }
+function loadSeen() { try { return localStorage.getItem('gz.updSeen') || ''; } catch (e) { return ''; } }
+function saveSeen(v) { try { localStorage.setItem('gz.updSeen', v); } catch (e) { /* 기억 못 해도 동작 */ } }
+/** 입력 창이 열려 있고 바뀐 내용이 있거나 저장 중이면 다시 시작하지 않습니다. */
+function inputBusy() { return !!modal.innerHTML && (sheetDirty || !!$('.sheet button[disabled][data-a]', modal)); }
 function setUpdate(u) {
   S.update = u || S.update;
-  var bar = $('#updateBar'), u2 = S.update;
-  if (u2.status === 'ready') {
-    bar.hidden = false;
-    bar.innerHTML = '<span><b>새 버전 ' + esc(u2.latest) + '</b> 준비됨 · 다시 시작하면 적용됩니다(앱을 끌 때도 적용).</span>' +
-      '<button data-update="install">지금 다시 시작</button><button class="x" data-update="hide" aria-label="닫기">×</button>';
-  } else bar.hidden = true;
+  updBadge.hidden = !hasNew(S.update);
   var box = $('#updateBox');
   if (box) box.innerHTML = updateBox();
+  drawUpd();
+  maybeShowUpd();
 }
+/** 새 버전마다 한 번만, 하던 일(입력 창·저장·처음 설정·불러오기)이 끝난 뒤에 저절로 엽니다. */
+function maybeShowUpd() {
+  var u = S.update;
+  if (!hasNew(u) || !/available|downloading|ready/.test(u.status) || loadSeen() === u.latest) return;
+  if (!S.loaded || S.setup || modal.innerHTML || S.updOpen) return;
+  saveSeen(u.latest);
+  openUpd();
+}
+function openUpd() { S.updOpen = true; S.updErr = ''; drawUpd(); var b = $('#upd [data-upd]'); if (b) b.focus(); }
+function closeUpd() { S.updOpen = false; updEl.innerHTML = ''; }
+function drawUpd() {
+  if (!S.updOpen) return;
+  var u = S.update, h, btns;
+  var head = function (t, dot) { return '<h3>' + (dot ? '<span class="upd-dot" aria-hidden="true"></span>' : '') + t + '</h3>'; };
+  if (hasNew(u)) {
+    var ready = u.status === 'ready', blocked = ready && inputBusy();
+    h = head('새 버전이 있어요', true) + '<div class="sub num">v' + esc(u.current) + ' → v' + esc(u.latest) + '</div>' +
+      (u.notes ? '<div class="notes">' + esc(u.notes) + '</div>' : '');
+    if (u.status === 'available' || u.status === 'downloading') {
+      var p = u.status === 'downloading' ? (u.progress || 0) : 0;
+      h += '<div class="upd-progress"><progress max="100" value="' + p + '" aria-label="내려받기"></progress><span class="num">' + p + '%</span></div>' +
+        '<p class="note">새 버전을 받는 중이에요. 다 받으면 다시 시작할 수 있어요.</p>';
+    } else if (ready) {
+      h += '<p class="note">' + (blocked ? '입력을 마치면 다시 시작할 수 있어요.' : '‘나중에’를 누르면 앱을 끌 때 저절로 설치돼요.') + '</p>';
+    } else if (u.status === 'installing') {
+      h += '<p class="note">설치하는 중이에요. 잠시 뒤 앱이 다시 열려요.</p>';
+    } else {
+      h += '<div class="errbox">' + esc(u.error || '새 버전을 받지 못했어요.') + '</div>';
+    }
+    if (S.updErr) h += '<div class="errbox">' + esc(S.updErr) + '</div>';
+    btns = '<button class="btn" data-upd="later">나중에</button>' +
+      (u.status === 'error' ? '<button class="btn pri" data-upd="check">다시 받기</button>'
+        : '<button class="btn pri" data-upd="install"' + (ready && !blocked ? '' : ' disabled') + '>지금 다시 시작</button>');
+  } else if (u.status === 'none') {
+    h = head('최신 버전이에요') + '<div class="sub num">v' + esc(u.current) + '</div>';
+    btns = '<button class="btn pri" data-upd="later">확인</button>';
+  } else if (u.status === 'error' || u.status === 'unsupported') {
+    h = head('확인하지 못했어요') + '<div class="sub num">v' + esc(u.current) + '</div><div class="errbox">' + esc(u.error || '업데이트를 확인하지 못했어요.') + '</div>';
+    btns = '<button class="btn" data-upd="later">닫기</button><button class="btn pri" data-upd="check">다시 확인</button>';
+  } else {
+    h = head('업데이트를 확인하는 중이에요…') + '<div class="sub num">v' + esc(u.current) + '</div>';
+    btns = '<button class="btn" data-upd="later">닫기</button>';
+  }
+  updEl.innerHTML = '<div class="scrim upd-scrim"><div class="sheet upd-sheet" role="dialog" aria-modal="true" aria-label="업데이트">' + h +
+    '<div class="btns">' + btns + '</div></div></div>';
+}
+/** 설정 창의 업데이트 칸: 지금 버전과 확인 버튼만. 결과는 업데이트 창에서 보여 줍니다. */
 function updateBox() {
   var u = S.update;
   return '<dl class="facts"><dt>지금 버전</dt><dd class="num">' + esc(u.current || '-') + '</dd>' +
-    (u.latest && u.latest !== u.current ? '<dt>새 버전</dt><dd class="num">' + esc(u.latest) + '</dd>' : '') + '</dl>' +
-    (updateText(u) ? (u.status === 'error' ? '<div class="errbox">' + esc(updateText(u)) + '</div>' : '<p class="note">' + esc(updateText(u)) + '</p>') : '') +
-    (u.notes && u.latest !== u.current ? '<div class="notes">' + esc(u.notes) + '</div>' : '') +
-    '<div class="btns">' + (u.status === 'ready' ? '<button class="btn pri" data-update="install">지금 다시 시작</button>'
-      : '<button class="btn" data-update="check"' + (/checking|downloading|installing/.test(u.status) ? ' disabled' : '') + '>업데이트 확인</button>') + '</div>';
+    (hasNew(u) ? '<dt>새 버전</dt><dd class="num">' + esc(u.latest) + '</dd>' : '') + '</dl>' +
+    '<div class="btns">' + (hasNew(u) ? '<button class="btn" data-upd="open">새 버전 보기</button>' : '<button class="btn" data-upd="check">업데이트 확인</button>') + '</div>';
 }
 function updateAction(a, btn) {
-  if (a === 'hide') { $('#updateBar').hidden = true; return; }
-  if (btn) btn.disabled = true;
-  if (a === 'check') call('update:check').then(setUpdate).catch(function (e) { toastError(errText(e)); setUpdate(); });
-  if (a === 'install') call('update:install').then(setUpdate).catch(function (e) { toastError(errText(e)); if (btn) btn.disabled = false; });
+  if (a === 'later') { closeUpd(); return; }
+  if (a === 'open') { openUpd(); return; }
+  if (a === 'check') {
+    if (!/available|downloading|ready|installing/.test(S.update.status)) S.update = Object.assign({}, S.update, { status: 'checking' });
+    openUpd();
+    call('update:check').then(setUpdate).catch(function (e) { S.update = Object.assign({}, S.update, { status: 'error', error: errText(e) }); setUpdate(); });
+    return;
+  }
+  if (a === 'install') {
+    if (btn) btn.disabled = true;
+    call('update:install').then(setUpdate).catch(function (e) { S.updErr = errText(e); drawUpd(); });
+  }
 }
 document.addEventListener('click', function (e) {
-  var b = e.target.closest('[data-update]');
-  if (b) updateAction(b.dataset.update, b);
+  var b = e.target.closest('[data-upd]');
+  if (b) { updateAction(b.dataset.upd, b); return; }
+  if (e.target.classList && e.target.classList.contains('upd-scrim')) closeUpd(); // 바깥을 누르면 「나중에」와 같음
 });
 if (window.gz && window.gz.onUpdate) window.gz.onUpdate(setUpdate);
 
@@ -232,6 +284,7 @@ function render() {
   app.innerHTML = S.tab === 'home' ? viewHome() : S.tab === 'ledger' ? viewLedger() : viewUnpaid();
   saveTab();
   if (S.tab === 'home') bindChart();
+  maybeShowUpd(); // 불러오기가 끝난 뒤 새 버전이 있으면
 }
 
 function monthly(year) {
@@ -605,7 +658,7 @@ function openSheet(html) {
   return sheet;
 }
 var sheetDirty = false;
-function closeSheet() { modal.innerHTML = ''; sheetDirty = false; }
+function closeSheet() { modal.innerHTML = ''; sheetDirty = false; drawUpd(); maybeShowUpd(); }
 /** 취소·Esc: 입력한 내용이 있으면 한 번 확인합니다. */
 function requestClose() {
   if (!modal.innerHTML) return true;
@@ -848,9 +901,9 @@ if (window.gz && window.gz.onMenu) window.gz.onMenu(function (action) {
   if (action === 'add' && S.loaded && !modal.innerHTML) showForm(null);
   if (action === 'refresh') load();
   // 입력 중인 창이 있으면 단축키로도 확인 없이 닫히지 않습니다.
-  if ((action === 'settings' || action === 'update' || action.indexOf('tab:') === 0) && !requestClose()) return;
+  if (action === 'update') { updateAction('check'); return; } // 입력 중이어도 그 위에 업데이트 창을 엽니다
+  if ((action === 'settings' || action.indexOf('tab:') === 0) && !requestClose()) return;
   if (action === 'settings') showSettings();
-  if (action === 'update') { showSettings(); updateAction('check'); }
   if (action === 'sheet' && S.sheetUrl) window.open(S.sheetUrl, '_blank');
   if (action.indexOf('tab:') === 0 && S.loaded) { S.tab = action.slice(4); render(); window.scrollTo(0, 0); }
 });
@@ -866,7 +919,9 @@ document.addEventListener('keydown', function (e) {
   if (e.key === 'Escape') {
     // 자동완성 목록이 있는 칸: 첫 Esc 는 목록을 닫는 데 쓰이므로 창은 그대로 둡니다(한 번 더 누르면 닫기).
     if (e.target.getAttribute && e.target.getAttribute('list') && e.target.value && escOn !== e.target) { escOn = e.target; return; }
-    escOn = null; requestClose(); return;
+    escOn = null;
+    if (S.updOpen) { closeUpd(); return; } // 업데이트 창이 위에 있으면 그것부터(「나중에」와 같음)
+    requestClose(); return;
   }
   escOn = null;
   var t = e.target, typing = /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName);

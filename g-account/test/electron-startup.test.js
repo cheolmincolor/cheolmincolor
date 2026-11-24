@@ -80,13 +80,28 @@ test('런치: 업데이트 확인이 실패하면 한 줄로 알리고 계속 �
   } finally { await done(); }
 });
 
-test('런치: 새 버전이 있으면 받으러 감 (개발 실행에서는 설치하지 않고 이유를 알린 뒤 계속)', opts, async () => {
+test('런치: 새 버전이 있으면 알리고 바로 장부 창으로 (런치 화면에서 설치·재시작하지 않음)', opts, async () => {
   const server = await feedServer({ latest: '99.0.0' });
   const { app, splash, done } = await launch(`http://127.0.0.1:${server.address().port}`);
   try {
+    const { log, main } = await finish(app, splash);
+    assert.ok(log.some((x) => x.text === '새 버전 99.0.0이 있습니다. 장부 창에서 알려 드립니다.'), [...new Set(log.map((x) => x.text))].join(' / '));
+    assert.ok(!log.some((x) => /설치|다시 시작/.test(x.text)));
+    assert.equal(log[log.length - 1].filled, 11);
+    // 장부 창은 새 버전을 알고 있음(머리줄 표시). 처음 설정 화면이라 창은 아직 저절로 뜨지 않음
+    await main.waitForFunction(() => !document.getElementById('updBadge').hidden);
+    assert.equal(await main.locator('#upd .sheet').count(), 0);
+    assert.equal(app.windows().length, 1);
+  } finally { await done(); server.close(); }
+});
+
+test('런치: 업데이트 확인이 5초 넘게 걸리면 뒤에서 계속 확인하게 두고 넘어감', opts, async () => {
+  const server = await feedServer({ latest: VERSION, delayMs: 60000 });
+  const { app, splash, t0, done } = await launch(`http://127.0.0.1:${server.address().port}`);
+  try {
     const { log } = await finish(app, splash);
-    assert.ok(log.some((x) => /새 버전 99\.0\.0/.test(x.text)));
-    assert.ok(log.some((x) => /^업데이트 건너뜀: 개발 실행에서는/.test(x.text)));
+    assert.ok(log.some((x) => x.text === '업데이트 확인이 늦어 뒤에서 계속 확인합니다.'));
+    assert.ok(Date.now() - t0 < 15000, '5초 제한보다 훨씬 오래 기다림');
   } finally { await done(); server.close(); }
 });
 

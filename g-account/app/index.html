@@ -274,6 +274,21 @@ th { font-size: 11px; font-weight: 500; letter-spacing: .14em; color: #8A8A8A; }
 .month .list { border-radius: 0 0 8px 8px; }
 .toast { border-radius: 6px; }
 
+/* ---------- 업데이트 창 (G-Retag와 같은 구성) ---------- */
+.upd-dot { font-style: normal; margin-right: 6px; }
+.upd-dot::before { content: '●'; color: var(--a-now); }
+.icon-btn.upd-badge .upd-dot { margin-right: 0; }
+.upd-scrim { z-index: 25; }
+/* 좁은 창: 새 버전 표시가 더해져도 앱 이름이 잘리지 않게 머리줄 간격을 줄입니다 */
+@media (max-width: 719px) { header { gap: 6px; } header select { padding: 0 6px; } }
+.upd-sheet { max-width: 460px; }
+.upd-sheet .notes { max-height: 180px; }
+.upd-progress { display: flex; align-items: center; gap: 10px; margin: 12px 0 4px; }
+.upd-progress progress { flex: 1; height: 8px; }
+.upd-progress span { min-width: 3.2em; text-align: right; color: #E8E8E8; font-size: 13px; }
+.upd-sheet .btns { justify-content: flex-end; margin-top: 14px; }
+.upd-sheet .btns .btn { flex: 1; }
+
 /* ---------- 연간 흐름판 ---------- */
 .flow { display: grid; grid-template-columns: 30px repeat(12, 1fr); gap: 4px; align-items: center; }
 .flow .fh { text-align: center; font-size: 12px; color: #9A9A9A; }
@@ -314,7 +329,7 @@ body.setup header { top: 0; }
 .sheet > .foot .err:empty { display: none; }
 .confirm-note { border: 1px solid #E8E8E8; background: #121212; border-radius: 6px; padding: 8px 10px; margin: 0 0 8px; font-size: 13px; font-weight: 700; color: #E8E8E8; }
 .confirm-note::before { content: '⚠ '; color: var(--a-warn); font-weight: 400; }
-@media (min-width: 720px) { .toast { top: 122px; bottom: auto; } body:has(#updateBar:not([hidden])) .toast { top: 178px; } }
+@media (min-width: 720px) { .toast { top: 122px; bottom: auto; } }
 .sheet { scroll-padding-bottom: 110px; }
 </style>
 </head>
@@ -323,12 +338,12 @@ body.setup header { top: 0; }
   <header>
     <h1>G-Account<small>매출 장부</small></h1>
     <span class="copyright">© GRAY ZONE</span>
+    <button class="icon-btn upd-badge" id="updBadge" data-upd="open" title="새 버전" aria-label="새 버전" hidden><i class="upd-dot" aria-hidden="true"></i><span class="lbl">새 버전</span></button>
     <select id="year" aria-label="연도"></select>
     <a class="icon-btn" id="sheetLink" target="_blank" rel="noopener" title="시트 열기 (⌘⇧O)" aria-label="시트 열기"><i>▦</i><span class="lbl">시트</span></a>
     <button class="icon-btn refresh" id="refresh" title="새로 고침 (⌘R)" aria-label="새로 고침"><i>↻</i><span class="lbl">새로 고침</span></button>
     <button class="icon-btn" id="settings" title="설정 (⌘,)" aria-label="설정"><i>⚙</i><span class="lbl">설정</span></button>
   </header>
-  <div id="updateBar" class="updatebar" role="status" hidden></div>
   <main id="app"><div class="loading">장부를 불러오는 중…</div></main>
 </div>
 <button class="fab" id="add" title="작업 등록 (⌘N)">+ 작업 등록</button>
@@ -338,6 +353,7 @@ body.setup header { top: 0; }
   <button data-tab="unpaid">미수금<span class="badge" id="unpaidBadge" hidden></span></button>
 </div></nav>
 <div id="modal"></div>
+<div id="upd"></div>
 <div id="toast"></div>
 
 <script src="app.js"></script>

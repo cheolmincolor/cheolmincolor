@@ -91,19 +91,20 @@ function start() {
   buildMenu();
   if (process.env.GZ_NO_UPDATE) { openMain(); return; }
   launch();
-  setInterval(() => updater.check(), UPDATE_EVERY_MS);
+  setInterval(() => updater.check({ download: true }), UPDATE_EVERY_MS);
 }
 
 // ---------- 앱을 열 때: GRAYZONE 런치 화면 ----------
 
 const MIN_LAUNCH_MS = 1000; // 로딩이 아주 빨라도 최소 1초는 보여 줍니다(규격)
-const NOTE_MS = 1200;       // 넘어가도 되는 문제(업데이트 확인 실패)를 읽을 수 있게 잠깐 멈추는 시간
+const NOTE_MS = 1200;
+const CHECK_WAIT_MS = 5000; // 업데이트 확인을 기다리는 최대 시간(공통 규칙). 넘으면 뒤에서 계속 확인       // 넘어가도 되는 문제(업데이트 확인 실패)를 읽을 수 있게 잠깐 멈추는 시간
 
 /**
  * 런치 화면(640×400, GRAYZONE 공통 규격)을 띄우고 실제 초기화 단계를 차례로 진행합니다.
  * 웨지 11칸은 단계에 연결되어 있습니다:
- *   1칸 설정 읽기 · 3칸 업데이트 확인 · 8칸 새 버전 받기(받는 만큼) · 10칸 장부 창 준비 · 11칸 장부 읽기
- * 새 버전을 받았으면 설치하고 앱을 다시 시작합니다.
+ *   1칸 설정 읽기 · 6칸 업데이트 확인 · 10칸 장부 창 준비 · 11칸 장부 읽기
+ * 런치 화면에서는 설치하지 않습니다. 새 버전은 뒤에서 받고, 장부 창의 업데이트 창으로 알립니다.
  * 앱을 쓸 수 없는 오류는 무엇이 실패했는지 적고 멈춥니다. 업데이트 확인·설치 실패는 한 줄로 알리고 계속합니다.
  */
 async function launch() {
@@ -157,30 +158,23 @@ async function launch() {
   if (st.err) return stop('설정 읽기', new Error(st.err));
   show({ filled: 1 });
 
-  // 2. 업데이트 확인 → 3. 새 버전 받기
+  // 2. 업데이트 확인: 결과만 봅니다. 새 버전이 있으면 뒤에서 내려받기를 이어 가고, 런치 화면에서는 설치하지 않습니다.
+  //    (장부 창이 열린 뒤 업데이트 창으로 알립니다.) 5초 안에 답이 없으면 뒤에서 계속 확인하게 두고 넘어갑니다.
   show({ text: '업데이트를 확인하는 중…' });
-  launchProgress = (u) => {
-    if (u.status === 'available') show({ filled: 3, text: `새 버전 ${u.latest}을 받을 준비를 하는 중…` });
-    if (u.status === 'downloading') show({ filled: 3 + Math.floor((u.progress || 0) / 20), text: `새 버전 ${u.latest}을 받는 중… ${u.progress || 0}%` });
-  };
-  const u = await updater.check({ download: true });
+  const answered = new Promise((resolve) => { launchProgress = (u) => { if (u.status !== 'checking') resolve(u); }; });
+  updater.check({ download: true }).catch((e) => console.error(e));
+  const u = await Promise.race([answered, delay(CHECK_WAIT_MS).then(() => null)]);
   launchProgress = null;
-  if (u.status === 'ready') {
-    show({ filled: 8, text: `새 버전 ${u.latest}을 설치하고 다시 시작하는 중…` });
-    try {
-      updater.install({ relaunch: true });
-      done = true;
-      setTimeout(() => app.quit(), Math.max(0, MIN_LAUNCH_MS - (Date.now() - t0)));
-      return;
-    } catch (e) {
-      show({ text: '업데이트 설치 실패(계속 진행): ' + e.message });
-      await delay(NOTE_MS);
-    }
+  if (!u) {
+    show({ filled: 6, text: '업데이트 확인이 늦어 뒤에서 계속 확인합니다.' });
+    await delay(NOTE_MS);
+  } else if (u.latest && u.latest !== u.current && /available|downloading|ready|unsupported/.test(u.status)) {
+    show({ filled: 6, text: `새 버전 ${u.latest}이 있습니다. 장부 창에서 알려 드립니다.` });
   } else if (u.status === 'error' || u.status === 'unsupported') {
-    show({ filled: 8, text: (u.status === 'error' ? '업데이트 확인 실패(계속 진행): ' : '업데이트 건너뜀: ') + (u.error || '') });
+    show({ filled: 6, text: (u.status === 'error' ? '업데이트 확인 실패(계속 진행): ' : '업데이트 건너뜀: ') + (u.error || '') });
     await delay(NOTE_MS);
   } else {
-    show({ filled: 8, text: '최신 버전입니다.' });
+    show({ filled: 6, text: '최신 버전입니다.' });
   }
 
   // 4. 장부 창 준비 → 5. 장부 읽기 (장부 창이 첫 화면을 그리면 끝)
