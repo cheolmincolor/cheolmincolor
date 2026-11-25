@@ -12,6 +12,8 @@
 실행:  python3 app.py            창으로 실행
        python3 app.py --serve    창 없이 서버만 (테스트용, 주소를 출력)
 """
+import time as _t
+T_PROC = _t.time()  # 시작 시간 측정용
 import json
 import os
 import plistlib
@@ -574,6 +576,7 @@ def launch_state():
 def show_splash():
     """런치 창을 보이게 함. 글꼴이 로드되고 화면 내용이 준비된 뒤에 부름 (빈 창이 먼저 보이지 않게)."""
     if SPLASH is not None and not LAUNCH["t_shown"]:
+        log("launch window shown")
         LAUNCH["t_shown"] = time.time()
         if sys.platform == "darwin":
             # 웹 화면의 첫 프레임이 창에 올라오기 전에는 웹뷰가 검은 바탕을 그림 → 바탕을 투명하게 해서
@@ -887,6 +890,7 @@ def run_window(url):
     # 둘을 한꺼번에 불러오면 앱이 바빠서 런치 창이 몇 초 동안 그려지지 않는 일이 있었음.
     global MAIN_URL
     MAIN_URL = url
+    log("windows: creating")
     WINDOW = webview.create_window(f"{APP_NAME} {APP_SUBTITLE}", html="<html><body style='background:#121212'></body></html>",
                                    width=1240, height=820, min_size=(1020, 700),
                                    background_color="#121212", text_select=False, hidden=True)
@@ -914,6 +918,7 @@ def run_window(url):
         later(25, give_up)
     if sys.platform == "darwin":
         install_open_handler()
+    log("windows: start")
     webview.start()
     return True
 
@@ -967,6 +972,7 @@ def run_browser_fallback(url):
 
 
 def main(argv):
+    log(f"app start (파이썬 시작 후 {time.time() - T_PROC:.1f}초)")
     root = tempfile.mkdtemp(prefix="gretag-")
     try:
         srv, url = start_server(root, int(os.environ.get("GCT_PORT", "0")))

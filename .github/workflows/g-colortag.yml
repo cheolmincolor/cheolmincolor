@@ -102,7 +102,11 @@ jobs:
             tar -xzf "$RUNNER_TEMP/quit/G-Retag-$OLDV-arm64.tar.gz" -C "$RUNNER_TEMP/quit/old"
             ARGS="비교:$RUNNER_TEMP/quit/old/G-Retag.app $ARGS"
           fi
-          "$NEW/Contents/MacOS/G-Retag-python" -I -B test/mac_quit_check.py $ARGS
+          echo "== 1) 파인더에서 여는 것처럼 (open)"
+          "$NEW/Contents/MacOS/G-Retag-python" -I -B test/mac_quit_check.py $ARGS || BAD=1
+          echo "== 2) 실행기를 직접 실행: 25초 타이머가 끝나기 전에 끄기"
+          QUIT_MODE=direct "$NEW/Contents/MacOS/G-Retag-python" -I -B test/mac_quit_check.py $ARGS || BAD=1
+          [ -z "${BAD:-}" ]
       - name: 런치 화면을 6번 연속으로 켜서 검게 뜨는 일이 없는지
         if: success() || failure()
         run: |

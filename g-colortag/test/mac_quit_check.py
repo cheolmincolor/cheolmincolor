@@ -18,6 +18,9 @@ import AppKit  # noqa: E402
 import Quartz  # noqa: E402
 
 
+MODE = os.environ.get("QUIT_MODE", "open")
+
+
 def running(app):
     """macOS 가 아는 '실행 중인 앱' 가운데 이 경로의 G-Retag (이름 검색이 아니라 번들 경로로 정확히)."""
     want = os.path.realpath(app)
@@ -56,11 +59,19 @@ def run(app, rounds=3):
         time.sleep(1.5)
         open(LOG, "w").close()
         t0 = time.time()
-        subprocess.run(["open", "-n", app], check=True)
+        if MODE == "open":
+            subprocess.run(["open", "-n", app], check=True)
+        else:  # 실행기를 직접 실행 (파인더에서 여는 것과 같은 실행기, LaunchServices 만 거치지 않음)
+            subprocess.Popen([os.path.join(app, "Contents", "MacOS", "G-Retag")], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             start_new_session=True)
         ra = pid = win = None
         while time.time() - t0 < 60 and not win:
             ra = ra or running(app)
             pid = ra.processIdentifier() if ra else None
+            if not pid and MODE != "open":
+                r = subprocess.run(["pgrep", "-f", os.path.join(app, "Contents", "Resources", "app.py")], capture_output=True, text=True)
+                pid = int(r.stdout.split()[0]) if r.stdout.split() else None
+                ra = AppKit.NSRunningApplication.runningApplicationWithProcessIdentifier_(pid) if pid else None
             win = pid and main_window(pid)
             time.sleep(0.05)
         if not win:
@@ -88,15 +99,21 @@ def run(app, rounds=3):
     return out
 
 
+def shown_at(note):  # '켠 뒤 N초에 메인 화면' 에서 N
+    import re
+    m = re.search(r"켠 뒤 ([0-9.]+)초에", note)
+    return float(m.group(1)) if m else None
+
+
 bad = 0
 for arg in sys.argv[1:]:
     kind, app = arg.split(":", 1)
     app = os.path.abspath(app)
     ver = subprocess.run(["/usr/libexec/PlistBuddy", "-c", "Print :CFBundleShortVersionString",
                           os.path.join(app, "Contents", "Info.plist")], capture_output=True, text=True).stdout.strip()
-    print(f"■ {kind} 대상 v{ver}", flush=True)
+    print(f"■ {kind} 대상 v{ver} · 실행 방식 {'open' if MODE == 'open' else '실행기 직접'}", flush=True)
     for i, (tw, te, note) in enumerate(run(app), 1):
-        good = te is not None and te <= 3.0
+        good = te is not None and te <= 3.0 and (MODE == "open" or (shown_at(note) or 99) < 20)
         if kind == "확인":
             bad += not good
         fmt = lambda x: "40초 넘음" if x is None else f"{x:.2f}초"  # noqa: E731

@@ -115,12 +115,14 @@ if ! "$PY" -I -c "import json, ssl" >>"$LOG" 2>&1; then
   exit 1
 fi
 echo "---- $(date) 시작" >>"$LOG"
+echo "$(date +%H:%M:%S) launcher: 이름 확인" >>"$LOG"
 # 예전 이름(G-ColorTag.app)에서 업데이트된 경우 G-Retag.app 으로 이름을 바꾸고 새 자리에서 다시 실행
 NEWAPP=$("$PY" -I -B "$RES/migrate.py" "$APP" 2>>"$LOG")
 if [ -n "$NEWAPP" ] && [ -x "$NEWAPP/Contents/MacOS/G-Retag" ]; then
   export GRETAG_MIGRATED=1
   exec "$NEWAPP/Contents/MacOS/G-Retag" "$@"
 fi
+echo "$(date +%H:%M:%S) launcher: 앱 실행" >>"$LOG"
 exec "$PY" -I -B "$RES/app.py" >>"$LOG" 2>&1
 EOF
 chmod 755 "$APP/Contents/MacOS/G-Retag"
