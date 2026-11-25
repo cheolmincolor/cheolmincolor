@@ -18,10 +18,17 @@ import AppKit  # noqa: E402
 import Quartz  # noqa: E402
 
 
-def pid_of(app):
-    r = subprocess.run(["pgrep", "-f", os.path.join(app, "Contents", "Resources", "app.py")], capture_output=True, text=True)
-    pids = [int(x) for x in r.stdout.split()]
-    return pids[0] if pids else None
+def running(app):
+    """macOS 가 아는 '실행 중인 앱' 가운데 이 경로의 G-Retag (이름 검색이 아니라 번들 경로로 정확히)."""
+    want = os.path.realpath(app)
+    for ra in AppKit.NSRunningApplication.runningApplicationsWithBundleIdentifier_("local.colortag") or []:
+        url = ra.bundleURL()
+        if url is not None and os.path.realpath(str(url.path())) == want and not ra.isTerminated():
+            return ra
+    return None
+
+
+LOG = os.path.expanduser("~/Library/Logs/G-Retag.log")
 
 
 def main_window(pid):
@@ -32,9 +39,14 @@ def main_window(pid):
 
 
 def alive(pid):
-    r = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True)
-    s = r.stdout.strip()
-    return bool(s) and not s.startswith("Z")
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    r = subprocess.run(["/bin/ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True)
+    return not r.stdout.strip().startswith("Z")
 
 
 def run(app, rounds=3):
@@ -42,21 +54,23 @@ def run(app, rounds=3):
     for n in range(rounds):
         subprocess.run(["pkill", "-f", "Contents/Resources/app.py"], capture_output=True)
         time.sleep(1.5)
+        open(LOG, "w").close()
         t0 = time.time()
         subprocess.run(["open", "-n", app], check=True)
-        pid = win = None
+        ra = pid = win = None
         while time.time() - t0 < 60 and not win:
-            pid = pid or pid_of(app)
+            ra = ra or running(app)
+            pid = ra.processIdentifier() if ra else None
             win = pid and main_window(pid)
             time.sleep(0.05)
         if not win:
-            out.append((None, None, "메인 화면이 60초 안에 뜨지 않음"))
+            out.append((None, None, "메인 화면이 60초 안에 뜨지 않음 · 기록: " + open(LOG).read()[-400:].replace("\n", " | ")))
             continue
         shown = time.time() - t0
         time.sleep(1.0)  # 화면이 뜬 직후에 끄기
         tq = time.time()
-        ra = AppKit.NSRunningApplication.runningApplicationWithProcessIdentifier_(pid)
-        ok = bool(ra and ra.terminate())
+        cmd = subprocess.run(["/bin/ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()
+        ok = bool(ra.terminate())
         t_win = t_exit = None
         while time.time() - tq < 40:
             now = time.time() - tq
@@ -68,7 +82,9 @@ def run(app, rounds=3):
             time.sleep(0.05)
         if t_exit is None:
             subprocess.run(["kill", "-9", str(pid)], capture_output=True)
-        out.append((t_win, t_exit, f"켠 뒤 {shown:.1f}초에 메인 화면, 종료 요청 {'전달' if ok else '실패'}"))
+        logtxt = " | ".join(x.strip() for x in open(LOG).read().splitlines() if x.strip())[-500:]
+        out.append((t_win, t_exit, f"켠 뒤 {shown:.1f}초에 메인 화면, 종료 요청 {'전달' if ok else '실패'}, "
+                                   f"프로세스 {pid} {os.path.basename(cmd.split()[-1]) if cmd else '?'}\n        기록: {logtxt}"))
     return out
 
 
