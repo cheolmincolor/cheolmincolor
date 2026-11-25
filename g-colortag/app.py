@@ -19,6 +19,7 @@ import os
 import plistlib
 import re
 import secrets
+import socketserver
 import shutil
 import subprocess
 import sys
@@ -855,6 +856,12 @@ def start_server(root, port=0):
     global CORE
     CORE = Core(root)
     class Server(ThreadingHTTPServer):
+        def server_bind(self):
+            # 기본 동작은 컴퓨터 이름을 네트워크로 조회(socket.getfqdn)하는데, 맥에서 수십 초 걸리는 일이 있음.
+            # 이 서버는 이 컴퓨터 안에서만 쓰므로 조회하지 않음
+            socketserver.TCPServer.server_bind(self)
+            self.server_name, self.server_port = "127.0.0.1", self.server_address[1]
+
         def handle_error(self, request, client_address):  # 창이 닫히며 끊긴 연결은 오류가 아님 (기록에 남기지 않음)
             if isinstance(sys.exc_info()[1], (ConnectionError, TimeoutError)):
                 return
@@ -872,12 +879,14 @@ def run_window(url):
     global WINDOW, SPLASH
     try:
         import webview
+        log("import webview done")
     except Exception as e:
         log("pywebview 사용 불가:", e)
         return False
     if sys.platform == "darwin":
         try:  # 제목 표시줄·파일 선택 창도 어두운 모드로
             import AppKit
+            log("import AppKit done")
             AppKit.NSApplication.sharedApplication().setAppearance_(
                 AppKit.NSAppearance.appearanceNamed_(AppKit.NSAppearanceNameDarkAqua))
         except Exception as e:
@@ -976,6 +985,7 @@ def main(argv):
     root = tempfile.mkdtemp(prefix="gretag-")
     try:
         srv, url = start_server(root, int(os.environ.get("GCT_PORT", "0")))
+        log("server ready")
         if os.environ.get("GCT_NATIVE_SIM") == "1":  # 테스트: 가짜 네이티브 플레이어
             global NV, NV_STATE
             NV = qtplayer.SimBackend(media_path, ct.read_duration)
