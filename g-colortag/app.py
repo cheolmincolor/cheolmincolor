@@ -41,7 +41,7 @@ import refmovie  # noqa: E402
 
 APP_NAME = "G-Retag"
 APP_SUBTITLE = "for QuickTime"
-APP_VERSION = "3.12.1"
+APP_VERSION = "3.12.2"
 
 
 def build_year():
