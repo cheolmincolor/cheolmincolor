@@ -19,6 +19,7 @@ import Quartz  # noqa: E402
 
 
 MODE = os.environ.get("QUIT_MODE", "open")
+HOW = os.environ.get("QUIT_HOW", "quit")  # quit: ⌘Q 와 같은 종료 요청, close: 창의 닫기 버튼
 
 
 def running(app):
@@ -81,7 +82,16 @@ def run(app, rounds=3):
         time.sleep(1.0)  # 화면이 뜬 직후에 끄기
         tq = time.time()
         cmd = subprocess.run(["/bin/ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()
-        ok = bool(ra.terminate())
+        if HOW == "close":  # 창의 빨간 닫기 버튼을 누름 (손쉬운 사용 기능으로)
+            r = subprocess.run(["osascript", "-e",
+                                f'tell application "System Events" to tell (first process whose unix id is {pid}) to '
+                                f'click (first button whose subrole is "AXCloseButton") of (first window whose subrole is "AXStandardWindow")'],
+                               capture_output=True, text=True, timeout=20)
+            ok = r.returncode == 0
+            if not ok:
+                print("        닫기 버튼 누르기 실패:", r.stderr.strip()[:160], flush=True)
+        else:  # ⌘Q 와 같은 종료 요청
+            ok = bool(ra.terminate())
         t_win = t_exit = None
         while time.time() - tq < 40:
             now = time.time() - tq
@@ -111,7 +121,11 @@ for arg in sys.argv[1:]:
     app = os.path.abspath(app)
     ver = subprocess.run(["/usr/libexec/PlistBuddy", "-c", "Print :CFBundleShortVersionString",
                           os.path.join(app, "Contents", "Info.plist")], capture_output=True, text=True).stdout.strip()
-    print(f"■ {kind} 대상 v{ver} · 실행 방식 {'open' if MODE == 'open' else '실행기 직접'}", flush=True)
+    print(f"■ {kind} 대상 v{ver} · 실행 방식 {'open' if MODE == 'open' else '실행기 직접'} · "
+          f"끄는 방법 {'창 닫기 버튼' if HOW == 'close' else '⌘Q'}", flush=True)
+    if kind == "비교" and HOW == "close":
+        rounds_note = "(켠 뒤 25초 안에 닫은 회차만 의미 있음)"
+        print("   " + rounds_note, flush=True)
     for i, (tw, te, note) in enumerate(run(app), 1):
         good = te is not None and te <= 3.0 and (MODE == "open" or (shown_at(note) or 99) < 20)
         if kind == "확인":
