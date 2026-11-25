@@ -87,6 +87,22 @@ jobs:
         run: |
           V=$(sed -n 's/^APP_VERSION = "\(.*\)"/\1/p' app.py)
           bash test/mac_open_check.sh "release/$V/G-Retag-$V-arm64.tar.gz"
+      - name: 켜고 화면이 뜬 직후에 끄면 바로 끝나는지 (지금 배포된 버전과 비교)
+        if: success() || failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V=$(sed -n 's/^APP_VERSION = "\(.*\)"/\1/p' app.py)
+          mkdir -p "$RUNNER_TEMP/quit/new" "$RUNNER_TEMP/quit/old"
+          tar -xzf "release/$V/G-Retag-$V-arm64.tar.gz" -C "$RUNNER_TEMP/quit/new"
+          NEW="$RUNNER_TEMP/quit/new/G-Retag.app"
+          ARGS="확인:$NEW"
+          OLDV=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 40 --json tagName --jq '[.[].tagName|select(startswith("colortag-v"))][0]' | sed 's/colortag-v//')
+          if [ -n "$OLDV" ] && [ "$OLDV" != "$V" ] && gh release download "colortag-v$OLDV" --repo "$GITHUB_REPOSITORY" -p "G-Retag-$OLDV-arm64.tar.gz" -D "$RUNNER_TEMP/quit"; then
+            tar -xzf "$RUNNER_TEMP/quit/G-Retag-$OLDV-arm64.tar.gz" -C "$RUNNER_TEMP/quit/old"
+            ARGS="비교:$RUNNER_TEMP/quit/old/G-Retag.app $ARGS"
+          fi
+          "$NEW/Contents/MacOS/G-Retag-python" -I -B test/mac_quit_check.py $ARGS
       - name: 런치 화면을 6번 연속으로 켜서 검게 뜨는 일이 없는지
         if: success() || failure()
         run: |

@@ -38,7 +38,7 @@ import refmovie  # noqa: E402
 
 APP_NAME = "G-Retag"
 APP_SUBTITLE = "for QuickTime"
-APP_VERSION = "3.12.0"
+APP_VERSION = "3.12.1"
 
 
 def build_year():
@@ -79,6 +79,14 @@ def save_prefs(p):
         os.replace(tmp, PREFS)
     except Exception as e:
         log("prefs save failed:", e)
+
+
+def later(sec, fn):
+    """sec 초 뒤에 fn 실행. 앱을 끌 때 기다리지 않음(daemon) — 보통 타이머는 끝날 때까지 앱 종료를 붙잡음."""
+    t = threading.Timer(sec, fn)
+    t.daemon = True
+    t.start()
+    return t
 
 
 def log(*a):
@@ -455,7 +463,7 @@ class Core:
             return {"ok": True}
         if name == "launch_quit":   # 런치 화면이 오류로 멈춘 상태에서 클릭·키 입력
             if LAUNCH["error"]:
-                threading.Timer(0.1, lambda: os._exit(1)).start()
+                later(0.1, lambda: os._exit(1))
             return {"ok": bool(LAUNCH["error"])}
         if name == "nv_state":
             if NV is None:
@@ -498,7 +506,7 @@ class Core:
                 raise ApiError("저장이 끝난 뒤 다시 시작해 주세요")
             if not self.updater.apply(relaunch=True):
                 raise ApiError("업데이트를 설치할 수 없습니다")
-            threading.Timer(0.3, quit_app).start()
+            later(0.3, quit_app)
             return {"ok": True}
         if name == "prefs":  # 로딩 화면 '다음부터 바로 시작', 소리 켬/끔
             for k in ("skip_intro", "sound"):
@@ -681,6 +689,7 @@ def launch_sequence():
         LAUNCH_HOOK()
     WINDOW.show()
     SPLASH.destroy()
+    log("main window shown")
     LAUNCH["shown"] = True
 NV = None            # 퀵타임 엔진(AVFoundation) 플레이어
 NV_STATE = "off"     # off | pending | on
@@ -885,7 +894,7 @@ def run_window(url):
                                    resizable=False, frameless=True, easy_drag=True, background_color="#121212",
                                    text_select=False, hidden=True)
     # 숨긴 채 만들고, 화면이 글꼴 로드까지 끝냈다고 알리면 보임 (알림이 없으면 불러온 뒤 3초에 보임)
-    SPLASH.events.loaded += lambda: threading.Timer(3, show_splash).start()
+    SPLASH.events.loaded += lambda: later(3, show_splash)
     threading.Thread(target=launch_sequence, daemon=True).start()
     WINDOW.events.loaded += lambda: register_dnd() if MAIN_STARTED and not CORE.dnd else None
     if sys.platform == "darwin":
@@ -902,7 +911,7 @@ def run_window(url):
             if NV_STATE == "pending":
                 globals()["NV_STATE"] = "off"
                 log("native player timeout")
-        threading.Timer(25, give_up).start()
+        later(25, give_up)
     if sys.platform == "darwin":
         install_open_handler()
     webview.start()
@@ -971,10 +980,17 @@ def main(argv):
                 time.sleep(3600)
         if not run_window(url):
             run_browser_fallback(url)
+        log("quit: window closed")
         CORE.updater.apply(relaunch=False)  # 받아 둔 새 버전이 있으면 끌 때 교체
         srv.shutdown()
     finally:
         shutil.rmtree(root, ignore_errors=True)
+    if "--serve" not in argv:
+        # 창이 닫히면 바로 끝냄. 뒤에서 돌던 작업(업데이트 확인, 미리보기 준비 등)을 기다리지 않음
+        log("quit: done")
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(0)
 
 
 if __name__ == "__main__":
